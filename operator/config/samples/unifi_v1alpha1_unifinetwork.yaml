@@ -1,0 +1,13 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiNetwork
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifinetwork-sample
+spec:
+  site: default
+  name: lan
+  vlan: 10
+  subnet: 10.0.0.0/24
+  enabled: true

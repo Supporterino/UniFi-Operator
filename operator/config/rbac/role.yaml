@@ -1,0 +1,22 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifinetworks
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifinetworks/status
+  verbs:
+  - get
+  - patch
+  - update

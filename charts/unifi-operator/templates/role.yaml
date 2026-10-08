@@ -1,0 +1,25 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "unifi-operator.fullname" . }}-manager-role
+  labels:
+    {{- include "unifi-operator.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifinetworks
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifinetworks/status
+  verbs:
+  - get
+  - patch
+  - update
+{{- end }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: unifi-operator
+description: A Kubernetes operator that manages a UniFi network stack declaratively through Custom Resources.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

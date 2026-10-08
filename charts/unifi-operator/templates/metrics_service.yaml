@@ -1,0 +1,17 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "unifi-operator.fullname" . }}-controller-manager-metrics-service
+  labels:
+    {{- include "unifi-operator.labels" . | nindent 4 }}
+    control-plane: controller-manager
+spec:
+  ports:
+  - name: https
+    port: {{ .Values.metrics.port }}
+    protocol: TCP
+    targetPort: {{ .Values.metrics.port }}
+  selector:
+    {{- include "unifi-operator.selectorLabels" . | nindent 4 }}
+{{- end }}

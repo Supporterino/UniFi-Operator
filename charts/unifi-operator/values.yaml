@@ -1,0 +1,104 @@
+# Default values for unifi-operator.
+#
+# This chart renders the same core objects as the canonical kustomize deployment
+# in operator/config/default: the manager Deployment, its ServiceAccount and
+# RBAC, the metrics Service, and the UnifiNetwork CRD. Keep the two paths in
+# sync when either changes.
+#
+# The manager currently runs a fixture-backed UniFi client and reads no controller
+# credentials. Never put credentials in this file or in a values override.
+#
+# The UnifiNetwork CRD ships in the chart's crds/ directory. Helm installs it on
+# first `helm install` only; `helm upgrade` does not upgrade CRDs. Pass --skip-crds
+# to skip installation. Note that `helm template` omits crds/ output unless it is
+# run with --include-crds.
+
+# -- Number of manager replicas. Leader election keeps a single active manager.
+replicaCount: 1
+
+image:
+  # -- Manager image repository.
+  repository: controller
+  # -- Manager image tag. Falls back to the chart appVersion when empty.
+  tag: latest
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Image pull secrets for the manager Pod.
+imagePullSecrets: []
+
+# -- Override the chart name used in resource names.
+nameOverride: ""
+# -- Override the prefix used to name the chart's resources.
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create the manager ServiceAccount.
+  create: true
+  # -- ServiceAccount name. Defaults to "<fullname>-controller-manager".
+  name: ""
+  # -- Annotations to add to the manager ServiceAccount.
+  annotations: {}
+
+rbac:
+  # -- Create the manager ClusterRole/ClusterRoleBinding, the leader-election
+  # Role/RoleBinding, the metrics RBAC, and the UnifiNetwork admin/editor/viewer
+  # ClusterRoles.
+  create: true
+
+leaderElection:
+  # -- Pass --leader-elect to the manager.
+  enabled: true
+
+metrics:
+  # -- Expose the controller-runtime metrics endpoint. When enabled the manager
+  # receives --metrics-bind-address, a metrics Service is created, and the
+  # metrics reader/auth RBAC is installed.
+  enabled: true
+  # -- Port the metrics Service and manager endpoint listen on.
+  port: 8443
+
+# -- Name of an existing Secret whose keys are injected as environment variables
+# into the manager Pod (for example UNIFI_URL and UNIFI_API_KEY). The scaffolded
+# manager does not consume them yet; this exists for future controller
+# integration. Leave empty to inject nothing. This chart never contains
+# credential material.
+existingSecret: ""
+
+# -- Annotations added to the manager Pod.
+podAnnotations: {}
+# -- Extra labels added to the manager Pod.
+podLabels: {}
+
+# -- Pod-level security context.
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container-level security context.
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# -- Resource requests and limits for the manager container.
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# -- Node selector for the manager Pod.
+nodeSelector: {}
+# -- Tolerations for the manager Pod.
+tolerations: []
+# -- Affinity for the manager Pod.
+affinity: {}
+
+# -- Termination grace period for the manager Pod.
+terminationGracePeriodSeconds: 10

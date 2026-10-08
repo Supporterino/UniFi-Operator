@@ -1,0 +1,56 @@
+schema: spec-driven
+
+# Project context
+# This is shown to AI when creating OpenSpec artifacts (proposals, specs, designs, tasks).
+# Keep it lean — facts live in the root README.md, AGENTS.md, and docs/. Only summarize here.
+context: |
+  **UniFi-Operator** — a Kubernetes operator that manages a UniFi network stack declaratively
+  through Custom Resources. The repository is a single Git repo with wrapped module
+  directories: `operator/` (kubebuilder controllers + CRD API types + UniFi client), `cli/`
+  (a separate Go module for snapshot/adoption), `docs/` (Zensical → GitHub Pages), `config/`
+  (kustomize) and `charts/` (Helm). See the root `README.md` for the tech stack.
+
+  ## Working with specs
+  - **Specs are the source of truth.** Read the relevant `openspec/specs/<capability>/spec.md`
+    before proposing changes. Enumerate capabilities via `openspec list`.
+  - **CRD contract golden rule.** A Custom Resource's `spec` is a stable, human-authored
+    contract. Never expose a UniFi internal `_id` or opaque identifier in `spec`; reference
+    other CRs by Kubernetes identity (name/namespace) or a typed selector. Upstream IDs belong
+    in `status` only. The full rules are `docs/crd-conventions.md`.
+  - **UniFi API contract golden rule.** `docs/unifi-api.md` is the canonical endpoint → consumer
+    map. Any endpoint change MUST be synced into the operator's client and the CLI consumer.
+  - See the root `AGENTS.md` for cross-module rules and the Cross-Module Change Checklist, and
+    the Docs Index (`docs/architecture.md`, `docs/crd-conventions.md`, `docs/unifi-api.md`,
+    `docs/go.md`, `docs/security.md`, `docs/testing.md`, `docs/deployment.md`).
+
+# Per-artifact rules
+rules:
+  proposal:
+    - Reference which specs will be modified (ADDED/MODIFIED/REMOVED requirements)
+    - List which CRD kinds, controllers, and CLI commands are impacted
+    - State the CRD contract impact explicitly (new kinds, new spec fields, new status fields)
+    - Include a "Non-Goals" section for scope clarity
+  design:
+    - Ground decisions in existing code patterns (cite concrete file paths)
+    - Document trade-offs when multiple approaches exist
+    - For CRD changes, describe the `spec`/`status` shape and reference strategy (no ambiguous IDs)
+  specs:
+    - Use SHALL/MUST for normative requirements, avoid should/may
+    - Every requirement MUST have at least one scenario
+    - Scenarios use `- **WHEN** ...` / `- **THEN** ...` format
+    - Group related requirements under logical requirement names
+  tasks:
+    - Break tasks into chunks of max 2 hours
+    - Order tasks by dependency (CRD type + `make manifests generate` before controller; operator before CLI)
+    - Include verification steps (go build/vet/lint/test, `make manifests generate` no diff, `zensical build --strict`)
+
+# Per-operation guidance
+operations:
+  apply:
+    guidance:
+      - Prefer modifying existing CRD kinds and controllers over creating new ones
+      - Re-run `make manifests generate` and confirm no diff after any API-type change
+      - Test CRDs against envtest and the UniFi client against an httptest server
+  archive:
+    guidance:
+      - Summarize the archived change and note any CRD contract changes

@@ -1,0 +1,22 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiNetwork
+metadata:
+  name: default
+spec:
+  enabled: true
+  name: Default
+  site: default
+  subnet: 192.168.1.0/24
+  vlan: 1
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiNetwork
+metadata:
+  name: guest-wifi
+spec:
+  enabled: false
+  name: Guest WiFi
+  site: default
+  subnet: 192.168.2.0/24
+  vlan: 20

@@ -1,11 +1,4 @@
-# unifi-wifi Specification
-
-## Purpose
-
-Defines `UnifiWifiBroadcast`, the Custom Resource representing a WiFi broadcast (SSID) and its
-security configuration on the Integration v1 API.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Broadcast references a network
 
@@ -135,6 +128,8 @@ created, updated, or deleted.
 #### Scenario: System object is read-only
 - **WHEN** an upstream broadcast resolves to a `metadata.origin` other than `USER_DEFINED`
 - **THEN** the operator reports `Ready=False` and does not overwrite it
+
+## ADDED Requirements
 
 ### Requirement: Broadcast security variant is validated
 

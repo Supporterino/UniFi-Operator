@@ -38,6 +38,7 @@ The surface is **version-gated**. A capability is only usable when the console's
 | Official API (overall surface) | ≥ 10.1.78 |
 | Networks CRUD | ≥ 10.0.162 |
 | Firewall / DNS | ≥ 10.1.84 |
+| WiFi broadcasts | ≥ 10.1.78 |
 
 `UnifiController.status.applicationVersion` records the detected version and gates which
 capabilities are available. Below a capability's minimum the controller fails closed with
@@ -118,11 +119,32 @@ delete endpoint and no tag-assignment endpoint. A consuming resource selects dev
 typed, name-based device-tag selector resolved against this list (see
 [CRD conventions](crd-conventions.md)); there is no `UnifiDeviceTag` Custom Resource.
 
+### `UnifiWifiBroadcast`
+
+| Method | Endpoint | Purpose | Operator | CLI |
+|--------|----------|---------|----------|-----|
+| GET | `/v1/sites/{siteId}/wifi/broadcasts` | List WiFi broadcasts (overview) | `client.ListWifiBroadcasts` | `snapshot wifi` |
+| POST | `/v1/sites/{siteId}/wifi/broadcasts` | Create a WiFi broadcast | `client.CreateWifiBroadcast` | — |
+| GET | `/v1/sites/{siteId}/wifi/broadcasts/{broadcastId}` | Read one WiFi broadcast | `client.GetWifiBroadcast` | `snapshot wifi` |
+| PUT | `/v1/sites/{siteId}/wifi/broadcasts/{broadcastId}` | Update a WiFi broadcast | `client.UpdateWifiBroadcast` | — |
+| DELETE | `/v1/sites/{siteId}/wifi/broadcasts/{broadcastId}` | Delete a WiFi broadcast | `client.DeleteWifiBroadcast` | — |
+
+The list endpoint (`WiFi broadcast overview page`) returns only a broadcast's overview fields; the
+variant configuration — the `STANDARD`/`IOT_OPTIMIZED` options and every nested tree — is returned
+only by the detail endpoint `GET /v1/sites/{siteId}/wifi/broadcasts/{broadcastId}`
+(`WiFi broadcast details`). `snapshot wifi` reads the detail endpoint to emit a faithful
+`UnifiWifiBroadcast`.
+
+Personal security passphrases (`passphrase`, `presharedKeys[].passphrase`) are inline in the
+upstream API, but the CR carries them as same-namespace `Secret` key selectors, never inline; the
+controller reads each passphrase at reconcile time and never records it in `status`. See
+[Security](security.md) and [CRD conventions](crd-conventions.md).
+
 > The rows above are the consumed surface for the implemented kinds (`UnifiController`,
-> `UnifiSite`, `UnifiNetwork`, `UnifiFirewallZone`) plus the read-only device-tag selector. The
-> frozen v10.4.57 document also exposes devices, clients, WiFi broadcasts, firewall policies, ACL
-> rules, DNS policies, traffic matching lists, switching, VPN, and RADIUS; a row is added here when
-> each kind is implemented. The authoritative full endpoint list is the upstream
+> `UnifiSite`, `UnifiNetwork`, `UnifiFirewallZone`, `UnifiWifiBroadcast`) plus the read-only
+> device-tag selector. The frozen v10.4.57 document also exposes devices, clients, firewall
+> policies, ACL rules, DNS policies, traffic matching lists, switching, VPN, and RADIUS; a row is
+> added here when each kind is implemented. The authoritative full endpoint list is the upstream
 > [llms.txt](https://developer.ui.com/network/v10.4.57/llms.txt) and
 > [openapi.json](https://developer.ui.com/network/v10.4.57/openapi.json).
 

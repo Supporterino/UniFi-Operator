@@ -82,7 +82,7 @@ func TestListDeviceTagsUnauthorizedFailsClosed(t *testing.T) {
 	if apiErr.StatusCode != http.StatusUnauthorized {
 		t.Errorf("StatusCode = %d, want 401", apiErr.StatusCode)
 	}
-	if apiErr.Message != "Missing credentials" || apiErr.RequestID != "3fa85f64-5717-4562-b3fc-2c963f66afa6" {
+	if apiErr.Message != testMissingCredentials || apiErr.RequestID != "3fa85f64-5717-4562-b3fc-2c963f66afa6" {
 		t.Errorf("unexpected api error: %+v", apiErr)
 	}
 	if apiErr.Retryable() {

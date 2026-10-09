@@ -1,0 +1,29 @@
+{{- if .Values.rbac.create }}
+# This rule is not used by the operator itself. It grants create/update/delete
+# over unifi.supporterino.de without the ability to manage RBAC.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "unifi-operator.fullname" . }}-unifiwifibroadcast-editor-role
+  labels:
+    {{- include "unifi-operator.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifiwifibroadcasts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifiwifibroadcasts/status
+  verbs:
+  - get
+{{- end }}

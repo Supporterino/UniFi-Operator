@@ -27,6 +27,7 @@ rules:
   - unififirewallzones/status
   - unifinetworks/status
   - unifisites/status
+  - unifiwifibroadcasts/status
   verbs:
   - get
   - patch
@@ -36,6 +37,7 @@ rules:
   resources:
   - unififirewallzones
   - unifinetworks
+  - unifiwifibroadcasts
   verbs:
   - delete
   - get

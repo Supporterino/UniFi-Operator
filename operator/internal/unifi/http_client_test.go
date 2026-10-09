@@ -17,8 +17,9 @@ const (
 	testNetworkID = "1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d"
 	testAPIKey    = "test-api-key"
 
-	testNetworkName   = "lan"
-	testHostIPAddress = "10.0.0.1"
+	testNetworkName        = "lan"
+	testHostIPAddress      = "10.0.0.1"
+	testMissingCredentials = "Missing credentials"
 )
 
 func newTestClient(t *testing.T, handler http.Handler) *HTTPClient {
@@ -437,7 +438,7 @@ func TestAPIErrorParsesFlatBody(t *testing.T) {
 	if apiErr.StatusName != "UNAUTHORIZED" || apiErr.Code != "api.authentication.missing-credentials" {
 		t.Errorf("unexpected api error: %+v", apiErr)
 	}
-	if apiErr.Message != "Missing credentials" || apiErr.RequestID != "3fa85f64-5717-4562-b3fc-2c963f66afa6" {
+	if apiErr.Message != testMissingCredentials || apiErr.RequestID != "3fa85f64-5717-4562-b3fc-2c963f66afa6" {
 		t.Errorf("unexpected api error: %+v", apiErr)
 	}
 	if apiErr.RequestPath != "/integration/v1/sites/123" || apiErr.Timestamp == "" {

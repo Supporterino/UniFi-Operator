@@ -55,6 +55,9 @@ const (
 	// reasonSiteRefNotFound marks a UnifiNetwork whose spec.siteRef does not
 	// resolve to a UnifiSite (absent, or being deleted).
 	reasonSiteRefNotFound = "SiteRefNotFound"
+	// reasonNetworkRefNotFound marks a UnifiWifiBroadcast whose spec.networkRef
+	// does not resolve to a UnifiNetwork (absent, or being deleted).
+	reasonNetworkRefNotFound = "NetworkRefNotFound"
 	// reasonSiteNotAdopted marks a UnifiNetwork whose UnifiSite has not yet
 	// adopted an upstream site (status.siteID is empty).
 	reasonSiteNotAdopted = "SiteNotAdopted"
@@ -91,6 +94,11 @@ const (
 	// UnifiNetwork belonging to a different site. A network can only be a member
 	// of a zone on its own site, so no membership is written (design D3).
 	reasonCrossSiteReference = "CrossSiteReference"
+	// reasonRadiusProfileUnsupported marks a UnifiWifiBroadcast whose security
+	// configuration references a UnifiRadiusProfile. The kind is not yet
+	// implemented, so the controller fails closed and does not mutate the
+	// upstream broadcast (design D4).
+	reasonRadiusProfileUnsupported = "RadiusProfileUnsupported"
 )
 
 // maxStatusMessageLen caps how much controller-provided text is copied into a

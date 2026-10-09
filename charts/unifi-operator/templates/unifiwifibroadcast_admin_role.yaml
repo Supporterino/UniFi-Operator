@@ -1,0 +1,23 @@
+{{- if .Values.rbac.create }}
+# This rule is not used by the operator itself. It is provided to allow a
+# cluster admin to delegate full permissions over unifi.supporterino.de.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "unifi-operator.fullname" . }}-unifiwifibroadcast-admin-role
+  labels:
+    {{- include "unifi-operator.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifiwifibroadcasts
+  verbs:
+  - '*'
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifiwifibroadcasts/status
+  verbs:
+  - get
+{{- end }}

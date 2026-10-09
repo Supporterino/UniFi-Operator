@@ -58,6 +58,7 @@ foundation is:
 | `UnifiSite` | Adopts an existing upstream site by name (`spec.internalReference`) and points at its controller (`spec.controllerRef`). It is the ownership-root anchor and never creates or deletes upstream sites. |
 | `UnifiNetwork` | A network on Integration v1, discriminated by `spec.management` (`GATEWAY`/`SWITCH`/`UNMANAGED`); it points at its site through `spec.siteRef`. A `SWITCH` network binds its managing device through a name-based `spec.switch.deviceTag` selector, never a raw device UUID. |
 | `UnifiFirewallZone` | A firewall zone on the site; it points at its site through `spec.siteRef` and declares member networks through `spec.networkRefs`. It is the single writer of upstream zone network membership. |
+| `UnifiWifiBroadcast` | A WiFi broadcast (SSID) on Integration v1, discriminated by `spec.type` (`STANDARD`/`IOT_OPTIMIZED`); it references its owning `UnifiNetwork` through `spec.networkRef` and resolves the site transitively. Personal passphrases are `Secret` references and enterprise security references a `UnifiRadiusProfile`. |
 
 References are name-only and resolve in the same namespace:
 
@@ -65,6 +66,7 @@ References are name-only and resolve in the same namespace:
 UnifiNetwork.spec.siteRef ──▶ UnifiSite.spec.controllerRef ──▶ UnifiController
 UnifiFirewallZone.spec.siteRef ──▶ UnifiSite
 UnifiFirewallZone.spec.networkRefs ──▶ UnifiNetwork
+UnifiWifiBroadcast.spec.networkRef ──▶ UnifiNetwork ──▶ UnifiSite ──▶ UnifiController
 ```
 
 The full reference and ownership contract — including the rationale for name-only,
@@ -88,6 +90,27 @@ controller is generated for it. An unknown tag, or a tag that does not resolve t
 device, fails closed. A zone membership write re-reconciles the affected networks, which report
 the resolved zone in `UnifiNetwork.status.zoneID`.
 
+### WiFi broadcast references and fail-closed dependencies
+
+`UnifiWifiBroadcast` references its owning `UnifiNetwork` through `spec.networkRef` (name-only,
+same namespace) and resolves the site **transitively** — `networkRef` → `UnifiNetwork.spec.siteRef`
+→ `UnifiSite.spec.controllerRef` — so the broadcast carries no `siteRef` of its own. It is owned
+by the network, not the site. Raw upstream identifiers are replaced by references rather than
+exposed in `spec`:
+
+- **Device scope** uses `spec.deviceTags`, name-based `DeviceTagSelector` entries resolved against
+  the read-only device-tags list; the raw `DEVICES` (`deviceIds`) filter is not exposed. An
+  unknown or ambiguous tag fails closed.
+- **Personal passphrases** (`passphrase`, `presharedKeys[].passphrase`) are same-namespace
+  `Secret` key selectors, never inline. The controller reads each `Secret` through the uncached
+  `APIReader` and never records the value in `status`; a missing secret or key fails closed.
+- **Enterprise security** (`WPA2`/`WPA3` enterprise variants) references its RADIUS profile
+  through `spec.securityConfiguration.<variant>.radiusConfiguration.radiusProfileRef` (for example
+  `spec.securityConfiguration.wpa2Enterprise.radiusConfiguration.radiusProfileRef`) to a
+  `UnifiRadiusProfile`, never the opaque profile UUID. Because `UnifiRadiusProfile` has no Go type
+  yet, an enterprise broadcast fails closed (`Ready=False`) with no upstream mutation until that
+  kind lands.
+
 ### Ownership tree
 
 Ownership is a tree rooted at the `UnifiSite`:
@@ -97,6 +120,13 @@ Ownership is a tree rooted at the `UnifiSite`:
   broadcast references (and is owned by) its network, not the site.
 - The site carries a **finalizer that drains its owned children before the site is removed**, so
   a child finalizer can still resolve `spec.siteRef` to reach the controller.
+
+The drain is recursive and uses one shared helper (`drainOwnedChildren`): a parent lists exactly
+the child kinds it owns, initiates their deletion, and keeps its finalizer until none remain. A
+`UnifiSite` drains its `UnifiNetwork` and `UnifiFirewallZone` children; a `UnifiNetwork` drains
+the `UnifiWifiBroadcast` children it owns; the site finalizer is removed last so each child's
+reference chain stays resolvable while its own finalizer deletes upstream state. The unwind is
+`UnifiSite` → `UnifiNetwork` → `UnifiWifiBroadcast`.
 
 See [CRD conventions](crd-conventions.md#ownership-follows-the-strongest-reference) for the
 ownership rules in full.
@@ -117,12 +147,13 @@ The endpoint → operator method → CLI map is [UniFi API contract](unifi-api.m
 
 ### Implemented vs designed kinds
 
-The implemented kinds are `UnifiController`, `UnifiSite`, `UnifiNetwork`, and
-`UnifiFirewallZone` — API types, generated CRD manifests, the Integration v1 client, and
-reconcilers. The remaining declarative kinds (WiFi broadcasts, firewall policies/ordering, ACL
-rules/ordering, DNS policies, traffic matching lists, switching kinds, VPN, and RADIUS profiles)
-are **designed as contracts only**: they have no Go types or CRD manifests yet and are
-implemented by later changes. Treat those designs as intent, not as a shipped surface.
+The implemented kinds are `UnifiController`, `UnifiSite`, `UnifiNetwork`,
+`UnifiFirewallZone`, and `UnifiWifiBroadcast` — API types, generated CRD manifests, the
+Integration v1 client, and reconcilers. The remaining declarative kinds (firewall
+policies/ordering, ACL rules/ordering, DNS policies, traffic matching lists, switching kinds, VPN,
+and RADIUS profiles) are **designed as contracts only**: they have no Go types or CRD manifests
+yet and are implemented by later changes. Treat those designs as intent, not as a shipped
+surface.
 
 Device tags are not a kind at all: the upstream surface is read-only, so **no `UnifiDeviceTag`
 Custom Resource is generated**. Consumers select devices through the name-based device-tag

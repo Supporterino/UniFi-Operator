@@ -31,13 +31,18 @@ const (
 	fixtureDeviceID       = "aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
 	fixtureSiteID         = "5f3a2b1c-9d8e-4f6a-8b4c-3d2e1f0a9b8c"
 	fixtureBranchSiteID   = "6a4b3c2d-0e9f-4a7b-9c8d-4e3f2a1b0c9d"
+
+	fixtureBroadcastIDOne   = "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"
+	fixtureBroadcastIDTwo   = "d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60"
+	fixtureBroadcastIDThree = "e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6071"
 )
 
 const (
-	pathSites         = "/proxy/network/integration/v1/sites"
-	pathNetworks      = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/networks"
-	pathDeviceTags    = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/device-tags"
-	pathFirewallZones = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/firewall/zones"
+	pathSites          = "/proxy/network/integration/v1/sites"
+	pathNetworks       = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/networks"
+	pathDeviceTags     = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/device-tags"
+	pathFirewallZones  = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/firewall/zones"
+	pathWifiBroadcasts = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/wifi/broadcasts"
 )
 
 func readFixture(t *testing.T, name string) []byte {
@@ -70,7 +75,13 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 	networks := readFixture(t, "networks.json")
 	deviceTags := readFixture(t, "device-tags.json")
 	firewallZones := readFixture(t, "firewall-zones.json")
+	wifiBroadcasts := readFixture(t, "wifi-broadcasts.json")
 	details := networkDetailFixtures(t)
+	wifiDetails := map[string][]byte{
+		fixtureBroadcastIDOne:   readFixture(t, "wifi-broadcast-corp.json"),
+		fixtureBroadcastIDTwo:   readFixture(t, "wifi-broadcast-iot.json"),
+		fixtureBroadcastIDThree: readFixture(t, "wifi-broadcast-guest.json"),
+	}
 	emptyPage := []byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,8 +95,18 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write(deviceTags)
 		case r.URL.Path == pathFirewallZones:
 			_, _ = w.Write(firewallZones)
+		case r.URL.Path == pathWifiBroadcasts:
+			_, _ = w.Write(wifiBroadcasts)
 		case r.URL.Path == "/proxy/network/integration/v1/sites/"+fixtureBranchSiteID+"/networks":
 			_, _ = w.Write(emptyPage)
+		case strings.HasPrefix(r.URL.Path, pathWifiBroadcasts+"/"):
+			id := strings.TrimPrefix(r.URL.Path, pathWifiBroadcasts+"/")
+			detail, ok := wifiDetails[id]
+			if !ok {
+				http.Error(w, "unknown wifi broadcast "+id, http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write(detail)
 		case strings.HasPrefix(r.URL.Path, pathNetworks+"/"):
 			id := strings.TrimPrefix(r.URL.Path, pathNetworks+"/")
 			detail, ok := details[id]
@@ -150,6 +171,45 @@ func TestSnapshotFirewallZonesGolden(t *testing.T) {
 	compareGolden(t, "firewall-zones.golden.yaml", out)
 }
 
+func TestSnapshotWifiGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "wifi", "--controller", srv.URL)
+	compareGolden(t, "wifi.golden.yaml", out)
+}
+
+// TestSnapshotWifiRecordsIDInStatusOnly checks the golden rule: the upstream broadcast id
+// and network UUID never reach spec, and the id is carried in status for correlation.
+func TestSnapshotWifiRecordsIDInStatusOnly(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "wifi", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 3 {
+		t.Fatalf("got %d wifi broadcasts, want 3", len(docs))
+	}
+	for _, doc := range docs {
+		if doc.Kind != "UnifiWifiBroadcast" {
+			t.Fatalf("kind = %q, want UnifiWifiBroadcast", doc.Kind)
+		}
+		if asString(doc.Status["wifiBroadcastID"]) == "" {
+			t.Errorf("%s status.wifiBroadcastID is empty, want the upstream id", doc.Metadata.Name)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixtureBroadcastIDOne, fixtureBroadcastIDTwo, fixtureBroadcastIDThree,
+			fixtureNetworkIDOne, fixtureNetworkIDTwo, fixtureNetworkIDThree,
+			`"networkId"`, `"_id"`, "9e7d6c5b-4a3f-4210-9d8e-7c6b5a493827",
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s spec leaks %q: %s", doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
+	}
+}
+
 func TestSnapshotDeviceTagsListing(t *testing.T) {
 	srv := newFixtureServer(t)
 	out, _ := runSnapshot(t, "device-tags", "--controller", srv.URL)
@@ -205,8 +265,8 @@ func TestSnapshotSpecHasNoOpaqueID(t *testing.T) {
 	}
 
 	docs := parseEmittedCRs(t, out)
-	if len(docs) != 6 {
-		t.Fatalf("got %d emitted CRs, want 6 (controller + 2 sites + 3 networks)", len(docs))
+	if len(docs) != 9 {
+		t.Fatalf("got %d emitted CRs, want 9 (controller + 2 sites + 3 networks + 3 wifi broadcasts)", len(docs))
 	}
 	for _, doc := range docs {
 		if doc.APIVersion != "unifi.supporterino.de/v1alpha1" {
@@ -360,8 +420,8 @@ func TestSnapshotWritesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read output dir: %v", err)
 	}
-	if len(entries) != 6 {
-		t.Fatalf("got %d files, want 6 (controller + 2 sites + 3 networks)", len(entries))
+	if len(entries) != 9 {
+		t.Fatalf("got %d files, want 9 (controller + 2 sites + 3 networks + 3 wifi broadcasts)", len(entries))
 	}
 	for _, entry := range entries {
 		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
@@ -529,6 +589,8 @@ func apiKeyHandler(keyCh chan<- string) http.Handler {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/sites"):
 			_, _ = w.Write([]byte(`{"count":1,"data":[{"id":"site-1","internalReference":"default","name":"Default"}],"limit":200,"offset":0,"totalCount":1}`))
+		case strings.HasSuffix(r.URL.Path, "/wifi/broadcasts"):
+			_, _ = w.Write([]byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`))
 		case strings.HasSuffix(r.URL.Path, "/networks"):
 			_, _ = w.Write([]byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`))
 		default:
@@ -668,7 +730,8 @@ type emittedCR struct {
 		Name        string            `json:"name"`
 		Annotations map[string]string `json:"annotations"`
 	} `json:"metadata"`
-	Spec map[string]any `json:"spec"`
+	Spec   map[string]any `json:"spec"`
+	Status map[string]any `json:"status"`
 }
 
 func parseEmittedCRs(t *testing.T, stream string) []emittedCR {

@@ -1,0 +1,1626 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: unifiwifibroadcasts.unifi.supporterino.de
+spec:
+  group: unifi.supporterino.de
+  names:
+    kind: UnifiWifiBroadcast
+    listKind: UnifiWifiBroadcastList
+    plural: unifiwifibroadcasts
+    singular: unifiwifibroadcast
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .spec.name
+      name: Name
+      type: string
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.networkRef.name
+      name: Network
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: UnifiWifiBroadcast is the Schema for the unifiwifibroadcasts
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of UnifiWifiBroadcast
+            properties:
+              basicDataRateKbpsByFrequencyGHz:
+                description: |-
+                  BasicDataRateKbpsByFrequencyGHz sets the minimum basic data rates per
+                  frequency band in kbps.
+                properties:
+                  "2.4":
+                    description: GHz2_4 is the 2.4 GHz minimum basic data rate in
+                      kbps.
+                    enum:
+                    - 1000
+                    - 2000
+                    - 5500
+                    - 6000
+                    - 9000
+                    - 11000
+                    - 12000
+                    - 24000
+                    format: int32
+                    type: integer
+                  "5":
+                    description: GHz5 is the 5 GHz minimum basic data rate in kbps.
+                    enum:
+                    - 6000
+                    - 9000
+                    - 12000
+                    - 24000
+                    format: int32
+                    type: integer
+                required:
+                - "2.4"
+                - "5"
+                type: object
+              blackoutScheduleConfiguration:
+                description: |-
+                  BlackoutScheduleConfiguration disables the broadcast during scheduled
+                  periods.
+                properties:
+                  days:
+                    description: Days lists the blackout windows per day.
+                    items:
+                      description: |-
+                        WifiBlackoutScheduleDay is the discriminated blackout window for a single
+                        day (ALL_DAY or TIME_RANGE).
+                      properties:
+                        day:
+                          description: Day is the day of week the window applies to.
+                          enum:
+                          - SUN
+                          - MON
+                          - TUE
+                          - WED
+                          - THU
+                          - FRI
+                          - SAT
+                          type: string
+                        timeRanges:
+                          description: TimeRanges lists the blackout windows. Required
+                            for type TIME_RANGE.
+                          items:
+                            description: WifiBlackoutTimeRange is a start/end blackout
+                              window in 24-hour HH:mm format.
+                            properties:
+                              endTime:
+                                description: EndTime is the window end in HH:mm format.
+                                pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+                                type: string
+                              startTime:
+                                description: StartTime is the window start in HH:mm
+                                  format.
+                                pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+                                type: string
+                            required:
+                            - endTime
+                            - startTime
+                            type: object
+                          minItems: 1
+                          type: array
+                        type:
+                          description: Type is the blackout discriminator (ALL_DAY
+                            or TIME_RANGE).
+                          enum:
+                          - ALL_DAY
+                          - TIME_RANGE
+                          type: string
+                      required:
+                      - day
+                      - type
+                      type: object
+                      x-kubernetes-validations:
+                      - message: timeRanges require type TIME_RANGE
+                        rule: 'self.type == ''TIME_RANGE'' ? has(self.timeRanges)
+                          : !has(self.timeRanges)'
+                    minItems: 1
+                    type: array
+                required:
+                - days
+                type: object
+              channel2gLockedTo6:
+                default: false
+                description: |-
+                  Channel2gLockedTo6 locks the 2.4 GHz radio channel to 6 on all
+                  broadcasting devices.
+                type: boolean
+              clientFilteringPolicy:
+                description: ClientFilteringPolicy allow- or block-lists client MAC
+                  addresses.
+                properties:
+                  action:
+                    description: Action is the filtering policy action (ALLOW or BLOCK).
+                    enum:
+                    - ALLOW
+                    - BLOCK
+                    type: string
+                  macAddressFilter:
+                    description: |-
+                      MacAddressFilter is the list of client MAC addresses the policy applies
+                      to. It may be empty.
+                    items:
+                      type: string
+                    maxItems: 512
+                    type: array
+                required:
+                - action
+                - macAddressFilter
+                type: object
+              clientIsolationEnabled:
+                description: ClientIsolationEnabled isolates clients on this broadcast
+                  from each other.
+                type: boolean
+              deviceTags:
+                description: |-
+                  DeviceTags scopes the broadcast to the devices carrying the named tags.
+                  Omitting it broadcasts on all AP-capable devices. The raw upstream
+                  DEVICES filter is not exposed.
+                items:
+                  description: |-
+                    DeviceTagSelector selects an existing upstream device tag by its
+                    human-readable name (GET /v1/sites/{siteId}/device-tags). Device tags are
+                    read-only upstream, so there is no device-tag Custom Resource and no opaque
+                    tag or device identifier in spec. The controller resolves the name through
+                    the read-only tag list at reconcile time; a name that resolves to zero or
+                    more than one device fails closed.
+                  properties:
+                    name:
+                      description: Name is the human-readable device-tag name.
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+              dtimPeriod2gLockedTo3:
+                default: false
+                description: DtimPeriod2gLockedTo3 locks the DTIM period to 3 for
+                  the 2.4 GHz radio.
+                type: boolean
+              enabled:
+                default: true
+                description: Enabled controls whether the broadcast is enabled.
+                type: boolean
+              hideName:
+                description: HideName controls whether the SSID is hidden from scans.
+                type: boolean
+              iotOptimized:
+                description: |-
+                  IotOptimized holds the IOT_OPTIMIZED variant fields. It is required for
+                  type IOT_OPTIMIZED and forbidden otherwise (CEL). The v10.4.57 union
+                  defines no IOT-only properties, so the variant is an empty marker object.
+                type: object
+              mdnsProxyConfiguration:
+                description: MDNSProxyConfiguration configures mDNS traffic forwarding.
+                properties:
+                  mode:
+                    description: Mode is the mDNS discriminator (AUTO or CUSTOM).
+                    enum:
+                    - AUTO
+                    - CUSTOM
+                    type: string
+                  policies:
+                    description: Policies lists the mDNS proxy policies. Required
+                      for mode CUSTOM.
+                    items:
+                      description: |-
+                        WifiMDNSProxyPolicy is the discriminated mDNS proxy policy (ALLOW or BLOCK).
+                        The bridging network and service filter are only valid for ALLOW.
+                      properties:
+                        action:
+                          description: Action is the proxy policy action (ALLOW or
+                            BLOCK).
+                          enum:
+                          - ALLOW
+                          - BLOCK
+                          type: string
+                        bridgingNetworkIds:
+                          description: |-
+                            BridgingNetworkRefs lists the UnifiNetwork resources whose mDNS traffic
+                            is bridged. Only valid for action ALLOW.
+                          items:
+                            description: |-
+                              CoreRef is a reference to another Custom Resource by Kubernetes name.
+
+                              References are deliberately name-only and same-namespace: a reference never
+                              exposes a namespace field because a cross-namespace object cannot be an
+                              ownerReference, and same-namespace resolution keeps RBAC to namespaced Roles.
+                              See docs/crd-conventions.md for the reference and ownership model.
+                            properties:
+                              name:
+                                description: |-
+                                  Name is the name of the referenced object in the referencing object's
+                                  namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          minItems: 1
+                          type: array
+                        deviceTags:
+                          description: |-
+                            DeviceTags scopes the policy to devices carrying the named tags. Omitting
+                            it applies the policy to all AP-capable devices.
+                          items:
+                            description: |-
+                              DeviceTagSelector selects an existing upstream device tag by its
+                              human-readable name (GET /v1/sites/{siteId}/device-tags). Device tags are
+                              read-only upstream, so there is no device-tag Custom Resource and no opaque
+                              tag or device identifier in spec. The controller resolves the name through
+                              the read-only tag list at reconcile time; a name that resolves to zero or
+                              more than one device fails closed.
+                            properties:
+                              name:
+                                description: Name is the human-readable device-tag
+                                  name.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          minItems: 1
+                          type: array
+                        serviceFilter:
+                          description: |-
+                            ServiceFilter lists the mDNS services the policy applies to. Only valid
+                            for action ALLOW.
+                          items:
+                            description: WifiMDNSService is the discriminated mDNS
+                              service (CUSTOM or PREDEFINED).
+                            properties:
+                              custom:
+                                description: Custom is the user-defined service. Required
+                                  for type CUSTOM.
+                                properties:
+                                  name:
+                                    description: Name is the mDNS service name.
+                                    minLength: 1
+                                    type: string
+                                  typeDomain:
+                                    description: TypeDomain is the mDNS service type
+                                      domain (for example _http._tcp).
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - name
+                                - typeDomain
+                                type: object
+                              predefined:
+                                description: Predefined is the built-in service. Required
+                                  for type PREDEFINED.
+                                properties:
+                                  name:
+                                    description: Name is the built-in service identifier.
+                                    enum:
+                                    - AMAZON_DEVICES
+                                    - ANDROID_TV_REMOTE
+                                    - APPLE_AIR_DROP
+                                    - APPLE_AIR_PLAY
+                                    - APPLE_FILE_SHARING
+                                    - APPLE_ICHAT
+                                    - APPLE_ITUNES
+                                    - AQARA
+                                    - BOSE
+                                    - DNS_SERVICE_DISCOVERY
+                                    - FTP_SERVERS
+                                    - GOOGLE_CHROMECAST
+                                    - HOMEKIT
+                                    - MATTER_NETWORK
+                                    - PHILIPS_HUE
+                                    - PRINTERS
+                                    - ROKU
+                                    - SCANNERS
+                                    - SONOS
+                                    - SPOTIFY_CONNECT
+                                    - SSH_SERVERS
+                                    - TIME_CAPSULE
+                                    - WEB_SERVERS
+                                    - WINDOWS_FILE_SHARING_SAMBA
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type:
+                                description: Type is the service discriminator (CUSTOM
+                                  or PREDEFINED).
+                                enum:
+                                - CUSTOM
+                                - PREDEFINED
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: custom fields require type CUSTOM
+                              rule: 'self.type == ''CUSTOM'' ? has(self.custom) :
+                                !has(self.custom)'
+                            - message: predefined fields require type PREDEFINED
+                              rule: 'self.type == ''PREDEFINED'' ? has(self.predefined)
+                                : !has(self.predefined)'
+                          minItems: 1
+                          type: array
+                      required:
+                      - action
+                      type: object
+                      x-kubernetes-validations:
+                      - message: bridgingNetworkIds and serviceFilter require action
+                          ALLOW
+                        rule: 'self.action == ''ALLOW'' ? true : (!has(self.bridgingNetworkIds)
+                          && !has(self.serviceFilter))'
+                    minItems: 1
+                    type: array
+                required:
+                - mode
+                type: object
+                x-kubernetes-validations:
+                - message: policies require mode CUSTOM
+                  rule: 'self.mode == ''CUSTOM'' ? has(self.policies) : !has(self.policies)'
+              multicastFilteringPolicy:
+                description: MulticastFilteringPolicy configures multicast filtering.
+                properties:
+                  action:
+                    description: Action is the filtering policy action (ALLOW or BLOCK).
+                    enum:
+                    - ALLOW
+                    - BLOCK
+                    type: string
+                  sourceMacAddressFilter:
+                    description: |-
+                      SourceMacAddressFilter lists the allowed multicast source MAC addresses.
+                      Only valid for action ALLOW.
+                    items:
+                      type: string
+                    maxItems: 256
+                    type: array
+                required:
+                - action
+                type: object
+                x-kubernetes-validations:
+                - message: sourceMacAddressFilter requires action ALLOW
+                  rule: 'self.action == ''ALLOW'' ? true : !has(self.sourceMacAddressFilter)'
+              multicastToUnicastConversionEnabled:
+                description: MulticastToUnicastConversionEnabled converts multicast
+                  traffic to unicast.
+                type: boolean
+              name:
+                description: Name is the human-readable broadcast (SSID) name.
+                minLength: 1
+                type: string
+              networkRef:
+                description: |-
+                  NetworkRef references the UnifiNetwork that owns this broadcast. The
+                  reference resolves in the same namespace and determines both the
+                  ownerReference and the upstream network. It is immutable: re-pointing a
+                  broadcast to another network is delete-and-recreate.
+                properties:
+                  name:
+                    description: |-
+                      Name is the name of the referenced object in the referencing object's
+                      namespace.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: networkRef is immutable
+                  rule: self == oldSelf
+              securityConfiguration:
+                description: SecurityConfiguration is the security variant for this
+                  broadcast.
+                properties:
+                  open:
+                    description: Open is the OPEN variant. Required for type OPEN.
+                    properties:
+                      encryption:
+                        description: Encryption is the open-security encryption mode.
+                          Omit for plain open.
+                        enum:
+                        - ENHANCED_OPEN
+                        - ENHANCED_OPEN_WITH_TRANSITION
+                        type: string
+                      radiusConfiguration:
+                        description: RadiusConfiguration configures RADIUS for this
+                          variant.
+                        properties:
+                          macAuthenticationConfiguration:
+                            description: MACAuthenticationConfiguration configures
+                              RADIUS MAC authentication.
+                            properties:
+                              macAddressFormat:
+                                description: |-
+                                  MacAddressFormat is the MAC address format presented to the RADIUS
+                                  server.
+                                enum:
+                                - UPPERCASE_NOT_SEPARATED
+                                - UPPERCASE_DASH_SEPARATED
+                                - UPPERCASE_COLON_SEPARATED
+                                - LOWERCASE_NOT_SEPARATED
+                                - LOWERCASE_COLON_SEPARATED
+                                - LOWERCASE_DASH_SEPARATED
+                                type: string
+                            required:
+                            - macAddressFormat
+                            type: object
+                          nasId:
+                            description: NasID configures the RADIUS NAS-Identifier.
+                            properties:
+                              source:
+                                description: Source is the derived NAS-ID source.
+                                  Required for type DERIVED.
+                                enum:
+                                - DEVICE_MAC_ADDRESS
+                                - DEVICE_NAME
+                                - SITE_NAME
+                                - BSSID
+                                type: string
+                              type:
+                                description: Type is the NAS-ID discriminator (DERIVED
+                                  or USER_DEFINED).
+                                enum:
+                                - DERIVED
+                                - USER_DEFINED
+                                type: string
+                              value:
+                                description: |-
+                                  Value is the user-defined NAS-Identifier. Required for type
+                                  USER_DEFINED.
+                                minLength: 1
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: source requires type DERIVED
+                              rule: 'self.type == ''DERIVED'' ? has(self.source) :
+                                !has(self.source)'
+                            - message: value requires type USER_DEFINED
+                              rule: 'self.type == ''USER_DEFINED'' ? has(self.value)
+                                : !has(self.value)'
+                          radiusProfileRef:
+                            description: |-
+                              RadiusProfileRef references the UnifiRadiusProfile to authenticate
+                              against.
+                            properties:
+                              name:
+                                description: |-
+                                  Name is the name of the referenced object in the referencing object's
+                                  namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - macAuthenticationConfiguration
+                        - nasId
+                        - radiusProfileRef
+                        type: object
+                    type: object
+                  type:
+                    description: Type is the security discriminator.
+                    enum:
+                    - OPEN
+                    - WPA2_PERSONAL
+                    - WPA2_WPA3_PERSONAL
+                    - WPA3_PERSONAL
+                    - WPA2_ENTERPRISE
+                    - WPA2_WPA3_ENTERPRISE
+                    - WPA3_ENTERPRISE
+                    type: string
+                  wpa2Enterprise:
+                    description: |-
+                      WPA2Enterprise is the WPA2_ENTERPRISE variant. Required for type
+                      WPA2_ENTERPRISE.
+                    properties:
+                      coaEnabled:
+                        description: CoaEnabled enables Change of Authorization (CoA).
+                        type: boolean
+                      fastRoamingEnabled:
+                        description: FastRoamingEnabled enables fast roaming (802.11r).
+                        type: boolean
+                      groupRekeyIntervalSeconds:
+                        description: GroupRekeyIntervalSeconds is the group rekey
+                          interval. Omit to disable.
+                        format: int32
+                        maximum: 86400
+                        minimum: 1
+                        type: integer
+                      pmfMode:
+                        description: PmfMode is the Protected Management Frames mode.
+                        enum:
+                        - REQUIRED
+                        - OPTIONAL
+                        type: string
+                      radiusConfiguration:
+                        description: RadiusConfiguration configures the enterprise
+                          RADIUS profile.
+                        properties:
+                          macAuthenticationConfiguration:
+                            description: MACAuthenticationConfiguration configures
+                              RADIUS MAC authentication.
+                            properties:
+                              macAddressFormat:
+                                description: |-
+                                  MacAddressFormat is the MAC address format presented to the RADIUS
+                                  server.
+                                enum:
+                                - UPPERCASE_NOT_SEPARATED
+                                - UPPERCASE_DASH_SEPARATED
+                                - UPPERCASE_COLON_SEPARATED
+                                - LOWERCASE_NOT_SEPARATED
+                                - LOWERCASE_COLON_SEPARATED
+                                - LOWERCASE_DASH_SEPARATED
+                                type: string
+                            required:
+                            - macAddressFormat
+                            type: object
+                          nasId:
+                            description: NasID configures the RADIUS NAS-Identifier.
+                            properties:
+                              source:
+                                description: Source is the derived NAS-ID source.
+                                  Required for type DERIVED.
+                                enum:
+                                - DEVICE_MAC_ADDRESS
+                                - DEVICE_NAME
+                                - SITE_NAME
+                                - BSSID
+                                type: string
+                              type:
+                                description: Type is the NAS-ID discriminator (DERIVED
+                                  or USER_DEFINED).
+                                enum:
+                                - DERIVED
+                                - USER_DEFINED
+                                type: string
+                              value:
+                                description: |-
+                                  Value is the user-defined NAS-Identifier. Required for type
+                                  USER_DEFINED.
+                                minLength: 1
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: source requires type DERIVED
+                              rule: 'self.type == ''DERIVED'' ? has(self.source) :
+                                !has(self.source)'
+                            - message: value requires type USER_DEFINED
+                              rule: 'self.type == ''USER_DEFINED'' ? has(self.value)
+                                : !has(self.value)'
+                          radiusProfileRef:
+                            description: |-
+                              RadiusProfileRef references the UnifiRadiusProfile to authenticate
+                              against.
+                            properties:
+                              name:
+                                description: |-
+                                  Name is the name of the referenced object in the referencing object's
+                                  namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - nasId
+                        - radiusProfileRef
+                        type: object
+                    required:
+                    - coaEnabled
+                    - radiusConfiguration
+                    type: object
+                  wpa2Personal:
+                    description: |-
+                      WPA2Personal is the WPA2_PERSONAL variant. Required for type
+                      WPA2_PERSONAL.
+                    properties:
+                      fastRoamingEnabled:
+                        description: FastRoamingEnabled enables fast roaming (802.11r).
+                        type: boolean
+                      groupRekeyIntervalSeconds:
+                        description: GroupRekeyIntervalSeconds is the group rekey
+                          interval. Omit to disable.
+                        format: int32
+                        maximum: 86400
+                        minimum: 1
+                        type: integer
+                      passphrase:
+                        description: Passphrase references the Secret key holding
+                          the network passphrase.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      pmfMode:
+                        description: PmfMode is the Protected Management Frames mode.
+                        enum:
+                        - REQUIRED
+                        - OPTIONAL
+                        type: string
+                      presharedKeys:
+                        description: PresharedKeys lists per-network preshared keys.
+                        items:
+                          description: |-
+                            WifiPresharedKey is a per-network preshared key. The passphrase is a Secret
+                            reference and the network is a UnifiNetwork reference.
+                          properties:
+                            network:
+                              description: Network references the UnifiNetwork the
+                                preshared key applies to.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name is the name of the referenced object in the referencing object's
+                                    namespace.
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            passphrase:
+                              description: Passphrase references the Secret key holding
+                                the preshared key.
+                              properties:
+                                key:
+                                  description: The key of the secret to select from.  Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                                optional:
+                                  description: Specify whether the Secret or its key
+                                    must be defined
+                                  type: boolean
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                          required:
+                          - network
+                          - passphrase
+                          type: object
+                        minItems: 1
+                        type: array
+                      radiusConfiguration:
+                        description: RadiusConfiguration configures RADIUS for this
+                          variant.
+                        properties:
+                          macAuthenticationConfiguration:
+                            description: MACAuthenticationConfiguration configures
+                              RADIUS MAC authentication.
+                            properties:
+                              macAddressFormat:
+                                description: |-
+                                  MacAddressFormat is the MAC address format presented to the RADIUS
+                                  server.
+                                enum:
+                                - UPPERCASE_NOT_SEPARATED
+                                - UPPERCASE_DASH_SEPARATED
+                                - UPPERCASE_COLON_SEPARATED
+                                - LOWERCASE_NOT_SEPARATED
+                                - LOWERCASE_COLON_SEPARATED
+                                - LOWERCASE_DASH_SEPARATED
+                                type: string
+                            required:
+                            - macAddressFormat
+                            type: object
+                          nasId:
+                            description: NasID configures the RADIUS NAS-Identifier.
+                            properties:
+                              source:
+                                description: Source is the derived NAS-ID source.
+                                  Required for type DERIVED.
+                                enum:
+                                - DEVICE_MAC_ADDRESS
+                                - DEVICE_NAME
+                                - SITE_NAME
+                                - BSSID
+                                type: string
+                              type:
+                                description: Type is the NAS-ID discriminator (DERIVED
+                                  or USER_DEFINED).
+                                enum:
+                                - DERIVED
+                                - USER_DEFINED
+                                type: string
+                              value:
+                                description: |-
+                                  Value is the user-defined NAS-Identifier. Required for type
+                                  USER_DEFINED.
+                                minLength: 1
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: source requires type DERIVED
+                              rule: 'self.type == ''DERIVED'' ? has(self.source) :
+                                !has(self.source)'
+                            - message: value requires type USER_DEFINED
+                              rule: 'self.type == ''USER_DEFINED'' ? has(self.value)
+                                : !has(self.value)'
+                          radiusProfileRef:
+                            description: |-
+                              RadiusProfileRef references the UnifiRadiusProfile to authenticate
+                              against.
+                            properties:
+                              name:
+                                description: |-
+                                  Name is the name of the referenced object in the referencing object's
+                                  namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - macAuthenticationConfiguration
+                        - nasId
+                        - radiusProfileRef
+                        type: object
+                    type: object
+                  wpa2Wpa3Enterprise:
+                    description: |-
+                      WPA2WPA3Enterprise is the WPA2_WPA3_ENTERPRISE variant. Required for type
+                      WPA2_WPA3_ENTERPRISE.
+                    properties:
+                      coaEnabled:
+                        description: CoaEnabled enables Change of Authorization (CoA).
+                        type: boolean
+                      fastRoamingEnabled:
+                        description: FastRoamingEnabled enables fast roaming (802.11r).
+                        type: boolean
+                      groupRekeyIntervalSeconds:
+                        description: GroupRekeyIntervalSeconds is the group rekey
+                          interval. Omit to disable.
+                        format: int32
+                        maximum: 86400
+                        minimum: 1
+                        type: integer
+                      pmfMode:
+                        description: PmfMode is the Protected Management Frames mode.
+                        enum:
+                        - REQUIRED
+                        - OPTIONAL
+                        type: string
+                      radiusConfiguration:
+                        description: RadiusConfiguration configures the enterprise
+                          RADIUS profile.
+                        properties:
+                          macAuthenticationConfiguration:
+                            description: MACAuthenticationConfiguration configures
+                              RADIUS MAC authentication.
+                            properties:
+                              macAddressFormat:
+                                description: |-
+                                  MacAddressFormat is the MAC address format presented to the RADIUS
+                                  server.
+                                enum:
+                                - UPPERCASE_NOT_SEPARATED
+                                - UPPERCASE_DASH_SEPARATED
+                                - UPPERCASE_COLON_SEPARATED
+                                - LOWERCASE_NOT_SEPARATED
+                                - LOWERCASE_COLON_SEPARATED
+                                - LOWERCASE_DASH_SEPARATED
+                                type: string
+                            required:
+                            - macAddressFormat
+                            type: object
+                          nasId:
+                            description: NasID configures the RADIUS NAS-Identifier.
+                            properties:
+                              source:
+                                description: Source is the derived NAS-ID source.
+                                  Required for type DERIVED.
+                                enum:
+                                - DEVICE_MAC_ADDRESS
+                                - DEVICE_NAME
+                                - SITE_NAME
+                                - BSSID
+                                type: string
+                              type:
+                                description: Type is the NAS-ID discriminator (DERIVED
+                                  or USER_DEFINED).
+                                enum:
+                                - DERIVED
+                                - USER_DEFINED
+                                type: string
+                              value:
+                                description: |-
+                                  Value is the user-defined NAS-Identifier. Required for type
+                                  USER_DEFINED.
+                                minLength: 1
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: source requires type DERIVED
+                              rule: 'self.type == ''DERIVED'' ? has(self.source) :
+                                !has(self.source)'
+                            - message: value requires type USER_DEFINED
+                              rule: 'self.type == ''USER_DEFINED'' ? has(self.value)
+                                : !has(self.value)'
+                          radiusProfileRef:
+                            description: |-
+                              RadiusProfileRef references the UnifiRadiusProfile to authenticate
+                              against.
+                            properties:
+                              name:
+                                description: |-
+                                  Name is the name of the referenced object in the referencing object's
+                                  namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - nasId
+                        - radiusProfileRef
+                        type: object
+                      wpa3FastRoamingEnabled:
+                        description: Wpa3FastRoamingEnabled enables WPA3 fast roaming.
+                        type: boolean
+                    required:
+                    - coaEnabled
+                    - pmfMode
+                    - radiusConfiguration
+                    - wpa3FastRoamingEnabled
+                    type: object
+                  wpa2Wpa3Personal:
+                    description: |-
+                      WPA2WPA3Personal is the WPA2_WPA3_PERSONAL variant. Required for type
+                      WPA2_WPA3_PERSONAL.
+                    properties:
+                      fastRoamingEnabled:
+                        description: FastRoamingEnabled enables fast roaming (802.11r).
+                        type: boolean
+                      groupRekeyIntervalSeconds:
+                        description: GroupRekeyIntervalSeconds is the group rekey
+                          interval. Omit to disable.
+                        format: int32
+                        maximum: 86400
+                        minimum: 1
+                        type: integer
+                      passphrase:
+                        description: Passphrase references the Secret key holding
+                          the network passphrase.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      pmfMode:
+                        description: PmfMode is the Protected Management Frames mode.
+                        enum:
+                        - REQUIRED
+                        - OPTIONAL
+                        type: string
+                      radiusConfiguration:
+                        description: RadiusConfiguration configures RADIUS for this
+                          variant.
+                        properties:
+                          macAuthenticationConfiguration:
+                            description: MACAuthenticationConfiguration configures
+                              RADIUS MAC authentication.
+                            properties:
+                              macAddressFormat:
+                                description: |-
+                                  MacAddressFormat is the MAC address format presented to the RADIUS
+                                  server.
+                                enum:
+                                - UPPERCASE_NOT_SEPARATED
+                                - UPPERCASE_DASH_SEPARATED
+                                - UPPERCASE_COLON_SEPARATED
+                                - LOWERCASE_NOT_SEPARATED
+                                - LOWERCASE_COLON_SEPARATED
+                                - LOWERCASE_DASH_SEPARATED
+                                type: string
+                            required:
+                            - macAddressFormat
+                            type: object
+                          nasId:
+                            description: NasID configures the RADIUS NAS-Identifier.
+                            properties:
+                              source:
+                                description: Source is the derived NAS-ID source.
+                                  Required for type DERIVED.
+                                enum:
+                                - DEVICE_MAC_ADDRESS
+                                - DEVICE_NAME
+                                - SITE_NAME
+                                - BSSID
+                                type: string
+                              type:
+                                description: Type is the NAS-ID discriminator (DERIVED
+                                  or USER_DEFINED).
+                                enum:
+                                - DERIVED
+                                - USER_DEFINED
+                                type: string
+                              value:
+                                description: |-
+                                  Value is the user-defined NAS-Identifier. Required for type
+                                  USER_DEFINED.
+                                minLength: 1
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: source requires type DERIVED
+                              rule: 'self.type == ''DERIVED'' ? has(self.source) :
+                                !has(self.source)'
+                            - message: value requires type USER_DEFINED
+                              rule: 'self.type == ''USER_DEFINED'' ? has(self.value)
+                                : !has(self.value)'
+                          radiusProfileRef:
+                            description: |-
+                              RadiusProfileRef references the UnifiRadiusProfile to authenticate
+                              against.
+                            properties:
+                              name:
+                                description: |-
+                                  Name is the name of the referenced object in the referencing object's
+                                  namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - macAuthenticationConfiguration
+                        - nasId
+                        - radiusProfileRef
+                        type: object
+                      saeConfiguration:
+                        description: SaeConfiguration configures SAE (WPA3) authentication.
+                        properties:
+                          anticloggingThresholdSeconds:
+                            description: AnticloggingThresholdSeconds is the anti-clogging
+                              threshold (1..60).
+                            format: int32
+                            maximum: 60
+                            minimum: 1
+                            type: integer
+                          syncTimeSeconds:
+                            description: SyncTimeSeconds is the SAE sync time (1..60).
+                            format: int32
+                            maximum: 60
+                            minimum: 1
+                            type: integer
+                        required:
+                        - anticloggingThresholdSeconds
+                        - syncTimeSeconds
+                        type: object
+                      wpa3FastRoamingEnabled:
+                        description: Wpa3FastRoamingEnabled enables WPA3 fast roaming.
+                        type: boolean
+                    required:
+                    - passphrase
+                    - pmfMode
+                    - saeConfiguration
+                    - wpa3FastRoamingEnabled
+                    type: object
+                  wpa3Enterprise:
+                    description: |-
+                      WPA3Enterprise is the WPA3_ENTERPRISE variant. Required for type
+                      WPA3_ENTERPRISE.
+                    properties:
+                      coaEnabled:
+                        description: CoaEnabled enables Change of Authorization (CoA).
+                        type: boolean
+                      fastRoamingEnabled:
+                        description: FastRoamingEnabled enables fast roaming (802.11r).
+                        type: boolean
+                      groupRekeyIntervalSeconds:
+                        description: GroupRekeyIntervalSeconds is the group rekey
+                          interval. Omit to disable.
+                        format: int32
+                        maximum: 86400
+                        minimum: 1
+                        type: integer
+                      radiusConfiguration:
+                        description: RadiusConfiguration configures the enterprise
+                          RADIUS profile.
+                        properties:
+                          macAuthenticationConfiguration:
+                            description: MACAuthenticationConfiguration configures
+                              RADIUS MAC authentication.
+                            properties:
+                              macAddressFormat:
+                                description: |-
+                                  MacAddressFormat is the MAC address format presented to the RADIUS
+                                  server.
+                                enum:
+                                - UPPERCASE_NOT_SEPARATED
+                                - UPPERCASE_DASH_SEPARATED
+                                - UPPERCASE_COLON_SEPARATED
+                                - LOWERCASE_NOT_SEPARATED
+                                - LOWERCASE_COLON_SEPARATED
+                                - LOWERCASE_DASH_SEPARATED
+                                type: string
+                            required:
+                            - macAddressFormat
+                            type: object
+                          nasId:
+                            description: NasID configures the RADIUS NAS-Identifier.
+                            properties:
+                              source:
+                                description: Source is the derived NAS-ID source.
+                                  Required for type DERIVED.
+                                enum:
+                                - DEVICE_MAC_ADDRESS
+                                - DEVICE_NAME
+                                - SITE_NAME
+                                - BSSID
+                                type: string
+                              type:
+                                description: Type is the NAS-ID discriminator (DERIVED
+                                  or USER_DEFINED).
+                                enum:
+                                - DERIVED
+                                - USER_DEFINED
+                                type: string
+                              value:
+                                description: |-
+                                  Value is the user-defined NAS-Identifier. Required for type
+                                  USER_DEFINED.
+                                minLength: 1
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: source requires type DERIVED
+                              rule: 'self.type == ''DERIVED'' ? has(self.source) :
+                                !has(self.source)'
+                            - message: value requires type USER_DEFINED
+                              rule: 'self.type == ''USER_DEFINED'' ? has(self.value)
+                                : !has(self.value)'
+                          radiusProfileRef:
+                            description: |-
+                              RadiusProfileRef references the UnifiRadiusProfile to authenticate
+                              against.
+                            properties:
+                              name:
+                                description: |-
+                                  Name is the name of the referenced object in the referencing object's
+                                  namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - nasId
+                        - radiusProfileRef
+                        type: object
+                      securityMode:
+                        description: SecurityMode is the WPA3 enterprise security
+                          mode.
+                        enum:
+                        - DEFAULT
+                        - HIGH_SECURITY_192_BIT
+                        type: string
+                    required:
+                    - coaEnabled
+                    - radiusConfiguration
+                    - securityMode
+                    type: object
+                  wpa3Personal:
+                    description: |-
+                      WPA3Personal is the WPA3_PERSONAL variant. Required for type
+                      WPA3_PERSONAL.
+                    properties:
+                      fastRoamingEnabled:
+                        description: FastRoamingEnabled enables fast roaming (802.11r).
+                        type: boolean
+                      groupRekeyIntervalSeconds:
+                        description: GroupRekeyIntervalSeconds is the group rekey
+                          interval. Omit to disable.
+                        format: int32
+                        maximum: 86400
+                        minimum: 1
+                        type: integer
+                      passphrase:
+                        description: Passphrase references the Secret key holding
+                          the network passphrase.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      radiusConfiguration:
+                        description: RadiusConfiguration configures RADIUS for this
+                          variant.
+                        properties:
+                          macAuthenticationConfiguration:
+                            description: MACAuthenticationConfiguration configures
+                              RADIUS MAC authentication.
+                            properties:
+                              macAddressFormat:
+                                description: |-
+                                  MacAddressFormat is the MAC address format presented to the RADIUS
+                                  server.
+                                enum:
+                                - UPPERCASE_NOT_SEPARATED
+                                - UPPERCASE_DASH_SEPARATED
+                                - UPPERCASE_COLON_SEPARATED
+                                - LOWERCASE_NOT_SEPARATED
+                                - LOWERCASE_COLON_SEPARATED
+                                - LOWERCASE_DASH_SEPARATED
+                                type: string
+                            required:
+                            - macAddressFormat
+                            type: object
+                          nasId:
+                            description: NasID configures the RADIUS NAS-Identifier.
+                            properties:
+                              source:
+                                description: Source is the derived NAS-ID source.
+                                  Required for type DERIVED.
+                                enum:
+                                - DEVICE_MAC_ADDRESS
+                                - DEVICE_NAME
+                                - SITE_NAME
+                                - BSSID
+                                type: string
+                              type:
+                                description: Type is the NAS-ID discriminator (DERIVED
+                                  or USER_DEFINED).
+                                enum:
+                                - DERIVED
+                                - USER_DEFINED
+                                type: string
+                              value:
+                                description: |-
+                                  Value is the user-defined NAS-Identifier. Required for type
+                                  USER_DEFINED.
+                                minLength: 1
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: source requires type DERIVED
+                              rule: 'self.type == ''DERIVED'' ? has(self.source) :
+                                !has(self.source)'
+                            - message: value requires type USER_DEFINED
+                              rule: 'self.type == ''USER_DEFINED'' ? has(self.value)
+                                : !has(self.value)'
+                          radiusProfileRef:
+                            description: |-
+                              RadiusProfileRef references the UnifiRadiusProfile to authenticate
+                              against.
+                            properties:
+                              name:
+                                description: |-
+                                  Name is the name of the referenced object in the referencing object's
+                                  namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - macAuthenticationConfiguration
+                        - nasId
+                        - radiusProfileRef
+                        type: object
+                      saeConfiguration:
+                        description: SaeConfiguration configures SAE (WPA3) authentication.
+                        properties:
+                          anticloggingThresholdSeconds:
+                            description: AnticloggingThresholdSeconds is the anti-clogging
+                              threshold (1..60).
+                            format: int32
+                            maximum: 60
+                            minimum: 1
+                            type: integer
+                          syncTimeSeconds:
+                            description: SyncTimeSeconds is the SAE sync time (1..60).
+                            format: int32
+                            maximum: 60
+                            minimum: 1
+                            type: integer
+                        required:
+                        - anticloggingThresholdSeconds
+                        - syncTimeSeconds
+                        type: object
+                    required:
+                    - passphrase
+                    - saeConfiguration
+                    type: object
+                required:
+                - type
+                type: object
+                x-kubernetes-validations:
+                - message: open fields require type OPEN
+                  rule: 'self.type == ''OPEN'' ? has(self.open) : !has(self.open)'
+                - message: wpa2Personal fields require type WPA2_PERSONAL
+                  rule: 'self.type == ''WPA2_PERSONAL'' ? has(self.wpa2Personal) :
+                    !has(self.wpa2Personal)'
+                - message: wpa2Wpa3Personal fields require type WPA2_WPA3_PERSONAL
+                  rule: 'self.type == ''WPA2_WPA3_PERSONAL'' ? has(self.wpa2Wpa3Personal)
+                    : !has(self.wpa2Wpa3Personal)'
+                - message: wpa3Personal fields require type WPA3_PERSONAL
+                  rule: 'self.type == ''WPA3_PERSONAL'' ? has(self.wpa3Personal) :
+                    !has(self.wpa3Personal)'
+                - message: wpa2Enterprise fields require type WPA2_ENTERPRISE
+                  rule: 'self.type == ''WPA2_ENTERPRISE'' ? has(self.wpa2Enterprise)
+                    : !has(self.wpa2Enterprise)'
+                - message: wpa2Wpa3Enterprise fields require type WPA2_WPA3_ENTERPRISE
+                  rule: 'self.type == ''WPA2_WPA3_ENTERPRISE'' ? has(self.wpa2Wpa3Enterprise)
+                    : !has(self.wpa2Wpa3Enterprise)'
+                - message: wpa3Enterprise fields require type WPA3_ENTERPRISE
+                  rule: 'self.type == ''WPA3_ENTERPRISE'' ? has(self.wpa3Enterprise)
+                    : !has(self.wpa3Enterprise)'
+              standard:
+                description: |-
+                  Standard holds the STANDARD variant fields. It is required for type
+                  STANDARD and forbidden otherwise (CEL).
+                properties:
+                  advertiseDeviceName:
+                    description: AdvertiseDeviceName advertises the device name in
+                      beacon frames.
+                    type: boolean
+                  arpProxyEnabled:
+                    description: ArpProxyEnabled enables ARP proxying for this broadcast.
+                    type: boolean
+                  bandSteeringEnabled:
+                    description: BandSteeringEnabled enables band steering. Omit to
+                      use the site default.
+                    type: boolean
+                  broadcastingFrequenciesGHz:
+                    description: |-
+                      BroadcastingFrequenciesGHz lists the frequency bands (2.4, 5, 6) the
+                      broadcast is enabled on.
+                    items:
+                      description: |-
+                        WifiBroadcastingFrequencyGHz is a WiFi broadcasting frequency in GHz. The
+                        frozen v10.4.57 union only allows 2.4, 5, and 6 GHz. It is modeled as an
+                        exact string enum because controller-gen rejects floating-point CRD fields
+                        (and the repo deliberately does not enable crd:allowDangerousTypes); the
+                        reconciler maps the value to the numeric upstream representation.
+                      enum:
+                      - "2.4"
+                      - "5"
+                      - "6"
+                      type: string
+                    minItems: 1
+                    type: array
+                  bssTransitionEnabled:
+                    description: BssTransitionEnabled enables BSS transition management
+                      (802.11v).
+                    type: boolean
+                  dnsAssistanceConfiguration:
+                    description: DNSAssistanceConfiguration configures DNS assistance.
+                      Omit to disable.
+                    properties:
+                      mode:
+                        description: Mode is the DNS assistance discriminator (AUTO
+                          or MANUAL).
+                        enum:
+                        - AUTO
+                        - MANUAL
+                        type: string
+                      servers:
+                        description: Servers lists up to two failover DNS servers.
+                          Only valid for mode MANUAL.
+                        items:
+                          type: string
+                        maxItems: 2
+                        type: array
+                    required:
+                    - mode
+                    type: object
+                    x-kubernetes-validations:
+                    - message: servers require mode MANUAL
+                      rule: 'self.mode == ''MANUAL'' ? true : !has(self.servers)'
+                  dtimPeriodByFrequencyGHzOverride:
+                    description: DtimPeriodByFrequencyGHzOverride overrides the DTIM
+                      period per band.
+                    properties:
+                      "2.4":
+                        description: GHz2_4 is the 2.4 GHz DTIM period (1..255).
+                        format: int32
+                        maximum: 255
+                        minimum: 1
+                        type: integer
+                      "5":
+                        description: GHz5 is the 5 GHz DTIM period (1..255).
+                        format: int32
+                        maximum: 255
+                        minimum: 1
+                        type: integer
+                      "6":
+                        description: GHz6 is the 6 GHz DTIM period (1..255).
+                        format: int32
+                        maximum: 255
+                        minimum: 1
+                        type: integer
+                    required:
+                    - "2.4"
+                    - "5"
+                    - "6"
+                    type: object
+                  handoffSuggestionsConfiguration:
+                    description: |-
+                      HandoffSuggestionsConfiguration suggests low-signal clients to roam to a
+                      better access point. Omit to disable.
+                    properties:
+                      band5GHzRssiThreshold:
+                        description: Band5GHzRssiThreshold is the 5 GHz RSSI threshold
+                          in dBm.
+                        format: int32
+                        maximum: -60
+                        minimum: -80
+                        type: integer
+                      band6GHzRssiThreshold:
+                        description: Band6GHzRssiThreshold is the 6 GHz RSSI threshold
+                          in dBm.
+                        format: int32
+                        maximum: -70
+                        minimum: -90
+                        type: integer
+                    type: object
+                  hotspotConfiguration:
+                    description: HotspotConfiguration configures a hotspot (captive
+                      portal or Passpoint).
+                    properties:
+                      type:
+                        description: Type is the hotspot discriminator (CAPTIVE_PORTAL
+                          or PASSPOINT).
+                        enum:
+                        - CAPTIVE_PORTAL
+                        - PASSPOINT
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  mloEnabled:
+                    description: MloEnabled enables Multi-Link Operation. Omit to
+                      use the site default.
+                    type: boolean
+                required:
+                - advertiseDeviceName
+                - arpProxyEnabled
+                - broadcastingFrequenciesGHz
+                - bssTransitionEnabled
+                type: object
+              type:
+                description: Type is the broadcast union discriminator (STANDARD or
+                  IOT_OPTIMIZED).
+                enum:
+                - STANDARD
+                - IOT_OPTIMIZED
+                type: string
+              uapsdEnabled:
+                description: UapsdEnabled enables Unscheduled Automatic Power Save
+                  Delivery.
+                type: boolean
+            required:
+            - clientIsolationEnabled
+            - hideName
+            - multicastToUnicastConversionEnabled
+            - name
+            - networkRef
+            - securityConfiguration
+            - type
+            - uapsdEnabled
+            type: object
+            x-kubernetes-validations:
+            - message: standard fields require type STANDARD
+              rule: 'self.type == ''STANDARD'' ? has(self.standard) : !has(self.standard)'
+            - message: iotOptimized fields require type IOT_OPTIMIZED
+              rule: 'self.type == ''IOT_OPTIMIZED'' ? has(self.iotOptimized) : !has(self.iotOptimized)'
+          status:
+            description: status defines the observed state of UnifiWifiBroadcast
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the UnifiWifiBroadcast resource.
+
+                  The primary readiness signal is the "Ready" condition.
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              networkID:
+                description: |-
+                  networkID is the UUID of the upstream network the broadcast belongs to.
+                  It is resolved transitively through spec.networkRef and recorded in
+                  status only.
+                type: string
+              observedGeneration:
+                description: |-
+                  observedGeneration is the metadata.generation the controller last
+                  reconciled.
+                format: int64
+                type: integer
+              origin:
+                description: |-
+                  origin is the upstream broadcast origin (USER_DEFINED, DERIVED, or
+                  ORCHESTRATED). Only USER_DEFINED broadcasts are written; any other origin
+                  is adopted read-only and reported here.
+                type: string
+              siteID:
+                description: |-
+                  siteID is the UUID of the upstream site the broadcast belongs to. It is
+                  resolved transitively through the referenced network's siteRef and
+                  recorded in status only so teardown does not depend on the live
+                  reference chain.
+                type: string
+              summary:
+                description: summary is a human-readable summary of the last reconciliation.
+                type: string
+              wifiBroadcastID:
+                description: |-
+                  wifiBroadcastID is the UUID of the upstream WiFi broadcast. It is
+                  recorded in status only, never in spec.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

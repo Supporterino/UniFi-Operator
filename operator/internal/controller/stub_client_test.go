@@ -103,6 +103,24 @@ type stubUnifiClient struct {
 	deviceTags    []unifi.DeviceTag
 	deviceTagsErr error
 
+	broadcasts         []unifi.WifiBroadcast
+	broadcastOverviews []unifi.WifiBroadcastOverview
+	broadcastsErr      error
+
+	createdBroadcast   unifi.WifiBroadcast
+	createBroadcastErr error
+	updatedBroadcast   unifi.WifiBroadcast
+	updateBroadcastErr error
+
+	broadcastCreateRequests []unifi.WifiBroadcastRequest
+	broadcastUpdateRequests []unifi.WifiBroadcastRequest
+	// updatedBroadcastID records the identifier passed to UpdateWifiBroadcast.
+	updatedBroadcastID string
+
+	deleteBroadcastErr     error
+	deletedBroadcastSiteID string
+	deletedBroadcastID     string
+
 	calls []string
 }
 
@@ -237,6 +255,62 @@ func (s *stubUnifiClient) ListDeviceTags(context.Context, string) ([]unifi.Devic
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.deviceTags, s.deviceTagsErr
+}
+
+func (s *stubUnifiClient) ListWifiBroadcasts(context.Context, string) ([]unifi.WifiBroadcastOverview, error) {
+	s.record("ListWifiBroadcasts")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.broadcastOverviews, s.broadcastsErr
+}
+
+func (s *stubUnifiClient) GetWifiBroadcast(_ context.Context, _, broadcastID string) (unifi.WifiBroadcast, error) {
+	s.record("GetWifiBroadcast")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.broadcastsErr != nil {
+		return unifi.WifiBroadcast{}, s.broadcastsErr
+	}
+	for _, broadcast := range s.broadcasts {
+		if broadcast.ID == broadcastID {
+			return broadcast, nil
+		}
+	}
+	return unifi.WifiBroadcast{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) CreateWifiBroadcast(_ context.Context, _ string, req unifi.WifiBroadcastRequest) (unifi.WifiBroadcast, error) {
+	s.record("CreateWifiBroadcast")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.broadcastCreateRequests = append(s.broadcastCreateRequests, req)
+	return s.createdBroadcast, s.createBroadcastErr
+}
+
+func (s *stubUnifiClient) UpdateWifiBroadcast(_ context.Context, _, broadcastID string, req unifi.WifiBroadcastRequest) (unifi.WifiBroadcast, error) {
+	s.record("UpdateWifiBroadcast")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.broadcastUpdateRequests = append(s.broadcastUpdateRequests, req)
+	s.updatedBroadcastID = broadcastID
+	return s.updatedBroadcast, s.updateBroadcastErr
+}
+
+func (s *stubUnifiClient) DeleteWifiBroadcast(_ context.Context, siteID, broadcastID string) error {
+	s.record("DeleteWifiBroadcast")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deletedBroadcastSiteID = siteID
+	s.deletedBroadcastID = broadcastID
+	return s.deleteBroadcastErr
+}
+
+// setWifiBroadcasts replaces the broadcast details the stub reports, so a test
+// can model the console converging on a written state between reconciles.
+func (s *stubUnifiClient) setWifiBroadcasts(broadcasts []unifi.WifiBroadcast) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.broadcasts = broadcasts
 }
 
 // recordingFactory is a ConnectionFactory that captures the arguments a

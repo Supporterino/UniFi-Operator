@@ -32,10 +32,12 @@ func newSnapshotCommand() *cobra.Command {
 		Short: "Read a UniFi controller and emit adoptable Custom Resources",
 		Long: "snapshot reads objects from a UniFi Network controller over the Integration v1 API\n" +
 			"and writes the equivalent Custom Resources as YAML. Supported kinds: all, controller,\n" +
-			"sites, networks, firewall-zones, device-tags. `all` emits a UnifiController template,\n" +
-			"the UnifiSites, and the UnifiNetworks of the site selected with --site.\n" +
-			"`firewall-zones` emits the site's UnifiFirewallZones; `device-tags` prints the\n" +
-			"read-only device-tag names and device counts without emitting a resource.",
+			"sites, networks, firewall-zones, wifi, device-tags. `all` emits a UnifiController\n" +
+			"template, the UnifiSites, the UnifiNetworks, and the UnifiWifiBroadcasts of the site\n" +
+			"selected with --site. `firewall-zones` emits the site's UnifiFirewallZones; `wifi`\n" +
+			"emits the site's UnifiWifiBroadcasts (personal passphrases are emitted as placeholder\n" +
+			"Secret references); `device-tags` prints the read-only device-tag names and device\n" +
+			"counts without emitting a resource.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := "all"
@@ -66,10 +68,10 @@ func newSnapshotCommand() *cobra.Command {
 
 func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Writer) error {
 	switch kind {
-	case "all", "controller", "sites", "networks", "firewall-zones", "device-tags":
+	case "all", "controller", "sites", "networks", "firewall-zones", "wifi", "device-tags":
 	default:
 		return fmt.Errorf(
-			"unknown snapshot kind %q: supported kinds are all, controller, sites, networks, firewall-zones, device-tags",
+			"unknown snapshot kind %q: supported kinds are all, controller, sites, networks, firewall-zones, wifi, device-tags",
 			kind)
 	}
 	if o.controller == "" {
@@ -120,7 +122,7 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 		}
 		return writeDeviceTags(out, tags)
 	}
-	if kind == "networks" || kind == "all" || kind == "firewall-zones" {
+	if kind == "networks" || kind == "all" || kind == "firewall-zones" || kind == "wifi" {
 		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
 		if err != nil {
 			return err
@@ -144,6 +146,16 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 			zoneResources, zoneWarnings := snapshot.FirewallZones(siteName, networkNames, zones)
 			resources = append(resources, zoneResources...)
 			warnings = append(warnings, zoneWarnings...)
+		}
+		if kind == "wifi" || kind == "all" {
+			broadcasts, broadcastTags, broadcastWarnings, err := loadWifiProjection(ctx, client, siteID)
+			if err != nil {
+				return err
+			}
+			warnings = append(warnings, broadcastWarnings...)
+			broadcastResources, projectWarnings := snapshot.WifiBroadcasts(networkNames, broadcastTags, broadcasts)
+			resources = append(resources, broadcastResources...)
+			warnings = append(warnings, projectWarnings...)
 		}
 	}
 
@@ -255,6 +267,64 @@ func loadNetworkDetails(ctx context.Context, client *unifi.Client, siteID string
 				continue
 			}
 			return nil, nil, fmt.Errorf("read network %q details: %w", network.Name, err)
+		}
+		details = append(details, detail)
+	}
+	return details, warnings, nil
+}
+
+// loadWifiProjection reads every WiFi broadcast of the site with its details and, only
+// when a DEVICE_TAGS scope is present, the read-only device tags needed to reverse-map the
+// scope to tag names. Fetching the tags lazily keeps a console whose broadcasts set no
+// device scope able to snapshot without the extra call.
+func loadWifiProjection(ctx context.Context, client *unifi.Client, siteID string) ([]unifi.WifiBroadcast, []unifi.DeviceTag, []string, error) {
+	overviews, err := client.ListWifiBroadcasts(ctx, siteID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("snapshot wifi: %w", err)
+	}
+	detailed, warnings, err := loadWifiBroadcastDetails(ctx, client, siteID, overviews)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !anyWifiDeviceTagFilter(detailed) {
+		return detailed, nil, warnings, nil
+	}
+	tags, err := client.ListDeviceTags(ctx, siteID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("snapshot device-tags: %w", err)
+	}
+	return detailed, tags, warnings, nil
+}
+
+// anyWifiDeviceTagFilter reports whether any broadcast scopes to a DEVICE_TAGS filter, the
+// only scope that needs the device-tag list to reverse-map to names.
+func anyWifiDeviceTagFilter(broadcasts []unifi.WifiBroadcast) bool {
+	for _, broadcast := range broadcasts {
+		if broadcast.BroadcastingDeviceFilter != nil && broadcast.BroadcastingDeviceFilter.Type == "DEVICE_TAGS" {
+			return true
+		}
+	}
+	return false
+}
+
+// loadWifiBroadcastDetails resolves the full detail of every listed broadcast. The list
+// endpoint returns only overview fields, so the variant configuration is read per
+// broadcast. A broadcast that disappeared between the list and the detail read (404) is
+// skipped with a warning; any other error is returned so the snapshot fails closed rather
+// than emitting a partial projection.
+func loadWifiBroadcastDetails(ctx context.Context, client *unifi.Client, siteID string, overviews []unifi.WifiBroadcastOverview) ([]unifi.WifiBroadcast, []string, error) {
+	details := make([]unifi.WifiBroadcast, 0, len(overviews))
+	var warnings []string
+	for _, overview := range overviews {
+		detail, err := client.GetWifiBroadcast(ctx, siteID, overview.ID)
+		if err != nil {
+			var apiErr *unifi.APIError
+			if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+				warnings = append(warnings, fmt.Sprintf(
+					"wifi broadcast %q: disappeared before its details could be read; skipping", overview.Name))
+				continue
+			}
+			return nil, nil, fmt.Errorf("read wifi broadcast %q details: %w", overview.Name, err)
 		}
 		details = append(details, detail)
 	}

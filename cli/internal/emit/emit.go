@@ -7,12 +7,15 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// Resource is a generic Kubernetes object. Spec holds the projected desired state.
+// Resource is a generic Kubernetes object. Spec holds the projected desired
+// state; Status optionally carries observed correlation identifiers an emitter
+// wants to record (the operator owns status and will overwrite it on adopt).
 type Resource struct {
 	APIVersion string   `json:"apiVersion"`
 	Kind       string   `json:"kind"`
 	Metadata   Metadata `json:"metadata"`
 	Spec       any      `json:"spec,omitempty"`
+	Status     any      `json:"status,omitempty"`
 }
 
 // Metadata is the subset of ObjectMeta the CLI sets on emitted resources.

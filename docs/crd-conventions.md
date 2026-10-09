@@ -90,6 +90,18 @@ deletion of its direct `ownerReference` children (garbage collection only starts
 is actually gone), removes the finalizer only once no owned children remain, and never deletes
 the upstream site.
 
+#### A non-site parent drains its own children
+
+The drain generalizes down the ownership tree: a parent that is not the site drains **its own**
+direct children before removing its finalizer. `UnifiNetwork` owns its `UnifiWifiBroadcast` objects
+(the broadcast's strongest reference is `spec.networkRef`), so `UnifiNetwork.reconcileDelete`
+initiates deletion of those broadcasts and holds its finalizer until none remain; the site, in
+turn, drains the network. A deletion therefore unwinds `UnifiSite` → `UnifiNetwork` →
+`UnifiWifiBroadcast`, each finalizer removed in order, keeping the reference chain resolvable until
+each child has cleaned up its own upstream state. Relying on Kubernetes garbage collection instead
+would deadlock: GC only starts after the owner is gone, which is exactly what the finalizer exists
+to prevent.
+
 ### One writer per fact: membership ownership
 
 A fact has exactly one owning CR. Firewall-zone membership is the canonical example:
@@ -111,6 +123,21 @@ the same site claims the same network, the controller marks every claimant `Read
 `MembershipConflict`) and writes no membership upstream until a single writer remains. Zone-name
 uniqueness is checked the same way, keyed on `(siteRef, spec.name)`, because an upstream zone is
 identified by name.
+
+### Credential and opaque-ID references
+
+Two upstream shapes are always replaced by a reference rather than copied into `spec`:
+
+- **Personal WiFi passphrases.** The upstream WiFi broadcast carries personal passphrases inline
+  (`passphrase`, and each `presharedKeys[].passphrase`). The CR models each as a same-namespace
+  `corev1.SecretKeySelector` (`name` + `key`); the value is never inline, never in `status`, never
+  in events, and never logged. The controller reads the `Secret` at reconcile time and fails closed
+  if it or the key is missing. See [Security](security.md).
+- **Enterprise RADIUS profile.** Enterprise security's `radiusConfiguration.profileId` is an opaque
+  profile UUID upstream. The CR exposes it as
+  `spec.securityConfiguration.<variant>.radiusConfiguration.radiusProfileRef` — a reference to a
+  `UnifiRadiusProfile` by Kubernetes identity, in keeping with Rule 1 — so the opaque UUID never
+  appears in `spec`.
 
 ### Typed selectors for non-CR references
 

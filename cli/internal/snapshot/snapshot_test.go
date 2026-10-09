@@ -535,6 +535,385 @@ func TestSitesEmitsControllerRefAndNames(t *testing.T) {
 	}
 }
 
+func wifiStandardBroadcast() unifi.WifiBroadcast {
+	return unifi.WifiBroadcast{
+		ID:                                  "upstream-broadcast-id",
+		Name:                                "Corp",
+		Enabled:                             true,
+		HideName:                            false,
+		ClientIsolationEnabled:              false,
+		MulticastToUnicastConversionEnabled: true,
+		UapsdEnabled:                        false,
+		Channel2gLockedTo6:                  false,
+		DtimPeriod2gLockedTo3:               false,
+		Type:                                WifiBroadcastTypeStandard,
+		Metadata:                            unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+		Network:                             &unifi.WifiNetworkReference{Type: "SPECIFIC", NetworkID: "net-1"},
+		SecurityConfiguration:               &unifi.WifiSecurityConfiguration{Type: WifiSecurityWPA2Personal, Passphrase: "hunter2", PmfMode: "OPTIONAL"},
+		BroadcastingDeviceFilter:            &unifi.WifiBroadcastingDeviceFilter{Type: "DEVICE_TAGS", DeviceTagIDs: []string{"tag-1"}},
+		AdvertiseDeviceName:                 boolPtr(false),
+		ArpProxyEnabled:                     boolPtr(false),
+		BssTransitionEnabled:                boolPtr(true),
+		BroadcastingFrequenciesGHz:          []float64{2.4, 5},
+	}
+}
+
+func TestWifiBroadcastsProjectsStandardAndDropsUpstreamIDs(t *testing.T) {
+	t.Parallel()
+
+	tags := []unifi.DeviceTag{{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"dev-1"}}}
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want the passphrase warning", warnings)
+	}
+
+	resource := resources[0]
+	if resource.Kind != KindUnifiWifiBroadcast || resource.Metadata.Name != "corp" {
+		t.Errorf("resource = %+v", resource)
+	}
+	if _, ok := resource.Metadata.Annotations[AnnotationUnresolvedWifiSecret]; !ok {
+		t.Errorf("annotations = %v, want %s", resource.Metadata.Annotations, AnnotationUnresolvedWifiSecret)
+	}
+	if got := resource.Status.(WifiBroadcastStatus).WifiBroadcastID; got != "upstream-broadcast-id" {
+		t.Errorf("status.wifiBroadcastID = %q, want the upstream id", got)
+	}
+
+	spec := resource.Spec.(UnifiWifiBroadcastSpec)
+	if spec.NetworkRef.Name != "default" || spec.Type != WifiBroadcastTypeStandard || spec.Name != "Corp" {
+		t.Errorf("spec = %+v", spec)
+	}
+	if spec.Standard == nil || spec.Standard.BssTransitionEnabled != true {
+		t.Fatalf("standard = %+v", spec.Standard)
+	}
+	wantFrequencies := []string{"2.4", "5"}
+	if len(spec.Standard.BroadcastingFrequenciesGHz) != len(wantFrequencies) {
+		t.Fatalf("frequencies = %v, want %v", spec.Standard.BroadcastingFrequenciesGHz, wantFrequencies)
+	}
+	for i, want := range wantFrequencies {
+		if spec.Standard.BroadcastingFrequenciesGHz[i] != want {
+			t.Errorf("frequency %d = %q, want %q", i, spec.Standard.BroadcastingFrequenciesGHz[i], want)
+		}
+	}
+	if len(spec.DeviceTags) != 1 || spec.DeviceTags[0].Name != "iot-switch" {
+		t.Errorf("deviceTags = %+v, want [iot-switch]", spec.DeviceTags)
+	}
+	personal := spec.SecurityConfiguration.WPA2Personal
+	if personal == nil || personal.Passphrase == nil {
+		t.Fatalf("securityConfiguration = %+v, want a personal passphrase placeholder", spec.SecurityConfiguration)
+	}
+	if personal.Passphrase.Name != unresolvedWifiSecretName || personal.Passphrase.Key != unresolvedWifiSecretKey {
+		t.Errorf("passphrase placeholder = %+v", personal.Passphrase)
+	}
+	if personal.PmfMode == nil || *personal.PmfMode != "OPTIONAL" {
+		t.Errorf("pmfMode = %v, want OPTIONAL", personal.PmfMode)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"upstream-broadcast-id", "net-1", "tag-1", "hunter2", `"networkId"`, `"id"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec leaks %q: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestWifiBroadcastsPresharedKeysPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	broadcast := wifiStandardBroadcast()
+	broadcast.BroadcastingDeviceFilter = nil
+	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{
+		Type:       WifiSecurityWPA2Personal,
+		Passphrase: "hunter2",
+		PresharedKeys: []unifi.WifiPresharedKey{{
+			Network:    unifi.WifiNetworkReference{Type: "SPECIFIC", NetworkID: "net-1"},
+			Passphrase: "preshared-secret",
+		}},
+	}
+
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 || len(warnings) != 1 {
+		t.Fatalf("got %d resources, %d warnings; want 1 and 1", len(resources), len(warnings))
+	}
+	spec := resources[0].Spec.(UnifiWifiBroadcastSpec)
+	personal := spec.SecurityConfiguration.WPA2Personal
+	if personal == nil || len(personal.PresharedKeys) != 1 {
+		t.Fatalf("presharedKeys = %+v, want one entry", personal)
+	}
+	key := personal.PresharedKeys[0]
+	if key.Network.Name != "default" {
+		t.Errorf("preshared key network = %q, want the emitted name default", key.Network.Name)
+	}
+	if key.Passphrase.Name != unresolvedWifiSecretName || key.Passphrase.Key != unresolvedWifiSecretKey {
+		t.Errorf("preshared passphrase = %+v, want the placeholder", key.Passphrase)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	if strings.Contains(string(raw), "preshared-secret") {
+		t.Errorf("spec leaks the preshared passphrase: %s", raw)
+	}
+}
+
+func TestWifiBroadcastsAnnotatesUnrepresentedSettings(t *testing.T) {
+	t.Parallel()
+
+	broadcast := wifiStandardBroadcast()
+	broadcast.BroadcastingDeviceFilter = nil
+	broadcast.MloEnabled = json.RawMessage(`true`)
+
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+	annotation := resources[0].Metadata.Annotations[AnnotationUnrepresentedWifiSettings]
+	if !strings.Contains(annotation, "mloEnabled") {
+		t.Errorf("annotation %s = %q, want it to name mloEnabled", AnnotationUnrepresentedWifiSettings, annotation)
+	}
+	found := false
+	for _, warning := range warnings {
+		if strings.Contains(warning, "mloEnabled") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want one naming mloEnabled", warnings)
+	}
+
+	// The unmodeled setting must not leak into spec (it is not modeled at all).
+	raw, err := json.Marshal(resources[0].Spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	if strings.Contains(string(raw), "mloEnabled") {
+		t.Errorf("spec unexpectedly models mloEnabled: %s", raw)
+	}
+}
+
+func TestWifiBroadcastsAnnotatesUnrepresentedRadiusConfiguration(t *testing.T) {
+	t.Parallel()
+
+	// A personal broadcast carrying the non-enterprise radiusConfiguration is
+	// reduced without it; the emitter must annotate and warn rather than let the
+	// user silently clear RADIUS MAC-auth upstream.
+	broadcast := wifiStandardBroadcast()
+	broadcast.BroadcastingDeviceFilter = nil
+	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{
+		Type:       WifiSecurityWPA2Personal,
+		Passphrase: "hunter2",
+		RadiusConfiguration: &unifi.WifiRadiusConfiguration{
+			NasID: unifi.WifiRadiusNasID{Type: "USER_DEFINED", Value: "nas"},
+		},
+	}
+
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+	annotation := resources[0].Metadata.Annotations[AnnotationUnrepresentedWifiSettings]
+	if !strings.Contains(annotation, "securityConfiguration.radiusConfiguration") {
+		t.Errorf("annotation %s = %q, want it to name the radius configuration", AnnotationUnrepresentedWifiSettings, annotation)
+	}
+	found := false
+	for _, warning := range warnings {
+		if strings.Contains(warning, "securityConfiguration.radiusConfiguration") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want one naming the radius configuration", warnings)
+	}
+}
+
+func TestWifiBroadcastsWPA2PersonalAlwaysPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	broadcast := wifiStandardBroadcast()
+	broadcast.BroadcastingDeviceFilter = nil
+	// The console omitted the passphrase; the emitter must still emit the placeholder.
+	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{Type: WifiSecurityWPA2Personal}
+
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+	personal := resources[0].Spec.(UnifiWifiBroadcastSpec).SecurityConfiguration.WPA2Personal
+	if personal == nil || personal.Passphrase == nil {
+		t.Fatalf("passphrase = %+v, want the placeholder even when the detail omits it", personal)
+	}
+	if personal.Passphrase.Name != unresolvedWifiSecretName || personal.Passphrase.Key != unresolvedWifiSecretKey {
+		t.Errorf("passphrase placeholder = %+v", personal.Passphrase)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedWifiSecret]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedWifiSecret)
+	}
+	if len(warnings) == 0 {
+		t.Errorf("warnings = %v, want a passphrase warning", warnings)
+	}
+}
+
+func TestWifiBroadcastsIotOptimized(t *testing.T) {
+	t.Parallel()
+
+	broadcast := unifi.WifiBroadcast{
+		ID:                    "iot-id",
+		Name:                  "IoT",
+		Enabled:               true,
+		Type:                  WifiBroadcastTypeIotOptimized,
+		Network:               &unifi.WifiNetworkReference{Type: "SPECIFIC", NetworkID: "net-1"},
+		SecurityConfiguration: &unifi.WifiSecurityConfiguration{Type: WifiSecurityWPA2Personal, Passphrase: "secret"},
+	}
+
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
+	}
+	spec := resources[0].Spec.(UnifiWifiBroadcastSpec)
+	if spec.IotOptimized == nil {
+		t.Errorf("iotOptimized = nil, want the IOT marker")
+	}
+	if spec.Standard != nil {
+		t.Errorf("standard = %+v, want nil for IOT_OPTIMIZED", spec.Standard)
+	}
+}
+
+func TestWifiBroadcastsSkipsUnresolvedNetwork(t *testing.T) {
+	t.Parallel()
+
+	resources, warnings := WifiBroadcasts(nil, nil, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	if len(resources) != 0 {
+		t.Fatalf("got %d resources, want 0", len(resources))
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "network") {
+		t.Errorf("warnings = %v, want an unresolved-network warning", warnings)
+	}
+}
+
+func TestWifiBroadcastsEmitsEnterpriseWithPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	broadcast := wifiStandardBroadcast()
+	broadcast.BroadcastingDeviceFilter = nil
+	coaEnabled := true
+	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{
+		Type:       WifiSecurityWPA2Enterprise,
+		CoaEnabled: &coaEnabled,
+		PmfMode:    "OPTIONAL",
+		RadiusConfiguration: &unifi.WifiRadiusConfiguration{
+			NasID:     unifi.WifiRadiusNasID{Type: "USER_DEFINED", Value: "unifi-nas"},
+			ProfileID: "opaque-profile-uuid",
+		},
+	}
+
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (enterprise must be emitted, not dropped)", len(resources))
+	}
+	enterprise := resources[0].Spec.(UnifiWifiBroadcastSpec).SecurityConfiguration.WPA2Enterprise
+	if enterprise == nil {
+		t.Fatal("wpa2Enterprise = nil, want the enterprise variant")
+	}
+	if !enterprise.CoaEnabled || enterprise.RadiusConfiguration.RadiusProfileRef.Name != unresolvedRadiusProfileName {
+		t.Errorf("enterprise = %+v, want the placeholder radiusProfileRef", enterprise)
+	}
+	if enterprise.RadiusConfiguration.NasID.Value != "unifi-nas" {
+		t.Errorf("nasId = %+v, want the upstream value preserved", enterprise.RadiusConfiguration.NasID)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedRadiusProfile]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedRadiusProfile)
+	}
+	found := false
+	for _, warning := range warnings {
+		if strings.Contains(warning, "RADIUS") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want a RADIUS warning", warnings)
+	}
+
+	raw, err := json.Marshal(resources[0].Spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	if strings.Contains(string(raw), "opaque-profile-uuid") {
+		t.Errorf("spec leaks the RADIUS profile UUID: %s", raw)
+	}
+}
+
+func TestWifiBroadcastsAmbiguousDeviceTagAnnotated(t *testing.T) {
+	t.Parallel()
+
+	tags := []unifi.DeviceTag{{ID: "tag-1", Name: "aps", DeviceIDs: []string{"dev-1", "dev-2"}}}
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+	spec := resources[0].Spec.(UnifiWifiBroadcastSpec)
+	if len(spec.DeviceTags) != 0 {
+		t.Errorf("deviceTags = %+v, want none (a multi-device tag is unresolvable)", spec.DeviceTags)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedDeviceTag]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedDeviceTag)
+	}
+	if len(warnings) == 0 {
+		t.Errorf("warnings = %v, want a device-scope warning", warnings)
+	}
+}
+
+func TestWifiBroadcastsDevicesFilterAnnotated(t *testing.T) {
+	t.Parallel()
+
+	broadcast := wifiStandardBroadcast()
+	broadcast.BroadcastingDeviceFilter = &unifi.WifiBroadcastingDeviceFilter{Type: "DEVICES", DeviceIDs: []string{"dev-uuid"}}
+
+	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+	spec := resources[0].Spec.(UnifiWifiBroadcastSpec)
+	if len(spec.DeviceTags) != 0 {
+		t.Errorf("deviceTags = %+v, want none for a DEVICES filter", spec.DeviceTags)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedDeviceTag]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedDeviceTag)
+	}
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	if strings.Contains(string(raw), "dev-uuid") {
+		t.Errorf("spec leaks a device UUID: %s", raw)
+	}
+}
+
+func TestWifiBroadcastsDisambiguatesNames(t *testing.T) {
+	t.Parallel()
+
+	first := wifiStandardBroadcast()
+	first.ID = "id-1"
+	second := wifiStandardBroadcast()
+	second.ID = "id-2"
+
+	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{first, second})
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2", len(resources))
+	}
+	if resources[0].Metadata.Name != "corp" || resources[1].Metadata.Name != "corp-2" {
+		t.Errorf("names = %q, %q; want corp, corp-2", resources[0].Metadata.Name, resources[1].Metadata.Name)
+	}
+	if got := resources[1].Metadata.Annotations[AnnotationOriginalName]; got != second.Name {
+		t.Errorf("second annotations[%s] = %q, want %q", AnnotationOriginalName, got, second.Name)
+	}
+}
+
 func TestControllerTemplate(t *testing.T) {
 	t.Parallel()
 

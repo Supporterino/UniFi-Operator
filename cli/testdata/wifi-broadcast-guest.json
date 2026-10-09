@@ -1,0 +1,28 @@
+{
+  "id": "e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6071",
+  "name": "Guest",
+  "enabled": true,
+  "hideName": false,
+  "clientIsolationEnabled": true,
+  "multicastToUnicastConversionEnabled": true,
+  "uapsdEnabled": false,
+  "channel2gLockedTo6": false,
+  "dtimPeriod2gLockedTo3": false,
+  "type": "STANDARD",
+  "metadata": { "origin": "USER_DEFINED" },
+  "network": { "type": "SPECIFIC", "networkId": "77b2c3d4-e5f6-4a7b-9c8d-9e0f1a2b3c4d" },
+  "securityConfiguration": {
+    "type": "WPA2_ENTERPRISE",
+    "coaEnabled": true,
+    "pmfMode": "OPTIONAL",
+    "radiusConfiguration": {
+      "nasId": { "type": "USER_DEFINED", "value": "unifi-nas" },
+      "profileId": "9e7d6c5b-4a3f-4210-9d8e-7c6b5a493827",
+      "macAuthenticationConfiguration": { "macAddressFormat": "UPPERCASE_COLON_SEPARATED" }
+    }
+  },
+  "advertiseDeviceName": false,
+  "arpProxyEnabled": false,
+  "bssTransitionEnabled": true,
+  "broadcastingFrequenciesGHz": [2.4, 5]
+}

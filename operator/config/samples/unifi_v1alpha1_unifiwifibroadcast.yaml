@@ -1,0 +1,56 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiWifiBroadcast
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifiwifibroadcast-sample
+spec:
+  networkRef:
+    name: unifinetwork-sample
+  type: STANDARD
+  name: corp
+  enabled: true
+  hideName: false
+  clientIsolationEnabled: false
+  multicastToUnicastConversionEnabled: true
+  uapsdEnabled: false
+  securityConfiguration:
+    type: WPA2_PERSONAL
+    wpa2Personal:
+      passphrase:
+        name: unifiwifibroadcast-passphrase
+        key: passphrase
+      pmfMode: OPTIONAL
+  standard:
+    advertiseDeviceName: false
+    arpProxyEnabled: false
+    bssTransitionEnabled: true
+    broadcastingFrequenciesGHz:
+    - "2.4"
+    - "5"
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiWifiBroadcast
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifiwifibroadcast-iot-sample
+spec:
+  networkRef:
+    name: unifinetwork-switch-sample
+  type: IOT_OPTIMIZED
+  name: iot
+  enabled: true
+  hideName: false
+  clientIsolationEnabled: true
+  multicastToUnicastConversionEnabled: true
+  uapsdEnabled: true
+  securityConfiguration:
+    type: WPA2_PERSONAL
+    wpa2Personal:
+      passphrase:
+        name: unifiwifibroadcast-passphrase
+        key: passphrase
+  iotOptimized: {}

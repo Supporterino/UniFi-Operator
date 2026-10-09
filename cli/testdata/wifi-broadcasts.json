@@ -1,0 +1,41 @@
+{
+  "count": 3,
+  "data": [
+    {
+      "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+      "name": "Corp",
+      "enabled": true,
+      "type": "STANDARD",
+      "metadata": { "origin": "USER_DEFINED" },
+      "network": { "type": "SPECIFIC", "networkId": "66a1b2c3-d4e5-4f6a-8b7c-8d9e0f1a2b3c" },
+      "securityConfiguration": { "type": "WPA2_PERSONAL" },
+      "broadcastingDeviceFilter": {
+        "type": "DEVICE_TAGS",
+        "deviceTagIds": ["bb1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"]
+      },
+      "broadcastingFrequenciesGHz": [2.4, 5]
+    },
+    {
+      "id": "d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60",
+      "name": "IoT",
+      "enabled": true,
+      "type": "IOT_OPTIMIZED",
+      "metadata": { "origin": "USER_DEFINED" },
+      "network": { "type": "SPECIFIC", "networkId": "88c3d4e5-f6a7-4b8c-9d0e-0f1a2b3c4d5e" },
+      "securityConfiguration": { "type": "WPA2_PERSONAL" }
+    },
+    {
+      "id": "e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6071",
+      "name": "Guest",
+      "enabled": true,
+      "type": "STANDARD",
+      "metadata": { "origin": "USER_DEFINED" },
+      "network": { "type": "SPECIFIC", "networkId": "77b2c3d4-e5f6-4a7b-9c8d-9e0f1a2b3c4d" },
+      "securityConfiguration": { "type": "WPA2_ENTERPRISE" },
+      "broadcastingFrequenciesGHz": [2.4, 5]
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 3
+}

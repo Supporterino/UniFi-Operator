@@ -37,15 +37,20 @@ const (
 	CapabilityNetworks Capability = "Networks"
 	// CapabilityFirewallDNS is the firewall and DNS policy surface.
 	CapabilityFirewallDNS Capability = "FirewallDNS"
+	// CapabilityWifi is the WiFi broadcast CRUD surface. It is pinned to the
+	// Official API minimum because broadcast CRUD is part of the overall
+	// Integration v1 surface.
+	CapabilityWifi Capability = "WiFi"
 )
 
 // capabilityMinimums pins the minimum UniFi Network application version per
 // capability (docs/unifi-api.md): Official API >= 10.1.78, networks CRUD
-// >= 10.0.162, firewall/DNS >= 10.1.84.
+// >= 10.0.162, firewall/DNS >= 10.1.84, WiFi broadcasts >= 10.1.78.
 var capabilityMinimums = map[Capability]Version{
 	CapabilityOfficialAPI: {Major: 10, Minor: 1, Patch: 78},
 	CapabilityNetworks:    {Major: 10, Minor: 0, Patch: 162},
 	CapabilityFirewallDNS: {Major: 10, Minor: 1, Patch: 84},
+	CapabilityWifi:        {Major: 10, Minor: 1, Patch: 78},
 }
 
 // Version is a parsed dotted UniFi Network application version.

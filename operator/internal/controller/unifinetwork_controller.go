@@ -87,6 +87,7 @@ type UnifiNetworkReconciler struct {
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifinetworks,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifinetworks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unififirewallzones,verbs=get;list;watch
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiwifibroadcasts,verbs=get;list;watch;delete
 
 // Reconcile resolves the network's site and controller, applies the
 // declarative network to the console, and reports the result in status. It is
@@ -305,9 +306,13 @@ func (r *UnifiNetworkReconciler) reconcileUpstream(
 	return r.updateStatus(ctx, network, true, reasonReconciled, summary, &networkID, &zoneID)
 }
 
-// reconcileDelete deletes the upstream network recorded in status and removes
-// the finalizer. The site still resolves because the site's own finalizer drains
-// its children before the site (and its controller chain) disappears. When
+// reconcileDelete drains the broadcasts this network owns, then deletes the
+// upstream network recorded in status and removes the finalizer. An owned
+// broadcast's own finalizer needs the network (and through it the site's
+// controller) to still resolve, so the network must not disappear until every
+// broadcast is gone (design D2, unifi-network spec "Owned broadcasts drain
+// first"). The site still resolves because the site's own finalizer drains its
+// children before the site (and its controller chain) disappears. When
 // status.networkID is empty there is no upstream network to delete.
 func (r *UnifiNetworkReconciler) reconcileDelete(
 	ctx context.Context,
@@ -316,6 +321,17 @@ func (r *UnifiNetworkReconciler) reconcileDelete(
 	if !controllerutil.ContainsFinalizer(network, unifiv1alpha1.UnifiNetworkFinalizer) {
 		return ctrl.Result{}, nil
 	}
+
+	remaining, err := drainOwnedChildren(ctx, r.Client, network, &unifiv1alpha1.UnifiWifiBroadcastList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if remaining > 0 {
+		// Garbage collection only starts after the owner is actually gone, so a
+		// blocked network must drive its broadcasts' deletion and re-check.
+		return ctrl.Result{RequeueAfter: childDrainRequeueAfter}, nil
+	}
+
 	if err := r.deleteUpstream(ctx, network); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -847,6 +863,7 @@ func firstNonEmpty(values ...string) string {
 func (r *UnifiNetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unifiv1alpha1.UnifiNetwork{}, builder.WithPredicates(networkPredicate())).
+		Owns(&unifiv1alpha1.UnifiWifiBroadcast{}).
 		Watches(&unifiv1alpha1.UnifiController{}, handler.EnqueueRequestsFromMapFunc(r.networksInNamespace)).
 		Watches(&unifiv1alpha1.UnifiSite{}, handler.EnqueueRequestsFromMapFunc(r.networksForSite)).
 		Watches(&unifiv1alpha1.UnifiFirewallZone{}, handler.EnqueueRequestsFromMapFunc(r.networksForZone)).

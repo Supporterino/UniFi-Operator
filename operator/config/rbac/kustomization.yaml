@@ -34,4 +34,7 @@ resources:
 - unififirewallzone_admin_role.yaml
 - unififirewallzone_editor_role.yaml
 - unififirewallzone_viewer_role.yaml
+- unifiwifibroadcast_admin_role.yaml
+- unifiwifibroadcast_editor_role.yaml
+- unifiwifibroadcast_viewer_role.yaml
 

@@ -1,0 +1,112 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiWifiBroadcast
+metadata:
+  annotations:
+    unifi.supporterino.de/unresolved-wifi-secret: the console does not expose the
+      WiFi passphrase; spec.securityConfiguration references a placeholder Secret
+      that must be set before applying
+  name: corp
+spec:
+  channel2gLockedTo6: false
+  clientIsolationEnabled: false
+  deviceTags:
+  - name: iot-switch
+  dtimPeriod2gLockedTo3: false
+  enabled: true
+  hideName: false
+  multicastToUnicastConversionEnabled: true
+  name: Corp
+  networkRef:
+    name: default
+  securityConfiguration:
+    type: WPA2_PERSONAL
+    wpa2Personal:
+      passphrase:
+        key: passphrase
+        name: unresolved-wifi-passphrase
+      pmfMode: OPTIONAL
+  standard:
+    advertiseDeviceName: false
+    arpProxyEnabled: false
+    broadcastingFrequenciesGHz:
+    - "2.4"
+    - "5"
+    bssTransitionEnabled: true
+  type: STANDARD
+  uapsdEnabled: false
+status:
+  wifiBroadcastID: c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiWifiBroadcast
+metadata:
+  annotations:
+    unifi.supporterino.de/unresolved-wifi-secret: the console does not expose the
+      WiFi passphrase; spec.securityConfiguration references a placeholder Secret
+      that must be set before applying
+  name: iot
+spec:
+  channel2gLockedTo6: false
+  clientIsolationEnabled: true
+  dtimPeriod2gLockedTo3: false
+  enabled: true
+  hideName: false
+  iotOptimized: {}
+  multicastToUnicastConversionEnabled: true
+  name: IoT
+  networkRef:
+    name: iot
+  securityConfiguration:
+    type: WPA2_PERSONAL
+    wpa2Personal:
+      passphrase:
+        key: passphrase
+        name: unresolved-wifi-passphrase
+  type: IOT_OPTIMIZED
+  uapsdEnabled: true
+status:
+  wifiBroadcastID: d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiWifiBroadcast
+metadata:
+  annotations:
+    unifi.supporterino.de/unresolved-radius-profile: the console RADIUS profile UUID
+      cannot be represented; spec.securityConfiguration references a placeholder UnifiRadiusProfile
+      that must be set before applying
+  name: guest
+spec:
+  channel2gLockedTo6: false
+  clientIsolationEnabled: true
+  dtimPeriod2gLockedTo3: false
+  enabled: true
+  hideName: false
+  multicastToUnicastConversionEnabled: true
+  name: Guest
+  networkRef:
+    name: guest-wifi
+  securityConfiguration:
+    type: WPA2_ENTERPRISE
+    wpa2Enterprise:
+      coaEnabled: true
+      pmfMode: OPTIONAL
+      radiusConfiguration:
+        macAuthenticationConfiguration:
+          macAddressFormat: UPPERCASE_COLON_SEPARATED
+        nasId:
+          type: USER_DEFINED
+          value: unifi-nas
+        radiusProfileRef:
+          name: unresolved-radius-profile
+  standard:
+    advertiseDeviceName: false
+    arpProxyEnabled: false
+    broadcastingFrequenciesGHz:
+    - "2.4"
+    - "5"
+    bssTransitionEnabled: true
+  type: STANDARD
+  uapsdEnabled: false
+status:
+  wifiBroadcastID: e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6071

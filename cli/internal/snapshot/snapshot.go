@@ -3,6 +3,7 @@
 package snapshot
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -24,6 +25,22 @@ const (
 	KindUnifiNetwork = "UnifiNetwork"
 	// KindUnifiFirewallZone is the kind for a projected UniFi firewall zone.
 	KindUnifiFirewallZone = "UnifiFirewallZone"
+	// KindUnifiWifiBroadcast is the kind for a projected UniFi WiFi broadcast.
+	KindUnifiWifiBroadcast = "UnifiWifiBroadcast"
+
+	// Broadcast type discriminator values accepted by UnifiWifiBroadcast.spec.type.
+	WifiBroadcastTypeStandard     = "STANDARD"
+	WifiBroadcastTypeIotOptimized = "IOT_OPTIMIZED"
+
+	// Broadcast security discriminator values accepted by
+	// UnifiWifiBroadcast.spec.securityConfiguration.type.
+	WifiSecurityOpen               = "OPEN"
+	WifiSecurityWPA2Personal       = "WPA2_PERSONAL"
+	WifiSecurityWPA2WPA3Personal   = "WPA2_WPA3_PERSONAL"
+	WifiSecurityWPA3Personal       = "WPA3_PERSONAL"
+	WifiSecurityWPA2Enterprise     = "WPA2_ENTERPRISE"
+	WifiSecurityWPA2WPA3Enterprise = "WPA2_WPA3_ENTERPRISE"
+	WifiSecurityWPA3Enterprise     = "WPA3_ENTERPRISE"
 
 	// Management discriminator values accepted by UnifiNetwork.spec.management.
 	ManagementGateway   = "GATEWAY"
@@ -42,6 +59,19 @@ const (
 	// AnnotationUnrepresentedIPv6 records that part of a gateway network's IPv6
 	// configuration could not be represented in spec.
 	AnnotationUnrepresentedIPv6 = "unifi.supporterino.de/unrepresented-ipv6"
+	// AnnotationUnresolvedWifiSecret records that a WiFi broadcast's personal
+	// passphrase could not be recovered from the console, so spec carries a
+	// placeholder Secret reference the user must complete.
+	AnnotationUnresolvedWifiSecret = "unifi.supporterino.de/unresolved-wifi-secret"
+	// AnnotationUnresolvedRadiusProfile records that an enterprise WiFi broadcast
+	// references a RADIUS profile UUID the CLI cannot represent, so spec carries a
+	// placeholder UnifiRadiusProfile reference the user must complete.
+	AnnotationUnresolvedRadiusProfile = "unifi.supporterino.de/unresolved-radius-profile"
+	// AnnotationUnrepresentedWifiSettings records that an upstream WiFi broadcast
+	// carries settings the reduced CLI projection (design D8) does not model, so
+	// they are not in spec. The annotation names them so they are not silently
+	// dropped (cli/AGENTS.md, docs/crd-conventions.md Rule 6).
+	AnnotationUnrepresentedWifiSettings = "unifi.supporterino.de/unrepresented-wifi-settings"
 	// AnnotationControllerTemplate marks an emitted UnifiController as a template the
 	// user must complete with an API-key Secret.
 	AnnotationControllerTemplate = "unifi.supporterino.de/controller-template"
@@ -61,6 +91,22 @@ const (
 	// for a switch-managed network whose upstream device binding is not uniquely
 	// resolvable to a device tag.
 	unresolvedDeviceTagName = "unresolved-device-tag"
+
+	// unresolvedWifiSecretName and unresolvedWifiSecretKey are the deterministic
+	// placeholder Secret coordinates emitted for a WiFi personal passphrase, which
+	// cannot be recovered from the console. They carry no credential value.
+	unresolvedWifiSecretName = "unresolved-wifi-passphrase"
+	unresolvedWifiSecretKey  = "passphrase"
+
+	// unresolvedRadiusProfileName is the deterministic placeholder UnifiRadiusProfile
+	// name emitted for an enterprise broadcast whose upstream RADIUS profile UUID
+	// cannot be represented. It carries no upstream identifier.
+	unresolvedRadiusProfileName = "unresolved-radius-profile"
+
+	// wifiSecretWarning is the reason recorded on AnnotationUnresolvedWifiSecret.
+	wifiSecretWarning = "the console does not expose the WiFi passphrase; spec.securityConfiguration references a placeholder Secret that must be set before applying"
+	// wifiRadiusWarning is the reason recorded on AnnotationUnresolvedRadiusProfile.
+	wifiRadiusWarning = "the console RADIUS profile UUID cannot be represented; spec.securityConfiguration references a placeholder UnifiRadiusProfile that must be set before applying"
 
 	minVLAN = 1
 	maxVLAN = 4009
@@ -184,6 +230,155 @@ type UnifiFirewallZoneSpec struct {
 	SiteRef     CoreRef   `json:"siteRef"`
 	Name        string    `json:"name"`
 	NetworkRefs []CoreRef `json:"networkRefs"`
+}
+
+// IotOptimizedWifiOptions is the IOT_OPTIMIZED variant marker. The v10.4.57 union adds
+// no IOT-only properties, so the CRD requires it as an empty object.
+type IotOptimizedWifiOptions struct{}
+
+// StandardWifiOptions is the emitted STANDARD broadcast variant. BroadcastingFrequenciesGHz
+// uses the CRD's exact string enum ("2.4", "5", "6"), not the numeric upstream form.
+type StandardWifiOptions struct {
+	AdvertiseDeviceName        bool     `json:"advertiseDeviceName"`
+	ArpProxyEnabled            bool     `json:"arpProxyEnabled"`
+	BssTransitionEnabled       bool     `json:"bssTransitionEnabled"`
+	BroadcastingFrequenciesGHz []string `json:"broadcastingFrequenciesGHz"`
+}
+
+// WifiOpenSecurityConfiguration is the emitted OPEN security variant.
+type WifiOpenSecurityConfiguration struct {
+	Encryption *string `json:"encryption,omitempty"`
+}
+
+// WifiSAEConfiguration configures SAE (personal WPA3 variants).
+type WifiSAEConfiguration struct {
+	AnticloggingThresholdSeconds int32 `json:"anticloggingThresholdSeconds"`
+	SyncTimeSeconds              int32 `json:"syncTimeSeconds"`
+}
+
+// WifiPresharedKey is an emitted per-network preshared key. The passphrase is a
+// placeholder Secret reference; the value is never recoverable from the console.
+type WifiPresharedKey struct {
+	Network    CoreRef           `json:"network"`
+	Passphrase SecretKeySelector `json:"passphrase"`
+}
+
+// WifiWPA2PersonalSecurityConfiguration is the emitted WPA2_PERSONAL security variant.
+type WifiWPA2PersonalSecurityConfiguration struct {
+	Passphrase                *SecretKeySelector `json:"passphrase,omitempty"`
+	PresharedKeys             []WifiPresharedKey `json:"presharedKeys,omitempty"`
+	PmfMode                   *string            `json:"pmfMode,omitempty"`
+	FastRoamingEnabled        *bool              `json:"fastRoamingEnabled,omitempty"`
+	GroupRekeyIntervalSeconds *int32             `json:"groupRekeyIntervalSeconds,omitempty"`
+}
+
+// WifiWPA2WPA3PersonalSecurityConfiguration is the emitted WPA2_WPA3_PERSONAL variant.
+type WifiWPA2WPA3PersonalSecurityConfiguration struct {
+	Passphrase                SecretKeySelector    `json:"passphrase"`
+	PmfMode                   string               `json:"pmfMode"`
+	SaeConfiguration          WifiSAEConfiguration `json:"saeConfiguration"`
+	Wpa3FastRoamingEnabled    bool                 `json:"wpa3FastRoamingEnabled"`
+	FastRoamingEnabled        *bool                `json:"fastRoamingEnabled,omitempty"`
+	GroupRekeyIntervalSeconds *int32               `json:"groupRekeyIntervalSeconds,omitempty"`
+}
+
+// WifiWPA3PersonalSecurityConfiguration is the emitted WPA3_PERSONAL security variant.
+type WifiWPA3PersonalSecurityConfiguration struct {
+	Passphrase                SecretKeySelector    `json:"passphrase"`
+	SaeConfiguration          WifiSAEConfiguration `json:"saeConfiguration"`
+	FastRoamingEnabled        *bool                `json:"fastRoamingEnabled,omitempty"`
+	GroupRekeyIntervalSeconds *int32               `json:"groupRekeyIntervalSeconds,omitempty"`
+}
+
+// WifiRadiusNasID is the emitted RADIUS NAS-Identifier configuration (DERIVED or
+// USER_DEFINED).
+type WifiRadiusNasID struct {
+	Type   string `json:"type"`
+	Source string `json:"source,omitempty"`
+	Value  string `json:"value,omitempty"`
+}
+
+// WifiRadiusMacAuthenticationConfiguration is the emitted RADIUS MAC authentication
+// configuration.
+type WifiRadiusMacAuthenticationConfiguration struct {
+	MacAddressFormat string `json:"macAddressFormat"`
+}
+
+// WifiEnterpriseRadiusConfiguration is the emitted enterprise RADIUS configuration. The
+// upstream profile UUID is replaced by radiusProfileRef, a reference to a UnifiRadiusProfile
+// that the operator resolves (and currently fails closed on until the kind is implemented).
+type WifiEnterpriseRadiusConfiguration struct {
+	NasID                          WifiRadiusNasID                           `json:"nasId"`
+	RadiusProfileRef               CoreRef                                   `json:"radiusProfileRef"`
+	MACAuthenticationConfiguration *WifiRadiusMacAuthenticationConfiguration `json:"macAuthenticationConfiguration,omitempty"`
+}
+
+// WifiWPA2EnterpriseSecurityConfiguration is the emitted WPA2_ENTERPRISE security variant.
+type WifiWPA2EnterpriseSecurityConfiguration struct {
+	CoaEnabled                bool                              `json:"coaEnabled"`
+	RadiusConfiguration       WifiEnterpriseRadiusConfiguration `json:"radiusConfiguration"`
+	PmfMode                   *string                           `json:"pmfMode,omitempty"`
+	FastRoamingEnabled        *bool                             `json:"fastRoamingEnabled,omitempty"`
+	GroupRekeyIntervalSeconds *int32                            `json:"groupRekeyIntervalSeconds,omitempty"`
+}
+
+// WifiWPA2WPA3EnterpriseSecurityConfiguration is the emitted WPA2_WPA3_ENTERPRISE variant.
+type WifiWPA2WPA3EnterpriseSecurityConfiguration struct {
+	CoaEnabled                bool                              `json:"coaEnabled"`
+	PmfMode                   string                            `json:"pmfMode"`
+	RadiusConfiguration       WifiEnterpriseRadiusConfiguration `json:"radiusConfiguration"`
+	Wpa3FastRoamingEnabled    bool                              `json:"wpa3FastRoamingEnabled"`
+	FastRoamingEnabled        *bool                             `json:"fastRoamingEnabled,omitempty"`
+	GroupRekeyIntervalSeconds *int32                            `json:"groupRekeyIntervalSeconds,omitempty"`
+}
+
+// WifiWPA3EnterpriseSecurityConfiguration is the emitted WPA3_ENTERPRISE security variant.
+type WifiWPA3EnterpriseSecurityConfiguration struct {
+	CoaEnabled                bool                              `json:"coaEnabled"`
+	SecurityMode              string                            `json:"securityMode"`
+	RadiusConfiguration       WifiEnterpriseRadiusConfiguration `json:"radiusConfiguration"`
+	FastRoamingEnabled        *bool                             `json:"fastRoamingEnabled,omitempty"`
+	GroupRekeyIntervalSeconds *int32                            `json:"groupRekeyIntervalSeconds,omitempty"`
+}
+
+// WifiSecurityConfiguration is the emitted broadcast security union. The discriminator
+// selects exactly one variant sub-object.
+type WifiSecurityConfiguration struct {
+	Type               string                                       `json:"type"`
+	Open               *WifiOpenSecurityConfiguration               `json:"open,omitempty"`
+	WPA2Personal       *WifiWPA2PersonalSecurityConfiguration       `json:"wpa2Personal,omitempty"`
+	WPA2WPA3Personal   *WifiWPA2WPA3PersonalSecurityConfiguration   `json:"wpa2Wpa3Personal,omitempty"`
+	WPA3Personal       *WifiWPA3PersonalSecurityConfiguration       `json:"wpa3Personal,omitempty"`
+	WPA2Enterprise     *WifiWPA2EnterpriseSecurityConfiguration     `json:"wpa2Enterprise,omitempty"`
+	WPA2WPA3Enterprise *WifiWPA2WPA3EnterpriseSecurityConfiguration `json:"wpa2Wpa3Enterprise,omitempty"`
+	WPA3Enterprise     *WifiWPA3EnterpriseSecurityConfiguration     `json:"wpa3Enterprise,omitempty"`
+}
+
+// WifiBroadcastStatus is the observed state recorded on an emitted UnifiWifiBroadcast. The
+// upstream broadcast UUID belongs in status only (docs/crd-conventions.md).
+type WifiBroadcastStatus struct {
+	WifiBroadcastID string `json:"wifiBroadcastID,omitempty"`
+}
+
+// UnifiWifiBroadcastSpec is the desired state emitted for a UniFi WiFi broadcast. It
+// mirrors the operator's UnifiWifiBroadcastSpec so emitted resources validate against the
+// CRD. It carries no upstream id or network UUID: the upstream network is referenced by
+// the emitted UnifiNetwork name and the broadcast id is recorded in status only.
+type UnifiWifiBroadcastSpec struct {
+	NetworkRef                          CoreRef                   `json:"networkRef"`
+	Type                                string                    `json:"type"`
+	Name                                string                    `json:"name"`
+	Enabled                             *bool                     `json:"enabled,omitempty"`
+	HideName                            bool                      `json:"hideName"`
+	ClientIsolationEnabled              bool                      `json:"clientIsolationEnabled"`
+	MulticastToUnicastConversionEnabled bool                      `json:"multicastToUnicastConversionEnabled"`
+	UapsdEnabled                        bool                      `json:"uapsdEnabled"`
+	Channel2gLockedTo6                  *bool                     `json:"channel2gLockedTo6,omitempty"`
+	DtimPeriod2gLockedTo3               *bool                     `json:"dtimPeriod2gLockedTo3,omitempty"`
+	SecurityConfiguration               WifiSecurityConfiguration `json:"securityConfiguration"`
+	DeviceTags                          []DeviceTagSelector       `json:"deviceTags,omitempty"`
+	Standard                            *StandardWifiOptions      `json:"standard,omitempty"`
+	IotOptimized                        *IotOptimizedWifiOptions  `json:"iotOptimized,omitempty"`
 }
 
 // Controller emits a UnifiController template: the console URL plus a placeholder
@@ -537,6 +732,398 @@ func firewallZoneNetworkRefs(zone unifi.FirewallZone, networkNames map[string]st
 		refs = append(refs, CoreRef{Name: name})
 	}
 	return refs, unresolved
+}
+
+// WifiBroadcasts projects each upstream WiFi broadcast into a UnifiWifiBroadcast.
+// networkNames is the upstream-network-id -> emitted-name map returned by Networks; each
+// broadcast's spec.networkRef is resolved through it so the reference names a UnifiNetwork
+// resource this snapshot emitted. deviceTags is the site's read-only device-tag list, used
+// to reverse-map a DEVICE_TAGS scope to tag names. A broadcast whose network cannot be
+// resolved, whose type/variant is unrepresentable, or whose personal passphrase is not
+// recoverable is emitted with a placeholder (passphrase) or skipped with a warning rather
+// than silently dropped. The upstream broadcast id is recorded in status only.
+func WifiBroadcasts(networkNames map[string]string, deviceTags []unifi.DeviceTag, broadcasts []unifi.WifiBroadcast) ([]emit.Resource, []string) {
+	resources := make([]emit.Resource, 0, len(broadcasts))
+	var warnings []string
+	alloc := newNameAllocator()
+
+	for _, broadcast := range broadcasts {
+		spec, annotations, broadcastWarnings, ok := buildWifiBroadcastSpec(networkNames, deviceTags, broadcast)
+		if !ok {
+			warnings = append(warnings, broadcastWarnings...)
+			continue
+		}
+
+		base := DNSSafeName(broadcast.Name)
+		name, collided := alloc.allocate(base)
+		if collided {
+			setAnnotation(&annotations, AnnotationOriginalName, broadcast.Name)
+			broadcastWarnings = append(broadcastWarnings, fmt.Sprintf(
+				"wifi broadcast %q: projected name %q is already in use; emitting as %q",
+				broadcast.Name, base, name))
+		}
+
+		metadata := emit.Metadata{Name: name}
+		if len(annotations) > 0 {
+			metadata.Annotations = annotations
+		}
+		resources = append(resources, emit.Resource{
+			APIVersion: Group + "/" + Version,
+			Kind:       KindUnifiWifiBroadcast,
+			Metadata:   metadata,
+			Spec:       spec,
+			Status:     WifiBroadcastStatus{WifiBroadcastID: broadcast.ID},
+		})
+		warnings = append(warnings, broadcastWarnings...)
+	}
+	return resources, warnings
+}
+
+// buildWifiBroadcastSpec maps one upstream broadcast detail into a spec valid against the
+// CRD. It returns ok=false (with a warning and no resource) when a required field is
+// missing or cannot be represented faithfully, so the CLI never emits an invalid CR.
+func buildWifiBroadcastSpec(networkNames map[string]string, deviceTags []unifi.DeviceTag, broadcast unifi.WifiBroadcast) (UnifiWifiBroadcastSpec, map[string]string, []string, bool) {
+	networkName, ok := broadcastNetworkName(networkNames, broadcast.Network)
+	if !ok {
+		return UnifiWifiBroadcastSpec{}, nil, []string{fmt.Sprintf(
+			"wifi broadcast %q: upstream network could not be resolved to an emitted UnifiNetwork; skipping", broadcast.Name)}, false
+	}
+
+	security, usedPassphrase, usedRadius, err := wifiSecurityConfiguration(broadcast.SecurityConfiguration, networkNames)
+	if err != nil {
+		return UnifiWifiBroadcastSpec{}, nil, []string{fmt.Sprintf(
+			"wifi broadcast %q: %v; skipping", broadcast.Name, err)}, false
+	}
+
+	enabled := broadcast.Enabled
+	channel2g := broadcast.Channel2gLockedTo6
+	dtim2g := broadcast.DtimPeriod2gLockedTo3
+	spec := UnifiWifiBroadcastSpec{
+		NetworkRef:                          CoreRef{Name: networkName},
+		Type:                                broadcast.Type,
+		Name:                                broadcast.Name,
+		Enabled:                             &enabled,
+		HideName:                            broadcast.HideName,
+		ClientIsolationEnabled:              broadcast.ClientIsolationEnabled,
+		MulticastToUnicastConversionEnabled: broadcast.MulticastToUnicastConversionEnabled,
+		UapsdEnabled:                        broadcast.UapsdEnabled,
+		Channel2gLockedTo6:                  &channel2g,
+		DtimPeriod2gLockedTo3:               &dtim2g,
+		SecurityConfiguration:               security,
+	}
+
+	var annotations map[string]string
+	var warnings []string
+
+	switch broadcast.Type {
+	case WifiBroadcastTypeStandard:
+		standard, standardWarnings, ok := standardWifiOptions(broadcast)
+		if !ok {
+			return UnifiWifiBroadcastSpec{}, nil, standardWarnings, false
+		}
+		spec.Standard = standard
+		warnings = append(warnings, standardWarnings...)
+	case WifiBroadcastTypeIotOptimized:
+		spec.IotOptimized = &IotOptimizedWifiOptions{}
+	default:
+		return UnifiWifiBroadcastSpec{}, nil, []string{fmt.Sprintf(
+			"wifi broadcast %q: unknown type %q; skipping", broadcast.Name, broadcast.Type)}, false
+	}
+
+	selectors, deviceAnnotations, deviceWarnings, ok := wifiDeviceTags(broadcast.BroadcastingDeviceFilter, deviceTags)
+	if !ok {
+		return UnifiWifiBroadcastSpec{}, nil, deviceWarnings, false
+	}
+	spec.DeviceTags = selectors
+	for key, value := range deviceAnnotations {
+		setAnnotation(&annotations, key, value)
+	}
+	warnings = append(warnings, deviceWarnings...)
+
+	if usedPassphrase {
+		setAnnotation(&annotations, AnnotationUnresolvedWifiSecret, wifiSecretWarning)
+		warnings = append(warnings, fmt.Sprintf(
+			"wifi broadcast %q: the passphrase is not recoverable from the console; set the placeholder Secret %q before applying (annotation %s)",
+			broadcast.Name, unresolvedWifiSecretName, AnnotationUnresolvedWifiSecret))
+	}
+	if usedRadius {
+		setAnnotation(&annotations, AnnotationUnresolvedRadiusProfile, wifiRadiusWarning)
+		warnings = append(warnings, fmt.Sprintf(
+			"wifi broadcast %q: the RADIUS profile UUID is not representable; set the placeholder UnifiRadiusProfile %q before applying (annotation %s)",
+			broadcast.Name, unresolvedRadiusProfileName, AnnotationUnresolvedRadiusProfile))
+	}
+
+	// The CLI projects a reduced set of settings (design D8); record and warn about
+	// any upstream setting that is not represented rather than dropping it silently.
+	if unrepresented := broadcast.UnrepresentedSettings(); len(unrepresented) > 0 {
+		setAnnotation(&annotations, AnnotationUnrepresentedWifiSettings,
+			"settings not represented in spec: "+strings.Join(unrepresented, ", "))
+		warnings = append(warnings, fmt.Sprintf(
+			"wifi broadcast %q: settings not represented in spec (%s); set them manually if needed (annotation %s)",
+			broadcast.Name, strings.Join(unrepresented, ", "), AnnotationUnrepresentedWifiSettings))
+	}
+	return spec, annotations, warnings, true
+}
+
+// broadcastNetworkName resolves the upstream network reference to an emitted UnifiNetwork
+// name. Only the SPECIFIC variant maps to a name; the NATIVE variant and an unknown
+// network id cannot be represented.
+func broadcastNetworkName(networkNames map[string]string, ref *unifi.WifiNetworkReference) (string, bool) {
+	if ref == nil || ref.Type != "SPECIFIC" || ref.NetworkID == "" {
+		return "", false
+	}
+	name, ok := networkNames[ref.NetworkID]
+	return name, ok
+}
+
+// standardWifiOptions maps the observed STANDARD variant. It returns ok=false when a
+// required STANDARD field is missing or a frequency is outside the CRD enum.
+func standardWifiOptions(broadcast unifi.WifiBroadcast) (*StandardWifiOptions, []string, bool) {
+	if broadcast.AdvertiseDeviceName == nil || broadcast.ArpProxyEnabled == nil || broadcast.BssTransitionEnabled == nil {
+		return nil, []string{fmt.Sprintf(
+			"wifi broadcast %q: STANDARD variant fields are missing from the controller response; skipping", broadcast.Name)}, false
+	}
+	frequencies, err := frequencyStrings(broadcast.BroadcastingFrequenciesGHz)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("wifi broadcast %q: %v; skipping", broadcast.Name, err)}, false
+	}
+	return &StandardWifiOptions{
+		AdvertiseDeviceName:        *broadcast.AdvertiseDeviceName,
+		ArpProxyEnabled:            *broadcast.ArpProxyEnabled,
+		BssTransitionEnabled:       *broadcast.BssTransitionEnabled,
+		BroadcastingFrequenciesGHz: frequencies,
+	}, nil, true
+}
+
+// frequencyStrings maps the numeric upstream frequency bands onto the CRD's exact string
+// enum. It returns an error for a band the CRD does not accept.
+func frequencyStrings(in []float64) ([]string, error) {
+	if len(in) == 0 {
+		return nil, errors.New("broadcastingFrequenciesGHz is empty")
+	}
+	out := make([]string, 0, len(in))
+	for _, frequency := range in {
+		switch frequency {
+		case 2.4:
+			out = append(out, "2.4")
+		case 5:
+			out = append(out, "5")
+		case 6:
+			out = append(out, "6")
+		default:
+			return nil, fmt.Errorf("frequency %g is not one of 2.4, 5, 6", frequency)
+		}
+	}
+	return out, nil
+}
+
+// wifiDeviceTags maps the upstream broadcasting device filter to name-based selectors. A
+// DEVICE_TAGS filter is reverse-mapped to tag names via the read-only device-tag list; an
+// unresolved tag, or an unrepresentable DEVICES (raw device UUID) filter, is recorded in
+// an annotation and a warning. It returns ok=false only for an internal error; an
+// unresolved filter still yields a valid resource.
+func wifiDeviceTags(filter *unifi.WifiBroadcastingDeviceFilter, deviceTags []unifi.DeviceTag) ([]DeviceTagSelector, map[string]string, []string, bool) {
+	if filter == nil {
+		return nil, nil, nil, true
+	}
+	switch filter.Type {
+	case "DEVICE_TAGS":
+		selectors := make([]DeviceTagSelector, 0, len(filter.DeviceTagIDs))
+		unresolved := 0
+		for _, id := range filter.DeviceTagIDs {
+			name, ok := deviceTagNameForID(deviceTags, id)
+			if !ok {
+				unresolved++
+				continue
+			}
+			selectors = append(selectors, DeviceTagSelector{Name: name})
+		}
+		if unresolved == 0 {
+			return selectors, nil, nil, true
+		}
+		annotations := map[string]string{AnnotationUnresolvedDeviceTag: "device scope is incomplete: some upstream device tags were not emitted as names; review spec.deviceTags"}
+		warnings := []string{fmt.Sprintf(
+			"%d device tag(s) in the device scope were not resolved to emitted names; spec.deviceTags may be incomplete", unresolved)}
+		return selectors, annotations, warnings, true
+	case "DEVICES":
+		annotations := map[string]string{AnnotationUnresolvedDeviceTag: "device scope uses raw device IDs, which cannot be represented; spec.deviceTags was omitted and the broadcast applies to all AP-capable devices"}
+		warnings := []string{"device scope uses raw device IDs which cannot be represented; spec.deviceTags was omitted"}
+		return nil, annotations, warnings, true
+	default:
+		return nil, nil, nil, true
+	}
+}
+
+// deviceTagNameForID returns the name of the device tag with the given UUID when it
+// resolves to exactly one device. The operator requires a single-device tag, so a
+// multi-device tag is treated as unresolvable and kept out of the emitted selector.
+func deviceTagNameForID(deviceTags []unifi.DeviceTag, tagID string) (string, bool) {
+	for _, tag := range deviceTags {
+		if tag.ID != tagID {
+			continue
+		}
+		if len(tag.DeviceIDs) != 1 {
+			return "", false
+		}
+		return tag.Name, true
+	}
+	return "", false
+}
+
+// wifiSecurityConfiguration maps the observed security variant onto the emitted union.
+// Personal passphrases are replaced with a placeholder Secret reference (the console does
+// not expose a recoverable value); usedPassphrase reports whether one was emitted. An
+// enterprise variant's RADIUS profile UUID is replaced with a placeholder UnifiRadiusProfile
+// reference; usedRadius reports whether one was emitted. The returned error means the
+// broadcast cannot be represented and should be skipped.
+func wifiSecurityConfiguration(in *unifi.WifiSecurityConfiguration, networkNames map[string]string) (WifiSecurityConfiguration, bool, bool, error) {
+	if in == nil {
+		return WifiSecurityConfiguration{}, false, false, errors.New("securityConfiguration is missing from the controller response")
+	}
+	placeholder := SecretKeySelector{Name: unresolvedWifiSecretName, Key: unresolvedWifiSecretKey}
+
+	switch in.Type {
+	case WifiSecurityOpen:
+		out := WifiSecurityConfiguration{Type: in.Type, Open: &WifiOpenSecurityConfiguration{}}
+		if in.Encryption != "" {
+			encryption := in.Encryption
+			out.Open.Encryption = &encryption
+		}
+		return out, false, false, nil
+	case WifiSecurityWPA2Personal:
+		variant := &WifiWPA2PersonalSecurityConfiguration{
+			FastRoamingEnabled:        in.FastRoamingEnabled,
+			GroupRekeyIntervalSeconds: in.GroupRekeyIntervalSeconds,
+		}
+		// The console cannot return a recoverable passphrase, so always emit the
+		// placeholder (even when the detail omits it) and annotate: a WPA2_PERSONAL
+		// broadcast must still tell the user to supply the passphrase.
+		passphrase := placeholder
+		variant.Passphrase = &passphrase
+		if in.PmfMode != "" {
+			pmfMode := in.PmfMode
+			variant.PmfMode = &pmfMode
+		}
+		preshared, err := wifiPresharedKeys(in.PresharedKeys, networkNames, placeholder)
+		if err != nil {
+			return WifiSecurityConfiguration{}, false, false, err
+		}
+		if len(preshared) > 0 {
+			variant.PresharedKeys = preshared
+		}
+		return WifiSecurityConfiguration{Type: in.Type, WPA2Personal: variant}, true, false, nil
+	case WifiSecurityWPA2WPA3Personal:
+		if in.SaeConfiguration == nil {
+			return WifiSecurityConfiguration{}, false, false, errors.New("WPA2_WPA3_PERSONAL security is missing saeConfiguration")
+		}
+		return WifiSecurityConfiguration{
+			Type: in.Type,
+			WPA2WPA3Personal: &WifiWPA2WPA3PersonalSecurityConfiguration{
+				Passphrase:                placeholder,
+				PmfMode:                   in.PmfMode,
+				SaeConfiguration:          wifiSAE(in.SaeConfiguration),
+				Wpa3FastRoamingEnabled:    in.Wpa3FastRoamingEnabled != nil && *in.Wpa3FastRoamingEnabled,
+				FastRoamingEnabled:        in.FastRoamingEnabled,
+				GroupRekeyIntervalSeconds: in.GroupRekeyIntervalSeconds,
+			},
+		}, true, false, nil
+	case WifiSecurityWPA3Personal:
+		if in.SaeConfiguration == nil {
+			return WifiSecurityConfiguration{}, false, false, errors.New("WPA3_PERSONAL security is missing saeConfiguration")
+		}
+		return WifiSecurityConfiguration{
+			Type: in.Type,
+			WPA3Personal: &WifiWPA3PersonalSecurityConfiguration{
+				Passphrase:                placeholder,
+				SaeConfiguration:          wifiSAE(in.SaeConfiguration),
+				FastRoamingEnabled:        in.FastRoamingEnabled,
+				GroupRekeyIntervalSeconds: in.GroupRekeyIntervalSeconds,
+			},
+		}, true, false, nil
+	case WifiSecurityWPA2Enterprise:
+		variant := &WifiWPA2EnterpriseSecurityConfiguration{
+			CoaEnabled:                in.CoaEnabled != nil && *in.CoaEnabled,
+			RadiusConfiguration:       enterpriseRadiusConfiguration(in),
+			FastRoamingEnabled:        in.FastRoamingEnabled,
+			GroupRekeyIntervalSeconds: in.GroupRekeyIntervalSeconds,
+		}
+		if in.PmfMode != "" {
+			pmfMode := in.PmfMode
+			variant.PmfMode = &pmfMode
+		}
+		return WifiSecurityConfiguration{Type: in.Type, WPA2Enterprise: variant}, false, true, nil
+	case WifiSecurityWPA2WPA3Enterprise:
+		return WifiSecurityConfiguration{
+			Type: in.Type,
+			WPA2WPA3Enterprise: &WifiWPA2WPA3EnterpriseSecurityConfiguration{
+				CoaEnabled:                in.CoaEnabled != nil && *in.CoaEnabled,
+				PmfMode:                   in.PmfMode,
+				RadiusConfiguration:       enterpriseRadiusConfiguration(in),
+				Wpa3FastRoamingEnabled:    in.Wpa3FastRoamingEnabled != nil && *in.Wpa3FastRoamingEnabled,
+				FastRoamingEnabled:        in.FastRoamingEnabled,
+				GroupRekeyIntervalSeconds: in.GroupRekeyIntervalSeconds,
+			},
+		}, false, true, nil
+	case WifiSecurityWPA3Enterprise:
+		return WifiSecurityConfiguration{
+			Type: in.Type,
+			WPA3Enterprise: &WifiWPA3EnterpriseSecurityConfiguration{
+				CoaEnabled:                in.CoaEnabled != nil && *in.CoaEnabled,
+				SecurityMode:              in.SecurityMode,
+				RadiusConfiguration:       enterpriseRadiusConfiguration(in),
+				FastRoamingEnabled:        in.FastRoamingEnabled,
+				GroupRekeyIntervalSeconds: in.GroupRekeyIntervalSeconds,
+			},
+		}, false, true, nil
+	default:
+		return WifiSecurityConfiguration{}, false, false, fmt.Errorf("unknown security type %q", in.Type)
+	}
+}
+
+// enterpriseRadiusConfiguration maps the observed enterprise RADIUS configuration, replacing
+// the opaque profile UUID with a placeholder UnifiRadiusProfile reference.
+func enterpriseRadiusConfiguration(in *unifi.WifiSecurityConfiguration) WifiEnterpriseRadiusConfiguration {
+	out := WifiEnterpriseRadiusConfiguration{
+		RadiusProfileRef: CoreRef{Name: unresolvedRadiusProfileName},
+	}
+	if in.RadiusConfiguration == nil {
+		return out
+	}
+	out.NasID = WifiRadiusNasID{
+		Type:   in.RadiusConfiguration.NasID.Type,
+		Source: in.RadiusConfiguration.NasID.Source,
+		Value:  in.RadiusConfiguration.NasID.Value,
+	}
+	if mac := in.RadiusConfiguration.MACAuthenticationConfiguration; mac != nil {
+		out.MACAuthenticationConfiguration = &WifiRadiusMacAuthenticationConfiguration{MacAddressFormat: mac.MacAddressFormat}
+	}
+	return out
+}
+
+// wifiPresharedKeys maps per-network preshared keys, resolving each network to an emitted
+// UnifiNetwork name and replacing the passphrase with the placeholder.
+func wifiPresharedKeys(in []unifi.WifiPresharedKey, networkNames map[string]string, placeholder SecretKeySelector) ([]WifiPresharedKey, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make([]WifiPresharedKey, 0, len(in))
+	for _, key := range in {
+		ref := key.Network
+		name, ok := broadcastNetworkName(networkNames, &ref)
+		if !ok {
+			return nil, errors.New("a preshared-key network could not be resolved to an emitted UnifiNetwork")
+		}
+		out = append(out, WifiPresharedKey{Network: CoreRef{Name: name}, Passphrase: placeholder})
+	}
+	return out, nil
+}
+
+// wifiSAE maps the observed SAE configuration.
+func wifiSAE(in *unifi.WifiSAEConfiguration) WifiSAEConfiguration {
+	return WifiSAEConfiguration{
+		AnticloggingThresholdSeconds: in.AnticloggingThresholdSeconds,
+		SyncTimeSeconds:              in.SyncTimeSeconds,
+	}
 }
 
 // mapIPv4 validates and maps the observed IPv4 configuration.

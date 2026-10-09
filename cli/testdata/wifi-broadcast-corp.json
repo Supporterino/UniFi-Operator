@@ -1,0 +1,27 @@
+{
+  "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+  "name": "Corp",
+  "enabled": true,
+  "hideName": false,
+  "clientIsolationEnabled": false,
+  "multicastToUnicastConversionEnabled": true,
+  "uapsdEnabled": false,
+  "channel2gLockedTo6": false,
+  "dtimPeriod2gLockedTo3": false,
+  "type": "STANDARD",
+  "metadata": { "origin": "USER_DEFINED" },
+  "network": { "type": "SPECIFIC", "networkId": "66a1b2c3-d4e5-4f6a-8b7c-8d9e0f1a2b3c" },
+  "securityConfiguration": {
+    "type": "WPA2_PERSONAL",
+    "passphrase": "hunter2",
+    "pmfMode": "OPTIONAL"
+  },
+  "broadcastingDeviceFilter": {
+    "type": "DEVICE_TAGS",
+    "deviceTagIds": ["bb1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"]
+  },
+  "advertiseDeviceName": false,
+  "arpProxyEnabled": false,
+  "bssTransitionEnabled": true,
+  "broadcastingFrequenciesGHz": [2.4, 5]
+}

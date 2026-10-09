@@ -261,6 +261,21 @@ type Client interface {
 	// ListDeviceTags returns every device tag on the given site. Tags are
 	// read-only upstream; a name-based selector is resolved against this list.
 	ListDeviceTags(ctx context.Context, siteID string) ([]DeviceTag, error)
+	// ListWifiBroadcasts returns every WiFi broadcast overview on the given
+	// site. The list is an overview only; call GetWifiBroadcast for the variant
+	// configuration.
+	ListWifiBroadcasts(ctx context.Context, siteID string) ([]WifiBroadcastOverview, error)
+	// GetWifiBroadcast returns the WiFi broadcast with the given UUID on the
+	// given site, including its full variant configuration.
+	GetWifiBroadcast(ctx context.Context, siteID, broadcastID string) (WifiBroadcast, error)
+	// CreateWifiBroadcast creates a WiFi broadcast on the given site.
+	CreateWifiBroadcast(ctx context.Context, siteID string, req WifiBroadcastRequest) (WifiBroadcast, error)
+	// UpdateWifiBroadcast replaces the WiFi broadcast with the given UUID on
+	// the given site.
+	UpdateWifiBroadcast(ctx context.Context, siteID, broadcastID string, req WifiBroadcastRequest) (WifiBroadcast, error)
+	// DeleteWifiBroadcast deletes the WiFi broadcast with the given UUID on the
+	// given site.
+	DeleteWifiBroadcast(ctx context.Context, siteID, broadcastID string) error
 }
 
 // APIError describes a non-successful response from the UniFi controller. The

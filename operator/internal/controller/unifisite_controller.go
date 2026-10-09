@@ -23,8 +23,6 @@ import (
 	"net/http"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -157,44 +155,15 @@ func (r *UnifiSiteReconciler) reconcileDelete(
 		return ctrl.Result{}, nil
 	}
 
-	var networks unifiv1alpha1.UnifiNetworkList
-	if err := r.List(ctx, &networks, client.InNamespace(site.Namespace)); err != nil {
-		return ctrl.Result{}, fmt.Errorf("list owned networks: %w", err)
+	networksRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiNetworkList{})
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-	var zones unifiv1alpha1.UnifiFirewallZoneList
-	if err := r.List(ctx, &zones, client.InNamespace(site.Namespace)); err != nil {
-		return ctrl.Result{}, fmt.Errorf("list owned firewall zones: %w", err)
+	zonesRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiFirewallZoneList{})
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-
-	remaining := 0
-	for i := range networks.Items {
-		child := &networks.Items[i]
-		if !metav1.IsControlledBy(child, site) {
-			continue
-		}
-		remaining++
-		if !child.DeletionTimestamp.IsZero() {
-			// Deletion already initiated; wait for the child's own finalizer.
-			continue
-		}
-		if err := r.Delete(ctx, child); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete owned network %q: %w", child.Name, err)
-		}
-	}
-	for i := range zones.Items {
-		child := &zones.Items[i]
-		if !metav1.IsControlledBy(child, site) {
-			continue
-		}
-		remaining++
-		if !child.DeletionTimestamp.IsZero() {
-			// Deletion already initiated; wait for the child's own finalizer.
-			continue
-		}
-		if err := r.Delete(ctx, child); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete owned firewall zone %q: %w", child.Name, err)
-		}
-	}
+	remaining := networksRemaining + zonesRemaining
 
 	if remaining > 0 {
 		// Garbage collection only starts after the owner is actually gone, so a

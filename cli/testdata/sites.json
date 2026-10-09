@@ -1,0 +1,18 @@
+{
+  "count": 2,
+  "data": [
+    {
+      "id": "5f3a2b1c-9d8e-4f6a-8b4c-3d2e1f0a9b8c",
+      "internalReference": "default",
+      "name": "Default"
+    },
+    {
+      "id": "6a4b3c2d-0e9f-4a7b-9c8d-4e3f2a1b0c9d",
+      "internalReference": "branch",
+      "name": "Branch"
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 2
+}

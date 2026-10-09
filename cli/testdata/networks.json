@@ -1,23 +1,35 @@
 {
-  "meta": { "rc": "ok" },
+  "count": 3,
   "data": [
     {
-      "_id": "66a1b2c3d4e5f6a7b8c9d0e1",
-      "site_id": "5f3a2b1c9d8e7f6a5b4c3d2e",
+      "id": "66a1b2c3-d4e5-4f6a-8b7c-8d9e0f1a2b3c",
+      "management": "UNMANAGED",
       "name": "Default",
-      "purpose": "corporate",
-      "ip_subnet": "192.168.1.0/24",
-      "vlan": 1,
-      "enabled": true
+      "enabled": true,
+      "vlanId": 1,
+      "default": true,
+      "metadata": { "origin": "USER_DEFINED" }
     },
     {
-      "_id": "66a1b2c3d4e5f6a7b8c9d0e2",
-      "site_id": "5f3a2b1c9d8e7f6a5b4c3d2e",
+      "id": "77b2c3d4-e5f6-4a7b-9c8d-9e0f1a2b3c4d",
+      "management": "GATEWAY",
       "name": "Guest WiFi",
-      "purpose": "guest",
-      "ip_subnet": "192.168.2.0/24",
-      "vlan": 20,
-      "enabled": false
+      "enabled": false,
+      "vlanId": 20,
+      "default": false,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "88c3d4e5-f6a7-4b8c-9d0e-0f1a2b3c4d5e",
+      "management": "SWITCH",
+      "name": "IoT",
+      "enabled": true,
+      "vlanId": 30,
+      "default": false,
+      "metadata": { "origin": "USER_DEFINED" }
     }
-  ]
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 3
 }

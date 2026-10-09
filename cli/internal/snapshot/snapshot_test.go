@@ -34,12 +34,16 @@ func TestNetworksProjectsSiteAndDropsUpstreamIDs(t *testing.T) {
 	t.Parallel()
 
 	resources, warnings := Networks("default", []unifi.Network{{
-		ID:      "66a1b2c3d4e5f6a7b8c9d0e1",
-		SiteID:  "5f3a2b1c9d8e7f6a5b4c3d2e",
-		Name:    "Default",
-		Subnet:  "192.168.1.0/24",
-		VLAN:    20,
-		Enabled: boolPtr(true),
+		ID:                    "opaque-network-id",
+		Management:            ManagementGateway,
+		Name:                  "Default",
+		Enabled:               boolPtr(true),
+		VLANID:                10,
+		ZoneID:                "opaque-zone-id",
+		CellularBackupEnabled: boolPtr(false),
+		InternetAccessEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(false),
+		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: true, HostIPAddress: "10.0.0.1", PrefixLength: 24},
 	}})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
@@ -52,8 +56,11 @@ func TestNetworksProjectsSiteAndDropsUpstreamIDs(t *testing.T) {
 	if !ok {
 		t.Fatalf("spec type = %T, want UnifiNetworkSpec", resources[0].Spec)
 	}
-	if spec.Site != "default" || spec.Name != "Default" {
-		t.Errorf("spec = %+v, want site=default name=Default", spec)
+	if spec.SiteRef.Name != "default" || spec.Name != "Default" || spec.Management != ManagementGateway {
+		t.Errorf("spec = %+v, want siteRef.name=default name=Default management=GATEWAY", spec)
+	}
+	if spec.Gateway == nil {
+		t.Fatal("spec.gateway = nil, want gateway variant")
 	}
 
 	raw, err := json.Marshal(spec)
@@ -61,11 +68,12 @@ func TestNetworksProjectsSiteAndDropsUpstreamIDs(t *testing.T) {
 		t.Fatalf("marshal spec: %v", err)
 	}
 	for _, forbidden := range []string{
-		"66a1b2c3d4e5f6a7b8c9d0e1", // upstream _id
-		"5f3a2b1c9d8e7f6a5b4c3d2e", // upstream site_id
+		"opaque-network-id",
+		"opaque-zone-id",
 		`"_id"`,
-		`"site_id"`,
-		`"siteId"`,
+		`"id"`,
+		`"zoneId"`,
+		`"deviceId"`,
 	} {
 		if strings.Contains(string(raw), forbidden) {
 			t.Errorf("spec contains opaque identifier %s: %s", forbidden, raw)
@@ -79,9 +87,9 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 	// "Guest WiFi" and "guest-wifi" sanitize to the same base name; the second must not
 	// silently overwrite the first.
 	networks := []unifi.Network{
-		{ID: "id-1", Name: "Guest WiFi", Subnet: "192.168.2.0/24", VLAN: 20, Enabled: boolPtr(true)},
-		{ID: "id-2", Name: "guest-wifi", Subnet: "192.168.3.0/24", VLAN: 30, Enabled: boolPtr(true)},
-		{ID: "id-3", Name: "Guest WiFi", Subnet: "192.168.4.0/24", VLAN: 40, Enabled: boolPtr(true)},
+		{ID: "id-1", Management: ManagementUnmanaged, Name: "Guest WiFi", VLANID: 20, Enabled: boolPtr(true)},
+		{ID: "id-2", Management: ManagementUnmanaged, Name: "guest-wifi", VLANID: 30, Enabled: boolPtr(true)},
+		{ID: "id-3", Management: ManagementUnmanaged, Name: "Guest WiFi", VLANID: 40, Enabled: boolPtr(true)},
 	}
 
 	resources, warnings := Networks("default", networks)
@@ -113,7 +121,6 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 		}
 	}
 
-	// Each spec preserves its own upstream name and carries no opaque identifier.
 	for i, r := range resources {
 		spec, ok := r.Spec.(UnifiNetworkSpec)
 		if !ok {
@@ -122,12 +129,8 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 		if spec.Name != networks[i].Name {
 			t.Errorf("resource %d spec.name = %q, want %q", i, spec.Name, networks[i].Name)
 		}
-		raw, err := json.Marshal(spec)
-		if err != nil {
-			t.Fatalf("marshal spec: %v", err)
-		}
-		if strings.Contains(string(raw), networks[i].ID) {
-			t.Errorf("resource %d spec contains upstream _id %q", i, networks[i].ID)
+		if spec.SiteRef.Name != "default" {
+			t.Errorf("resource %d siteRef.name = %q, want default", i, spec.SiteRef.Name)
 		}
 	}
 
@@ -140,28 +143,152 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 	}
 }
 
-func TestNetworksOmitsAbsentEnabled(t *testing.T) {
+func TestNetworksGatewayMapping(t *testing.T) {
 	t.Parallel()
 
-	// The controller omitted "enabled"; the projection must not force it to false, so the
-	// CRD default (true) can apply.
 	resources, warnings := Networks("default", []unifi.Network{{
-		ID:   "id-1",
-		Name: "Default",
+		ID:                    "id-1",
+		Management:            ManagementGateway,
+		Name:                  "Guest WiFi",
+		Enabled:               boolPtr(false),
+		VLANID:                20,
+		ZoneID:                "zone-opaque",
+		CellularBackupEnabled: boolPtr(false),
+		InternetAccessEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(true),
+		MDNSForwardingEnabled: boolPtr(true),
+		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: true, HostIPAddress: "192.168.20.1", PrefixLength: 24},
+		IPv6Configuration: &unifi.IPv6Configuration{
+			InterfaceType:           "STATIC",
+			ClientAddressAssignment: unifi.IPv6ClientAddressAssignment{SLAACEnabled: true},
+			HostIPAddress:           "fd00:20::1",
+			PrefixLength:            64,
+		},
+	}})
+	if len(resources) != 1 || len(warnings) != 0 {
+		t.Fatalf("got %d resources, %d warnings; want 1 and 0", len(resources), len(warnings))
+	}
+
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	gw := spec.Gateway
+	if gw == nil {
+		t.Fatal("gateway = nil")
+	}
+	if gw.CellularBackupEnabled || !gw.InternetAccessEnabled || !gw.IsolationEnabled {
+		t.Errorf("gateway booleans = %+v", gw)
+	}
+	if gw.MDNSForwardingEnabled == nil || !*gw.MDNSForwardingEnabled {
+		t.Errorf("mdnsForwardingEnabled = %v, want true", gw.MDNSForwardingEnabled)
+	}
+	if gw.IPv4Configuration.HostIPAddress != "192.168.20.1" || gw.IPv4Configuration.PrefixLength != 24 {
+		t.Errorf("ipv4Configuration = %+v", gw.IPv4Configuration)
+	}
+	if gw.IPv6Configuration == nil || gw.IPv6Configuration.InterfaceType != "STATIC" || gw.IPv6Configuration.PrefixLength != 64 {
+		t.Errorf("ipv6Configuration = %+v", gw.IPv6Configuration)
+	}
+}
+
+func TestNetworksGatewayPrefixDelegationAnnotated(t *testing.T) {
+	t.Parallel()
+
+	resources, warnings := Networks("default", []unifi.Network{{
+		Management:            ManagementGateway,
+		Name:                  "LAN",
+		VLANID:                10,
+		CellularBackupEnabled: boolPtr(false),
+		InternetAccessEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(false),
+		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: false, HostIPAddress: "10.0.0.1", PrefixLength: 24},
+		IPv6Configuration: &unifi.IPv6Configuration{
+			InterfaceType:                  "PREFIX_DELEGATION",
+			ClientAddressAssignment:        unifi.IPv6ClientAddressAssignment{SLAACEnabled: true},
+			PrefixDelegationWANInterfaceID: "opaque-wan-id",
+		},
 	}})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
-	if len(warnings) != 0 {
-		t.Errorf("warnings = %v, want none", warnings)
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want 1", warnings)
 	}
 
-	spec, ok := resources[0].Spec.(UnifiNetworkSpec)
-	if !ok {
-		t.Fatalf("spec type = %T, want UnifiNetworkSpec", resources[0].Spec)
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.Gateway == nil || spec.Gateway.IPv6Configuration != nil {
+		t.Errorf("gateway ipv6Configuration = %+v, want omitted", spec.Gateway)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnrepresentedIPv6]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnrepresentedIPv6)
+	}
+	if strings.Contains(warnings[0], "opaque-wan-id") {
+		t.Errorf("warning leaks opaque WAN id: %s", warnings[0])
+	}
+}
+
+func TestNetworksSwitchPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	resources, warnings := Networks("default", []unifi.Network{{
+		Management:            ManagementSwitch,
+		Name:                  "IoT",
+		VLANID:                30,
+		DeviceID:              "opaque-device-id",
+		CellularBackupEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(true),
+		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: false, HostIPAddress: "192.168.30.1", PrefixLength: 24},
+	}})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want 1", warnings)
+	}
+
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.Switch == nil {
+		t.Fatal("switch variant = nil")
+	}
+	if spec.Switch.DeviceTagRef.Name != unresolvedDeviceTagName {
+		t.Errorf("deviceTagRef.name = %q, want %q", spec.Switch.DeviceTagRef.Name, unresolvedDeviceTagName)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedDeviceTag]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedDeviceTag)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	if strings.Contains(string(raw), "opaque-device-id") {
+		t.Errorf("spec leaks device UUID: %s", raw)
+	}
+	if strings.Contains(string(resources[0].Metadata.Annotations[AnnotationUnresolvedDeviceTag]), "opaque-device-id") {
+		t.Error("annotation leaks device UUID")
+	}
+}
+
+func TestNetworksUnmanagedCommonOnly(t *testing.T) {
+	t.Parallel()
+
+	resources, warnings := Networks("default", []unifi.Network{{
+		Management:   ManagementUnmanaged,
+		Name:         "Default",
+		Enabled:      nil,
+		VLANID:       1,
+		DHCPGuarding: &unifi.DHCPGuarding{TrustedDHCPServerIPAddresses: []string{"192.168.1.254"}},
+	}})
+	if len(resources) != 1 || len(warnings) != 0 {
+		t.Fatalf("got %d resources, %d warnings; want 1 and 0", len(resources), len(warnings))
+	}
+
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.Gateway != nil || spec.Switch != nil {
+		t.Errorf("unmanaged spec must carry no variant: %+v", spec)
 	}
 	if spec.Enabled != nil {
-		t.Errorf("spec.Enabled = %v, want nil (upstream omitted it)", *spec.Enabled)
+		t.Errorf("Enabled = %v, want nil (upstream omitted it)", *spec.Enabled)
+	}
+	if spec.DHCPGuarding == nil || len(spec.DHCPGuarding.TrustedDHCPServerIPAddresses) != 1 {
+		t.Errorf("dhcpGuarding = %+v", spec.DHCPGuarding)
 	}
 
 	raw, err := json.Marshal(spec)
@@ -171,7 +298,124 @@ func TestNetworksOmitsAbsentEnabled(t *testing.T) {
 	if strings.Contains(string(raw), "enabled") {
 		t.Errorf("spec should omit enabled when upstream omits it: %s", raw)
 	}
-	if !strings.Contains(string(raw), `"site":"default"`) || !strings.Contains(string(raw), `"name":"Default"`) {
-		t.Errorf("spec must still carry site and name: %s", raw)
+}
+
+func TestNetworksSkipsInvalidVLAN(t *testing.T) {
+	t.Parallel()
+
+	resources, warnings := Networks("default", []unifi.Network{
+		{Management: ManagementUnmanaged, Name: "zero", VLANID: 0},
+		{Management: ManagementUnmanaged, Name: "high", VLANID: 5000},
+	})
+	if len(resources) != 0 {
+		t.Fatalf("got %d resources, want 0", len(resources))
+	}
+	if len(warnings) != 2 {
+		t.Fatalf("warnings = %v, want 2", warnings)
+	}
+}
+
+func TestSitesEmitsControllerRefAndNames(t *testing.T) {
+	t.Parallel()
+
+	sites := []unifi.Site{
+		{ID: "opaque-site-id", InternalReference: "default", Name: "Default"},
+		{ID: "opaque-site-id-2", InternalReference: "Branch Office", Name: "Branch Office"},
+	}
+	resources, names, warnings := Sites("unifi", sites)
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2", len(resources))
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if names["default"] != "default" || names["Branch Office"] != "branch-office" {
+		t.Errorf("names = %v", names)
+	}
+
+	for i, r := range resources {
+		if r.Kind != KindUnifiSite {
+			t.Errorf("resource %d kind = %q, want %q", i, r.Kind, KindUnifiSite)
+		}
+		spec := r.Spec.(UnifiSiteSpec)
+		if spec.ControllerRef.Name != "unifi" {
+			t.Errorf("resource %d controllerRef.name = %q, want unifi", i, spec.ControllerRef.Name)
+		}
+		if spec.InternalReference != sites[i].InternalReference {
+			t.Errorf("resource %d internalReference = %q, want %q", i, spec.InternalReference, sites[i].InternalReference)
+		}
+		if r.Metadata.Name != names[sites[i].InternalReference] {
+			t.Errorf("resource %d name = %q, want %q", i, r.Metadata.Name, names[sites[i].InternalReference])
+		}
+		if !dns1123Subdomain.MatchString(r.Metadata.Name) {
+			t.Errorf("resource %d name %q is not DNS-1123 safe", i, r.Metadata.Name)
+		}
+
+		raw, err := json.Marshal(spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		if strings.Contains(string(raw), sites[i].ID) {
+			t.Errorf("site spec leaks upstream id: %s", raw)
+		}
+	}
+}
+
+func TestControllerTemplate(t *testing.T) {
+	t.Parallel()
+
+	resource, warnings := Controller("https://unifi.example.com", "unifi")
+	if resource.Kind != KindUnifiController {
+		t.Errorf("kind = %q, want %q", resource.Kind, KindUnifiController)
+	}
+	if resource.Metadata.Name != "unifi" {
+		t.Errorf("name = %q, want unifi", resource.Metadata.Name)
+	}
+	if _, ok := resource.Metadata.Annotations[AnnotationControllerTemplate]; !ok {
+		t.Errorf("annotations = %v, want %s", resource.Metadata.Annotations, AnnotationControllerTemplate)
+	}
+	spec := resource.Spec.(UnifiControllerSpec)
+	if spec.URL != "https://unifi.example.com" {
+		t.Errorf("url = %q", spec.URL)
+	}
+	if spec.SecretRef == nil || spec.SecretRef.Name == "" || spec.SecretRef.Key == "" {
+		t.Errorf("secretRef = %+v, want name and key placeholders", spec.SecretRef)
+	}
+	if _, ok := resource.Metadata.Annotations[AnnotationInsecureControllerURL]; ok {
+		t.Errorf("annotations = %v, want no %s for an https URL",
+			resource.Metadata.Annotations, AnnotationInsecureControllerURL)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want 1", warnings)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	if strings.Contains(string(raw), "insecureSkipVerify") {
+		t.Errorf("spec must leave insecureSkipVerify unset: %s", raw)
+	}
+}
+
+func TestControllerInsecureURLAnnotated(t *testing.T) {
+	t.Parallel()
+
+	resource, warnings := Controller("http://unifi.internal:8080", "unifi")
+	if got := resource.Metadata.Annotations[AnnotationInsecureControllerURL]; got != "true" {
+		t.Errorf("annotation %s = %q, want %q", AnnotationInsecureControllerURL, got, "true")
+	}
+	if _, ok := resource.Metadata.Annotations[AnnotationControllerTemplate]; !ok {
+		t.Errorf("annotations = %v, want the controller-template annotation too", resource.Metadata.Annotations)
+	}
+	spec := resource.Spec.(UnifiControllerSpec)
+	if spec.URL != "http://unifi.internal:8080" {
+		t.Errorf("url = %q, want the URL emitted unchanged", spec.URL)
+	}
+	if len(warnings) != 2 {
+		t.Fatalf("warnings = %v, want 2 (template + insecure)", warnings)
+	}
+	if !strings.Contains(warnings[1], "https://") {
+		t.Errorf("insecure warning = %q, want it to name https", warnings[1])
 	}
 }

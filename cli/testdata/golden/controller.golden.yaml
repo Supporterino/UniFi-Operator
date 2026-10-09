@@ -1,0 +1,13 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiController
+metadata:
+  annotations:
+    unifi.supporterino.de/controller-template: replace spec.secretRef with a same-namespace
+      Secret holding your UniFi API key
+  name: unifi-controller
+spec:
+  secretRef:
+    key: api-key
+    name: unifi-api-key
+  url: https://unifi.example.com

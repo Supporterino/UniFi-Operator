@@ -1,0 +1,17 @@
+{
+  "id": "88c3d4e5-f6a7-4b8c-9d0e-0f1a2b3c4d5e",
+  "management": "SWITCH",
+  "name": "IoT",
+  "enabled": true,
+  "vlanId": 30,
+  "default": false,
+  "metadata": { "origin": "USER_DEFINED" },
+  "deviceId": "aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "cellularBackupEnabled": true,
+  "isolationEnabled": true,
+  "ipv4Configuration": {
+    "autoScaleEnabled": false,
+    "hostIpAddress": "192.168.30.1",
+    "prefixLength": 24
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "77b2c3d4-e5f6-4a7b-9c8d-9e0f1a2b3c4d",
+  "management": "GATEWAY",
+  "name": "Guest WiFi",
+  "enabled": false,
+  "vlanId": 20,
+  "default": false,
+  "metadata": { "origin": "USER_DEFINED" },
+  "zoneId": "99d4e5f6-a7b8-4c9d-0e1f-1a2b3c4d5e6f",
+  "cellularBackupEnabled": false,
+  "internetAccessEnabled": true,
+  "isolationEnabled": true,
+  "mdnsForwardingEnabled": true,
+  "ipv4Configuration": {
+    "autoScaleEnabled": true,
+    "hostIpAddress": "192.168.20.1",
+    "prefixLength": 24
+  },
+  "ipv6Configuration": {
+    "interfaceType": "STATIC",
+    "clientAddressAssignment": { "slaacEnabled": true },
+    "hostIpAddress": "fd00:20::1",
+    "prefixLength": 64
+  }
+}

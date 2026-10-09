@@ -4,11 +4,15 @@ kind: UnifiNetwork
 metadata:
   name: default
 spec:
+  dhcpGuarding:
+    trustedDhcpServerIpAddresses:
+    - 192.168.1.254
   enabled: true
+  management: UNMANAGED
   name: Default
-  site: default
-  subnet: 192.168.1.0/24
-  vlan: 1
+  siteRef:
+    name: default
+  vlanId: 1
 ---
 apiVersion: unifi.supporterino.de/v1alpha1
 kind: UnifiNetwork
@@ -16,7 +20,48 @@ metadata:
   name: guest-wifi
 spec:
   enabled: false
+  gateway:
+    cellularBackupEnabled: false
+    internetAccessEnabled: true
+    ipv4Configuration:
+      autoScaleEnabled: true
+      hostIpAddress: 192.168.20.1
+      prefixLength: 24
+    ipv6Configuration:
+      clientAddressAssignment:
+        slaacEnabled: true
+      hostIpAddress: fd00:20::1
+      interfaceType: STATIC
+      prefixLength: 64
+    isolationEnabled: true
+    mdnsForwardingEnabled: true
+  management: GATEWAY
   name: Guest WiFi
-  site: default
-  subnet: 192.168.2.0/24
-  vlan: 20
+  siteRef:
+    name: default
+  vlanId: 20
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiNetwork
+metadata:
+  annotations:
+    unifi.supporterino.de/unresolved-device-tag: upstream device binding is an opaque
+      device id that cannot be expressed as a UnifiDeviceTag reference; spec.switch.deviceTagRef.name
+      is a placeholder and must be set to the managing device tag
+  name: iot
+spec:
+  enabled: true
+  management: SWITCH
+  name: IoT
+  siteRef:
+    name: default
+  switch:
+    cellularBackupEnabled: true
+    deviceTagRef:
+      name: unresolved-device-tag
+    ipv4Configuration:
+      autoScaleEnabled: false
+      hostIpAddress: 192.168.30.1
+      prefixLength: 24
+    isolationEnabled: true
+  vlanId: 30

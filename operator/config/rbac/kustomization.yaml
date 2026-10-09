@@ -22,7 +22,13 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- unificontroller_admin_role.yaml
+- unificontroller_editor_role.yaml
+- unificontroller_viewer_role.yaml
 - unifinetwork_admin_role.yaml
 - unifinetwork_editor_role.yaml
 - unifinetwork_viewer_role.yaml
+- unifisite_admin_role.yaml
+- unifisite_editor_role.yaml
+- unifisite_viewer_role.yaml
 

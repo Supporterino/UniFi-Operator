@@ -6,8 +6,17 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: unifinetwork-sample
 spec:
-  site: default
+  siteRef:
+    name: unifisite-sample
+  management: GATEWAY
   name: lan
-  vlan: 10
-  subnet: 10.0.0.0/24
   enabled: true
+  vlanId: 10
+  gateway:
+    cellularBackupEnabled: false
+    internetAccessEnabled: true
+    isolationEnabled: false
+    ipv4Configuration:
+      autoScaleEnabled: false
+      hostIpAddress: 10.0.0.1
+      prefixLength: 24

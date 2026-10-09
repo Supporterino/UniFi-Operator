@@ -2,6 +2,8 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
+- bases/unifi.supporterino.de_unificontrollers.yaml
+- bases/unifi.supporterino.de_unifisites.yaml
 - bases/unifi.supporterino.de_unifinetworks.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 

@@ -1,0 +1,13 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiController
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unificontroller-sample
+spec:
+  url: https://unifi.example.com
+  secretRef:
+    name: unificontroller-api-key
+    key: api-key
+  insecureSkipVerify: false

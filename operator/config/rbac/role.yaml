@@ -5,9 +5,15 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+- apiGroups:
   - unifi.supporterino.de
   resources:
-  - unifinetworks
+  - unificontrollers
   verbs:
   - get
   - list
@@ -15,8 +21,31 @@ rules:
 - apiGroups:
   - unifi.supporterino.de
   resources:
+  - unificontrollers/status
   - unifinetworks/status
+  - unifisites/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifinetworks
+  verbs:
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unifisites
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch

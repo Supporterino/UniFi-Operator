@@ -1,0 +1,11 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiSite
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifisite-sample
+spec:
+  controllerRef:
+    name: unificontroller-sample
+  internalReference: default

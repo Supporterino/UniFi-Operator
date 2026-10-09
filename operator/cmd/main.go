@@ -37,7 +37,6 @@ import (
 
 	unifiv1alpha1 "github.com/Supporterino/UniFi-Operator/operator/api/v1alpha1"
 	"github.com/Supporterino/UniFi-Operator/operator/internal/controller"
-	"github.com/Supporterino/UniFi-Operator/operator/internal/unifi"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -179,13 +178,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.UnifiControllerReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiController")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiSiteReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiSite")
+		os.Exit(1)
+	}
 	if err := (&controller.UnifiNetworkReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		// Scaffold wiring: a fixture-backed client so the manager does not
-		// contact a live controller. Replace with the real HTTP client (fed by
-		// controller credentials from a Secret) when integration lands.
-		UniFi: unifi.NewFixtureClient(unifi.Network{ID: "fixture-network", Name: "lan", Enabled: true}),
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiNetwork")
 		os.Exit(1)

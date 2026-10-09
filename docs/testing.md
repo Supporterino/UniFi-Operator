@@ -28,10 +28,13 @@ this document holds the strategy.
 
 ## UniFi client
 
-- Start an `httptest.Server` that serves recorded controller fixtures.
+- Start an `httptest.Server` that serves recorded Integration v1 fixtures.
 - Assert the outgoing request (method, path, headers, body) and the parsed result.
-- Cover the error paths: non-`ok` `meta.rc`, `4xx` terminal, `5xx` transient, and session
-  re-authentication after `401`.
+- Cover the error paths: a flat `Error Message` body maps to `*unifi.APIError`, a `404` matches
+  `unifi.ErrNotFound`, `Retryable()` is `true` for `5xx`/`429` and `false` for the terminal `4xx`
+  class, and `401`/`403` fail closed (no fallback, no retry).
+- Cover list pagination: decode the page envelope (`count`/`data`/`limit`/`offset`/`totalCount`)
+  and follow `offset` to completion.
 - **Never** point a test at a real controller or the public internet.
 
 ## CLI

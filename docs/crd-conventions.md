@@ -20,22 +20,22 @@ should not have to know or copy controller-internal IDs.
 
 Instead:
 
-- **Reference another CR by Kubernetes identity.** Use a `name` (+ optional `namespace`) field
-  or a typed selector (`metav1.LabelSelector` or a purpose-built selector struct). The
-  controller resolves the reference to an upstream ID at reconcile time.
+- **Reference another CR by Kubernetes identity.** Use a `name` field or a typed selector
+  (`metav1.LabelSelector` or a purpose-built selector struct). The controller resolves the
+  reference to an upstream ID at reconcile time. Every reference is **same-namespace and carries
+  `name` only** — see [the reference and ownership model](#the-reference-and-ownership-model).
 - **Put correlation IDs in `status`.** If you need to record the upstream `_id` a CR maps to,
   expose it in `status` (for example `status.controllerID`) so tooling can correlate, without
   making it part of the contract users author.
 
 ```go
-// Good: spec references by name.
+// Good: spec references by name, in the same namespace.
 type VLANSpec struct {
     NetworkRef NetworkReference `json:"networkRef"`
 }
 
 type NetworkReference struct {
-    Name      string `json:"name"`
-    Namespace string `json:"namespace,omitempty"`
+    Name string `json:"name"`
 }
 
 // Good: upstream id in status only.
@@ -50,6 +50,74 @@ type VLANSpec struct {
     NetworkID string `json:"networkId"` // opaque UniFi _id — forbidden
 }
 ```
+
+## The reference and ownership model
+
+Every CR in the workspace is **namespaced**, and every reference resolves in the **same
+namespace**. References carry a `name` only — there is deliberately no `namespace` field,
+because a cross-namespace reference cannot be an `ownerReference`, and same-namespace resolution
+keeps RBAC to namespaced `Role`s.
+
+### Reference chain
+
+Children do not repeat connection details. Each child points at its site, and the site points at
+the controller:
+
+```text
+child.spec.siteRef ──▶ UnifiSite.spec.controllerRef ──▶ UnifiController
+     (name)                    (name)                       url, secretRef, TLS
+```
+
+`UnifiController` is the only kind that holds connection details (`spec.secretRef` API key,
+`spec.insecureSkipVerify`), so secrets never leak into children. A `UnifiSite` adopts an existing
+upstream site by name (`spec.internalReference`) and records the upstream UUID in `status` only.
+
+### Ownership follows the strongest reference
+
+Ownership is a tree rooted at the site, and each object is owned by the CR its **strongest**
+reference points to:
+
+- A child whose strongest reference is `spec.siteRef` is owned by its `UnifiSite`.
+- A child with a stronger parent reference is owned by that parent instead. `UnifiWifiBroadcast`
+  references its `UnifiNetwork`, so it is owned by the network, not the site.
+- Each reconciler sets its own `ownerReference` to its **immediate parent** with
+  `controllerutil.SetControllerReference`; a parent reconciler never reaches into child kinds.
+
+The `UnifiSite` carries a **finalizer that drains owned children before removal**. A child's
+finalizer needs `spec.siteRef` to reach its controller and delete upstream state, so the site
+must stay resolvable until every owned child has finished. The site reconciler initiates
+deletion of its direct `ownerReference` children (garbage collection only starts after an owner
+is actually gone), removes the finalizer only once no owned children remain, and never deletes
+the upstream site.
+
+### One writer per fact: membership ownership
+
+A fact has exactly one owning CR. Firewall-zone membership is the canonical example:
+
+- `UnifiFirewallZone.spec` owns membership — it lists member `UnifiNetwork` references and its
+  reconciler writes the upstream zone's membership.
+- `UnifiNetwork.spec` exposes **no** `zoneRef`/`zoneId`; the resolved zone is reported in
+  `UnifiNetwork.status` only.
+
+A single writer avoids an unresolvable reference cycle (and racy reconciles) between the two
+kinds. The same rule applies to ordered collections: a dedicated ordering CR is the single writer
+of order rather than a per-object priority field.
+
+### Typed selectors for non-CR references
+
+Some upstream objects have no CR and never will (or must not be overwritten). References to them
+use a **typed selector struct** that the controller resolves, never a raw opaque UUID in `spec`:
+
+| Target | Selector shape |
+|--------|----------------|
+| Device (e.g. a switch-managed network's `deviceId`) | typed device selector, or a `UnifiDeviceTag` reference |
+| DPI application / category (firewall policy filters) | typed application/category selector |
+| Country (firewall policy region filters) | typed country selector |
+| Built-in/system firewall zones (not configurable, e.g. `Internal`/`External`) | typed built-in-zone selector (enum/name) |
+
+The concrete selector fields land with each kind as it is implemented; the contract is fixed
+here: **typed selector, no opaque ID**. This preserves Rule 1 for references that cannot use
+Kubernetes identity.
 
 ## Rule 2 — Every CRD has a rich `status`
 
@@ -88,6 +156,8 @@ Any CRD whose deletion must clean up UniFi-side state uses a finalizer:
 - Add and remove in the same reconcile path so a retry cannot leave a half-cleaned object.
 
 The controller owns child Kubernetes objects via `ownerReferences` so garbage collection works.
+Ownership follows the strongest reference and the site drains its children — see
+[the reference and ownership model](#the-reference-and-ownership-model).
 
 ## Rule 4 — Validation lives in markers
 
@@ -124,7 +194,10 @@ spec field.
 - [ ] API type in `operator/api/v1alpha1/` with `Spec`, `Status`, and type/object root markers.
 - [ ] Status has `conditions`, `observedGeneration`, and a summary; `+kubebuilder:subresource:status`.
 - [ ] Printer columns for readiness and age.
-- [ ] No opaque IDs in `spec`; references by name/namespace/selector.
+- [ ] No opaque IDs in `spec`; references by `name` (same namespace, no `namespace` field) or a
+      typed selector for non-CR targets.
+- [ ] `ownerReference` set to the immediate parent (the strongest reference) via
+      `controllerutil.SetControllerReference`.
 - [ ] Finalizer added/removed symmetrically if deletion has upstream effects.
 - [ ] `make manifests generate` run; `config/crd/` and deepcopy updated with no diff.
 - [ ] Reconciler updates status on every terminal path.

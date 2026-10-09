@@ -38,21 +38,35 @@ The kustomize root is `operator/config/default`. `operator/config/crd`, `config/
 
 ### Configuration
 
-The intended design is for the manager to read the UniFi controller connection from a `Secret`
-and environment/flag configuration. Never bake credentials into the Deployment manifest — reference
-a `Secret`. The scaffolded manager currently wires a fixture-backed UniFi client and consumes no
-Secret or environment credentials (`operator/cmd/main.go`); real credential reading lands with
-controller integration, and the `Secret` below is the interface it will use.
+Credentials are per-connection, not process-wide. The manager consumes no environment or flag
+credentials: each `UnifiController` references a same-namespace `Secret` through
+`spec.secretRef` (`name` + `key`), and the operator resolves the key at reconcile time. Never
+accept an inline API key, bake credentials into the Deployment manifest, or write them to
+`status`, events, or logs — reference a `Secret` instead. TLS verification is on by default;
+`spec.insecureSkipVerify` is the explicit, documented opt-out for a self-signed console (see
+[Security](security.md)).
 
 ```yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: unifi-operator-config
+  name: unificontroller-api-key
 type: Opaque
 stringData:
-  UNIFI_URL: https://unifi.example.com
-  UNIFI_API_KEY: <redacted>
+  api-key: <redacted>
+```
+
+```yaml
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiController
+metadata:
+  name: unificontroller-sample
+spec:
+  url: https://unifi.example.com
+  secretRef:
+    name: unificontroller-api-key
+    key: api-key
+  insecureSkipVerify: false
 ```
 
 ## Helm
@@ -65,8 +79,9 @@ helm upgrade --install unifi-operator charts/unifi-operator \
   --set image.repository=<registry>/unifi-operator --set image.tag=<tag>
 ```
 
-Chart values expose the image, replicas, resource requests/limits, and an existing `Secret`
-whose keys are injected as environment variables via `envFrom.secretRef` (value `existingSecret`).
+Chart values expose the image, replicas, resource requests/limits, and the RBAC toggle. The
+manager consumes no environment credentials: each `UnifiController` resolves its API key from the
+`Secret` named in `spec.secretRef`.
 There is no CRD-install value: CRDs ship in `charts/unifi-operator/crds/` and Helm installs them on
 the first `helm install` only (pass `--skip-crds` to skip). Document every value in
 `charts/unifi-operator/values.yaml`.

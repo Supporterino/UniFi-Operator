@@ -72,6 +72,7 @@ type UnifiSiteReconciler struct {
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifisites/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unificontrollers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifinetworks,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unififirewallzones,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile adopts the upstream site named by spec.internalReference, records
@@ -160,6 +161,10 @@ func (r *UnifiSiteReconciler) reconcileDelete(
 	if err := r.List(ctx, &networks, client.InNamespace(site.Namespace)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("list owned networks: %w", err)
 	}
+	var zones unifiv1alpha1.UnifiFirewallZoneList
+	if err := r.List(ctx, &zones, client.InNamespace(site.Namespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("list owned firewall zones: %w", err)
+	}
 
 	remaining := 0
 	for i := range networks.Items {
@@ -174,6 +179,20 @@ func (r *UnifiSiteReconciler) reconcileDelete(
 		}
 		if err := r.Delete(ctx, child); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("delete owned network %q: %w", child.Name, err)
+		}
+	}
+	for i := range zones.Items {
+		child := &zones.Items[i]
+		if !metav1.IsControlledBy(child, site) {
+			continue
+		}
+		remaining++
+		if !child.DeletionTimestamp.IsZero() {
+			// Deletion already initiated; wait for the child's own finalizer.
+			continue
+		}
+		if err := r.Delete(ctx, child); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("delete owned firewall zone %q: %w", child.Name, err)
 		}
 	}
 
@@ -286,12 +305,13 @@ func (r *UnifiSiteReconciler) updateStatus(
 }
 
 // SetupWithManager sets up the controller with the Manager. It watches the site
-// for generation changes and deletion, and owns UnifiNetwork children so their
-// deletion progresses the drain.
+// for generation changes and deletion, and owns UnifiNetwork and UnifiFirewallZone
+// children so their deletion progresses the drain.
 func (r *UnifiSiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unifiv1alpha1.UnifiSite{}, builder.WithPredicates(sitePredicate())).
 		Owns(&unifiv1alpha1.UnifiNetwork{}).
+		Owns(&unifiv1alpha1.UnifiFirewallZone{}).
 		Named("unifisite").
 		Complete(r)
 }

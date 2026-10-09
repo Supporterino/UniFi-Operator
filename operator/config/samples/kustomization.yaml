@@ -3,4 +3,5 @@ resources:
 - unifi_v1alpha1_unificontroller.yaml
 - unifi_v1alpha1_unifisite.yaml
 - unifi_v1alpha1_unifinetwork.yaml
+- unifi_v1alpha1_unififirewallzone.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

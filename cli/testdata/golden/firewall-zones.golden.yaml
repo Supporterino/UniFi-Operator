@@ -1,0 +1,23 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiFirewallZone
+metadata:
+  name: custom-zone
+spec:
+  name: Custom Zone
+  networkRefs:
+  - name: default
+  - name: iot
+  siteRef:
+    name: default
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiFirewallZone
+metadata:
+  name: internal
+spec:
+  name: Internal
+  networkRefs:
+  - name: guest-wifi
+  siteRef:
+    name: default

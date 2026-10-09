@@ -32,8 +32,10 @@ func newSnapshotCommand() *cobra.Command {
 		Short: "Read a UniFi controller and emit adoptable Custom Resources",
 		Long: "snapshot reads objects from a UniFi Network controller over the Integration v1 API\n" +
 			"and writes the equivalent Custom Resources as YAML. Supported kinds: all, controller,\n" +
-			"sites, networks. `all` emits a UnifiController template, the UnifiSites, and the\n" +
-			"UnifiNetworks of the site selected with --site.",
+			"sites, networks, firewall-zones, device-tags. `all` emits a UnifiController template,\n" +
+			"the UnifiSites, and the UnifiNetworks of the site selected with --site.\n" +
+			"`firewall-zones` emits the site's UnifiFirewallZones; `device-tags` prints the\n" +
+			"read-only device-tag names and device counts without emitting a resource.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := "all"
@@ -64,9 +66,11 @@ func newSnapshotCommand() *cobra.Command {
 
 func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Writer) error {
 	switch kind {
-	case "all", "controller", "sites", "networks":
+	case "all", "controller", "sites", "networks", "firewall-zones", "device-tags":
 	default:
-		return fmt.Errorf("unknown snapshot kind %q: supported kinds are all, controller, sites, networks", kind)
+		return fmt.Errorf(
+			"unknown snapshot kind %q: supported kinds are all, controller, sites, networks, firewall-zones, device-tags",
+			kind)
 	}
 	if o.controller == "" {
 		return fmt.Errorf("--controller is required (or set UNIFI_URL)")
@@ -80,7 +84,7 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 		return err
 	}
 
-	needSites := kind == "all" || kind == "sites" || kind == "networks"
+	needSites := kind != "controller"
 	var sites []unifi.Site
 	var siteResources []emit.Resource
 	var siteNames map[string]string
@@ -105,28 +109,42 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 		resources = append(resources, siteResources...)
 		warnings = append(warnings, siteWarnings...)
 	}
-	if kind == "networks" || kind == "all" {
-		siteName, ok := siteNames[o.site]
-		if !ok {
-			return fmt.Errorf("site %q not found on the controller (available: %s)",
-				o.site, strings.Join(siteReferences(sites), ", "))
-		}
-		siteID, ok := findSiteID(sites, o.site)
-		if !ok {
-			return fmt.Errorf("site %q has no upstream id", o.site)
-		}
-		networks, err := client.ListNetworks(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot networks: %w", err)
-		}
-		detailed, detailWarnings, err := loadNetworkDetails(ctx, client, siteID, networks)
+	if kind == "device-tags" {
+		_, siteID, err := resolveSite(sites, siteNames, o.site)
 		if err != nil {
 			return err
 		}
-		warnings = append(warnings, detailWarnings...)
-		networkResources, networkWarnings := snapshot.Networks(siteName, detailed)
-		resources = append(resources, networkResources...)
+		tags, err := client.ListDeviceTags(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot device-tags: %w", err)
+		}
+		return writeDeviceTags(out, tags)
+	}
+	if kind == "networks" || kind == "all" || kind == "firewall-zones" {
+		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+		if err != nil {
+			return err
+		}
+		detailed, tags, loadWarnings, err := loadNetworkProjection(ctx, client, siteID)
+		if err != nil {
+			return err
+		}
+		warnings = append(warnings, loadWarnings...)
+
+		networkResources, networkNames, networkWarnings := snapshot.Networks(siteName, detailed, tags)
 		warnings = append(warnings, networkWarnings...)
+		if kind == "networks" || kind == "all" {
+			resources = append(resources, networkResources...)
+		}
+		if kind == "firewall-zones" {
+			zones, err := client.ListZones(ctx, siteID)
+			if err != nil {
+				return fmt.Errorf("snapshot firewall-zones: %w", err)
+			}
+			zoneResources, zoneWarnings := snapshot.FirewallZones(siteName, networkNames, zones)
+			resources = append(resources, zoneResources...)
+			warnings = append(warnings, zoneWarnings...)
+		}
 	}
 
 	for _, w := range warnings {
@@ -137,6 +155,22 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 	return emitResources(out, o.output, resources)
 }
 
+// resolveSite returns the emitted UnifiSite name and the upstream UUID for the site
+// selected by internalReference. It fails closed with an actionable error when the site is
+// absent or has no upstream id.
+func resolveSite(sites []unifi.Site, siteNames map[string]string, internalReference string) (string, string, error) {
+	siteName, ok := siteNames[internalReference]
+	if !ok {
+		return "", "", fmt.Errorf("site %q not found on the controller (available: %s)",
+			internalReference, strings.Join(siteReferences(sites), ", "))
+	}
+	siteID, ok := findSiteID(sites, internalReference)
+	if !ok {
+		return "", "", fmt.Errorf("site %q has no upstream id", internalReference)
+	}
+	return siteName, siteID, nil
+}
+
 // findSiteID returns the upstream UUID of the site whose internalReference matches.
 func findSiteID(sites []unifi.Site, internalReference string) (string, bool) {
 	for _, site := range sites {
@@ -145,6 +179,52 @@ func findSiteID(sites []unifi.Site, internalReference string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// loadNetworkProjection reads every network of the site with its details and, only when a
+// switch-managed network is present, the read-only device tags needed to reverse-map the
+// switch device binding. Fetching the tags lazily keeps a console that supports networks
+// but not device tags able to snapshot networks that carry no switch binding; when a
+// switch binding does need the tags and the list fails, the snapshot fails closed rather
+// than emitting an unresolvable selector.
+func loadNetworkProjection(ctx context.Context, client *unifi.Client, siteID string) ([]unifi.Network, []unifi.DeviceTag, []string, error) {
+	networks, err := client.ListNetworks(ctx, siteID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("snapshot networks: %w", err)
+	}
+	detailed, warnings, err := loadNetworkDetails(ctx, client, siteID, networks)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !anySwitchManaged(detailed) {
+		return detailed, nil, warnings, nil
+	}
+	tags, err := client.ListDeviceTags(ctx, siteID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("snapshot device-tags: %w", err)
+	}
+	return detailed, tags, warnings, nil
+}
+
+// anySwitchManaged reports whether any network uses the SWITCH management variant.
+func anySwitchManaged(networks []unifi.Network) bool {
+	for _, network := range networks {
+		if network.Management == snapshot.ManagementSwitch {
+			return true
+		}
+	}
+	return false
+}
+
+// writeDeviceTags prints one "name<TAB>device-count" line per read-only device tag. There
+// is no device-tag Custom Resource to emit, so the listing is a discovery aid only.
+func writeDeviceTags(out io.Writer, tags []unifi.DeviceTag) error {
+	for _, tag := range tags {
+		if _, err := fmt.Fprintf(out, "%s\t%d\n", tag.Name, len(tag.DeviceIDs)); err != nil {
+			return fmt.Errorf("write device tag %q: %w", tag.Name, err)
+		}
+	}
+	return nil
 }
 
 // siteReferences lists the upstream internalReferences for an error message. It never

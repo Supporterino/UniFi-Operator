@@ -28,3 +28,15 @@ type CoreRef struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 }
+
+// DeviceTagSelector selects an existing upstream device tag by its
+// human-readable name (GET /v1/sites/{siteId}/device-tags). Device tags are
+// read-only upstream, so there is no device-tag Custom Resource and no opaque
+// tag or device identifier in spec. The controller resolves the name through
+// the read-only tag list at reconcile time; a name that resolves to zero or
+// more than one device fails closed.
+type DeviceTagSelector struct {
+	// Name is the human-readable device-tag name.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}

@@ -33,7 +33,7 @@ func TestDNSSafeName(t *testing.T) {
 func TestNetworksProjectsSiteAndDropsUpstreamIDs(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", []unifi.Network{{
 		ID:                    "opaque-network-id",
 		Management:            ManagementGateway,
 		Name:                  "Default",
@@ -44,7 +44,7 @@ func TestNetworksProjectsSiteAndDropsUpstreamIDs(t *testing.T) {
 		InternetAccessEnabled: boolPtr(true),
 		IsolationEnabled:      boolPtr(false),
 		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: true, HostIPAddress: "10.0.0.1", PrefixLength: 24},
-	}})
+	}}, nil)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -92,7 +92,7 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 		{ID: "id-3", Management: ManagementUnmanaged, Name: "Guest WiFi", VLANID: 40, Enabled: boolPtr(true)},
 	}
 
-	resources, warnings := Networks("default", networks)
+	resources, _, warnings := Networks("default", networks, nil)
 	if len(resources) != 3 {
 		t.Fatalf("got %d resources, want 3", len(resources))
 	}
@@ -135,7 +135,7 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 	}
 
 	// Disambiguation is deterministic across runs.
-	again, _ := Networks("default", networks)
+	again, _, _ := Networks("default", networks, nil)
 	for i := range again {
 		if again[i].Metadata.Name != resources[i].Metadata.Name {
 			t.Errorf("run 2 resource %d name = %q, want %q", i, again[i].Metadata.Name, resources[i].Metadata.Name)
@@ -146,7 +146,7 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 func TestNetworksGatewayMapping(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", []unifi.Network{{
 		ID:                    "id-1",
 		Management:            ManagementGateway,
 		Name:                  "Guest WiFi",
@@ -164,7 +164,7 @@ func TestNetworksGatewayMapping(t *testing.T) {
 			HostIPAddress:           "fd00:20::1",
 			PrefixLength:            64,
 		},
-	}})
+	}}, nil)
 	if len(resources) != 1 || len(warnings) != 0 {
 		t.Fatalf("got %d resources, %d warnings; want 1 and 0", len(resources), len(warnings))
 	}
@@ -191,7 +191,7 @@ func TestNetworksGatewayMapping(t *testing.T) {
 func TestNetworksGatewayPrefixDelegationAnnotated(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", []unifi.Network{{
 		Management:            ManagementGateway,
 		Name:                  "LAN",
 		VLANID:                10,
@@ -204,7 +204,7 @@ func TestNetworksGatewayPrefixDelegationAnnotated(t *testing.T) {
 			ClientAddressAssignment:        unifi.IPv6ClientAddressAssignment{SLAACEnabled: true},
 			PrefixDelegationWANInterfaceID: "opaque-wan-id",
 		},
-	}})
+	}}, nil)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -227,7 +227,7 @@ func TestNetworksGatewayPrefixDelegationAnnotated(t *testing.T) {
 func TestNetworksSwitchPlaceholder(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", []unifi.Network{{
 		Management:            ManagementSwitch,
 		Name:                  "IoT",
 		VLANID:                30,
@@ -235,7 +235,7 @@ func TestNetworksSwitchPlaceholder(t *testing.T) {
 		CellularBackupEnabled: boolPtr(true),
 		IsolationEnabled:      boolPtr(true),
 		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: false, HostIPAddress: "192.168.30.1", PrefixLength: 24},
-	}})
+	}}, nil)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -247,8 +247,8 @@ func TestNetworksSwitchPlaceholder(t *testing.T) {
 	if spec.Switch == nil {
 		t.Fatal("switch variant = nil")
 	}
-	if spec.Switch.DeviceTagRef.Name != unresolvedDeviceTagName {
-		t.Errorf("deviceTagRef.name = %q, want %q", spec.Switch.DeviceTagRef.Name, unresolvedDeviceTagName)
+	if spec.Switch.DeviceTag.Name != unresolvedDeviceTagName {
+		t.Errorf("deviceTag.name = %q, want %q", spec.Switch.DeviceTag.Name, unresolvedDeviceTagName)
 	}
 	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedDeviceTag]; !ok {
 		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedDeviceTag)
@@ -266,16 +266,190 @@ func TestNetworksSwitchPlaceholder(t *testing.T) {
 	}
 }
 
+func TestNetworksSwitchResolvesUniqueDeviceTag(t *testing.T) {
+	t.Parallel()
+
+	resources, _, warnings := Networks("default", []unifi.Network{{
+		ID:                    "net-iot",
+		Management:            ManagementSwitch,
+		Name:                  "IoT",
+		VLANID:                30,
+		DeviceID:              "device-1",
+		CellularBackupEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(true),
+		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: false, HostIPAddress: "192.168.30.1", PrefixLength: 24},
+	}}, []unifi.DeviceTag{
+		{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"device-1"}},
+		{ID: "tag-2", Name: "aps", DeviceIDs: []string{"device-2"}},
+	})
+	if len(resources) != 1 || len(warnings) != 0 {
+		t.Fatalf("got %d resources, %d warnings; want 1 and 0: %v", len(resources), len(warnings), warnings)
+	}
+
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.Switch.DeviceTag.Name != "iot-switch" {
+		t.Errorf("deviceTag.name = %q, want iot-switch", spec.Switch.DeviceTag.Name)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedDeviceTag]; ok {
+		t.Errorf("annotations = %v, want no %s annotation", resources[0].Metadata.Annotations, AnnotationUnresolvedDeviceTag)
+	}
+}
+
+func TestNetworksSwitchMultiDeviceTagFallsBackToPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	// The device belongs to exactly one tag, but that tag has more than one member. The
+	// operator requires a single-device tag, so the emitter must keep the annotated
+	// placeholder rather than emit a selector the operator rejects with DeviceTagAmbiguous.
+	resources, _, warnings := Networks("default", []unifi.Network{{
+		ID:                    "net-iot",
+		Management:            ManagementSwitch,
+		Name:                  "IoT",
+		VLANID:                30,
+		DeviceID:              "device-1",
+		CellularBackupEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(true),
+		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: false, HostIPAddress: "192.168.30.1", PrefixLength: 24},
+	}}, []unifi.DeviceTag{
+		{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"device-1", "device-3"}},
+		{ID: "tag-2", Name: "aps", DeviceIDs: []string{"device-2"}},
+	})
+	if len(resources) != 1 || len(warnings) != 1 {
+		t.Fatalf("got %d resources, %d warnings; want 1 and 1: %v", len(resources), len(warnings), warnings)
+	}
+
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.Switch.DeviceTag.Name != unresolvedDeviceTagName {
+		t.Errorf("deviceTag.name = %q, want %q", spec.Switch.DeviceTag.Name, unresolvedDeviceTagName)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedDeviceTag]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedDeviceTag)
+	}
+}
+
+func TestNetworksSwitchAmbiguousDeviceTagFallsBackToPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	// The device is a member of two tags, so no single selector resolves it; the emitter
+	// must keep the annotated placeholder rather than pick one arbitrarily.
+	resources, _, warnings := Networks("default", []unifi.Network{{
+		ID:                    "net-iot",
+		Management:            ManagementSwitch,
+		Name:                  "IoT",
+		VLANID:                30,
+		DeviceID:              "device-1",
+		CellularBackupEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(true),
+		IPv4Configuration:     &unifi.IPv4Configuration{AutoScaleEnabled: false, HostIPAddress: "192.168.30.1", PrefixLength: 24},
+	}}, []unifi.DeviceTag{
+		{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"device-1"}},
+		{ID: "tag-2", Name: "lab", DeviceIDs: []string{"device-1"}},
+	})
+	if len(resources) != 1 || len(warnings) != 1 {
+		t.Fatalf("got %d resources, %d warnings; want 1 and 1: %v", len(resources), len(warnings), warnings)
+	}
+
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.Switch.DeviceTag.Name != unresolvedDeviceTagName {
+		t.Errorf("deviceTag.name = %q, want %q", spec.Switch.DeviceTag.Name, unresolvedDeviceTagName)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedDeviceTag]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedDeviceTag)
+	}
+}
+
+func TestFirewallZonesUsesEmittedNetworkNames(t *testing.T) {
+	t.Parallel()
+
+	// The emitted network names carry a collision suffix; the zone must reference those
+	// names rather than re-deriving them from the upstream network names.
+	networkNames := map[string]string{
+		"upstream-1": "guest-wifi",
+		"upstream-2": "guest-wifi-2",
+	}
+	zones := []unifi.FirewallZone{
+		{
+			ID:         "zone-1",
+			Name:       "Custom Zone",
+			NetworkIDs: []string{"upstream-1", "upstream-2"},
+			Metadata:   unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+		},
+		{
+			ID:         "zone-2",
+			Name:       "Internal",
+			NetworkIDs: []string{"upstream-2"},
+			Metadata:   unifi.NetworkMetadata{Origin: "SYSTEM_DEFINED"},
+		},
+	}
+
+	resources, warnings := FirewallZones("default", networkNames, zones)
+	if len(resources) != 2 || len(warnings) != 0 {
+		t.Fatalf("got %d resources, %d warnings; want 2 and 0: %v", len(resources), len(warnings), warnings)
+	}
+	if resources[0].Kind != KindUnifiFirewallZone || resources[0].Metadata.Name != "custom-zone" {
+		t.Errorf("resource 0 = %+v", resources[0])
+	}
+
+	spec := resources[0].Spec.(UnifiFirewallZoneSpec)
+	if spec.SiteRef.Name != "default" || spec.Name != "Custom Zone" {
+		t.Errorf("spec = %+v", spec)
+	}
+	wantRefs := []string{"guest-wifi", "guest-wifi-2"}
+	if len(spec.NetworkRefs) != len(wantRefs) {
+		t.Fatalf("networkRefs = %+v, want %v", spec.NetworkRefs, wantRefs)
+	}
+	for i, want := range wantRefs {
+		if spec.NetworkRefs[i].Name != want {
+			t.Errorf("networkRefs[%d] = %q, want %q", i, spec.NetworkRefs[i].Name, want)
+		}
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"zone-1", "upstream-1", "upstream-2"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec leaks upstream identifier %q: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestFirewallZonesAnnotatesUnresolvedNetworkRef(t *testing.T) {
+	t.Parallel()
+
+	resources, warnings := FirewallZones("default", map[string]string{"known": "known-net"}, []unifi.FirewallZone{
+		{Name: "Mixed", NetworkIDs: []string{"known", "missing-id"}},
+	})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want 1", warnings)
+	}
+
+	spec := resources[0].Spec.(UnifiFirewallZoneSpec)
+	if len(spec.NetworkRefs) != 1 || spec.NetworkRefs[0].Name != "known-net" {
+		t.Errorf("networkRefs = %+v, want [known-net]", spec.NetworkRefs)
+	}
+	if _, ok := resources[0].Metadata.Annotations[AnnotationUnresolvedNetworkRef]; !ok {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedNetworkRef)
+	}
+	if strings.Contains(warnings[0], "missing-id") {
+		t.Errorf("warning leaks upstream id: %s", warnings[0])
+	}
+}
+
 func TestNetworksUnmanagedCommonOnly(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", []unifi.Network{{
 		Management:   ManagementUnmanaged,
 		Name:         "Default",
 		Enabled:      nil,
 		VLANID:       1,
 		DHCPGuarding: &unifi.DHCPGuarding{TrustedDHCPServerIPAddresses: []string{"192.168.1.254"}},
-	}})
+	}}, nil)
 	if len(resources) != 1 || len(warnings) != 0 {
 		t.Fatalf("got %d resources, %d warnings; want 1 and 0", len(resources), len(warnings))
 	}
@@ -303,10 +477,10 @@ func TestNetworksUnmanagedCommonOnly(t *testing.T) {
 func TestNetworksSkipsInvalidVLAN(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := Networks("default", []unifi.Network{
+	resources, _, warnings := Networks("default", []unifi.Network{
 		{Management: ManagementUnmanaged, Name: "zero", VLANID: 0},
 		{Management: ManagementUnmanaged, Name: "high", VLANID: 5000},
-	})
+	}, nil)
 	if len(resources) != 0 {
 		t.Fatalf("got %d resources, want 0", len(resources))
 	}

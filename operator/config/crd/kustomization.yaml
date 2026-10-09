@@ -5,6 +5,7 @@ resources:
 - bases/unifi.supporterino.de_unificontrollers.yaml
 - bases/unifi.supporterino.de_unifisites.yaml
 - bases/unifi.supporterino.de_unifinetworks.yaml
+- bases/unifi.supporterino.de_unififirewallzones.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

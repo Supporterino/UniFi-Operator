@@ -1,0 +1,25 @@
+{{- if .Values.rbac.create }}
+# This rule is not used by the operator itself. It grants read-only access to
+# unifi.supporterino.de resources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "unifi-operator.fullname" . }}-unififirewallzone-viewer-role
+  labels:
+    {{- include "unifi-operator.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unififirewallzones
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - unifi.supporterino.de
+  resources:
+  - unififirewallzones/status
+  verbs:
+  - get
+{{- end }}

@@ -20,3 +20,27 @@ spec:
       autoScaleEnabled: false
       hostIpAddress: 10.0.0.1
       prefixLength: 24
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiNetwork
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifinetwork-switch-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  management: SWITCH
+  name: iot
+  enabled: true
+  vlanId: 30
+  switch:
+    cellularBackupEnabled: false
+    isolationEnabled: true
+    ipv4Configuration:
+      autoScaleEnabled: false
+      hostIpAddress: 10.0.30.1
+      prefixLength: 24
+    deviceTag:
+      name: core-switch

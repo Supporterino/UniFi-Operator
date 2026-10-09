@@ -260,17 +260,16 @@ spec:
                       CellularBackupEnabled allows this network to use cellular data when WAN
                       connections are down.
                     type: boolean
-                  deviceTagRef:
+                  deviceTag:
                     description: |-
-                      DeviceTagRef references the UnifiDeviceTag whose device manages this
-                      network. The reference resolves in the same namespace and keeps the
-                      opaque upstream device UUID out of spec. The network reconciler fails
-                      closed for management SWITCH until UnifiDeviceTag is implemented.
+                      DeviceTag selects the existing device tag whose member device manages
+                      this network. Tags are read-only upstream (there is no device-tag Custom
+                      Resource), so the selector names the tag and keeps the opaque upstream
+                      device UUID out of spec. The reconciler resolves the tag through the
+                      read-only device-tags list and requires exactly one member device.
                     properties:
                       name:
-                        description: |-
-                          Name is the name of the referenced object in the referencing object's
-                          namespace.
+                        description: Name is the human-readable device-tag name.
                         minLength: 1
                         type: string
                     required:
@@ -314,7 +313,7 @@ spec:
                     type: boolean
                 required:
                 - cellularBackupEnabled
-                - deviceTagRef
+                - deviceTag
                 - ipv4Configuration
                 - isolationEnabled
                 type: object

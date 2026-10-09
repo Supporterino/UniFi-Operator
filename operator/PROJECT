@@ -36,4 +36,13 @@ resources:
   kind: UnifiSite
   path: github.com/Supporterino/UniFi-Operator/operator/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: supporterino.de
+  group: unifi
+  kind: UnifiFirewallZone
+  path: github.com/Supporterino/UniFi-Operator/operator/api/v1alpha1
+  version: v1alpha1
 version: "3"

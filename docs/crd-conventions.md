@@ -103,6 +103,15 @@ A single writer avoids an unresolvable reference cycle (and racy reconciles) bet
 kinds. The same rule applies to ordered collections: a dedicated ordering CR is the single writer
 of order rather than a per-object priority field.
 
+CRD markers cannot express cross-object uniqueness, so the single-writer rule is enforced at
+runtime. `UnifiFirewallZone` claims networks through `spec.networkRefs`, and the controller keys
+the claim on `(siteRef, networkRef)` — not the namespace alone, because one namespace may hold
+several sites and a name-only key would false-positive across them. When more than one zone in
+the same site claims the same network, the controller marks every claimant `Ready=False` (reason
+`MembershipConflict`) and writes no membership upstream until a single writer remains. Zone-name
+uniqueness is checked the same way, keyed on `(siteRef, spec.name)`, because an upstream zone is
+identified by name.
+
 ### Typed selectors for non-CR references
 
 Some upstream objects have no CR and never will (or must not be overwritten). References to them
@@ -110,7 +119,7 @@ use a **typed selector struct** that the controller resolves, never a raw opaque
 
 | Target | Selector shape |
 |--------|----------------|
-| Device (e.g. a switch-managed network's `deviceId`) | typed device selector, or a `UnifiDeviceTag` reference |
+| Device (e.g. a switch-managed network's `deviceId`) | `DeviceTagSelector` (name-based, resolved from the read-only device-tags list) |
 | DPI application / category (firewall policy filters) | typed application/category selector |
 | Country (firewall policy region filters) | typed country selector |
 | Built-in/system firewall zones (not configurable, e.g. `Internal`/`External`) | typed built-in-zone selector (enum/name) |
@@ -118,6 +127,27 @@ use a **typed selector struct** that the controller resolves, never a raw opaque
 The concrete selector fields land with each kind as it is implemented; the contract is fixed
 here: **typed selector, no opaque ID**. This preserves Rule 1 for references that cannot use
 Kubernetes identity.
+
+#### Device-tag selector
+
+Device tags are the reference case for a selector over an object that has no CR. The frozen
+v10.4.57 surface exposes only `GET /v1/sites/{siteId}/device-tags` — no create, update, or delete
+— so there is no `UnifiDeviceTag` Custom Resource and never will be. A consumer (for example
+`UnifiNetwork.spec.switch`) selects devices with a name-based `DeviceTagSelector`:
+
+```go
+type DeviceTagSelector struct {
+    // +kubebuilder:validation:MinLength=1
+    Name string `json:"name"`
+}
+```
+
+This mirrors the `WANSelector` idiom: a `name`-only struct the controller resolves at reconcile
+time through the read-only list, keeping the opaque upstream UUID out of `spec`. The controller
+resolves the tag and reports the outcome in the consumer's `status`; an unknown tag, or a tag that
+does not resolve to exactly one device, fails closed with `Ready=False` and no upstream mutation.
+Never cache the resolved UUID in `spec` — resolve by name each reconcile so a rename or deletion
+upstream is observed rather than trusted.
 
 ## Rule 2 — Every CRD has a rich `status`
 
@@ -181,6 +211,12 @@ genuinely cross-field and cannot be expressed in markers.
 - Add fields; do not remove them. Deprecate in a field comment before removing.
 - A breaking schema change introduces a new version (`v1beta1`, `v1`) and uses the
   hub/spoke conversion pattern, never a silent in-place change.
+- **Pre-release carve-out.** While `v1alpha1` is unreleased — no deployed population, no
+  compatibility obligation — an in-place breaking change MAY be made without a new version or a
+  conversion webhook. `UnifiNetwork.spec.switch` dropping `deviceTagRef` for the name-based
+  `deviceTag` selector is such a change; it is accepted in place, and the samples, CLI, and docs
+  are updated in the same change so the tree stays green. Once `v1alpha1` is released, the
+  no-in-place-change rule applies again without exception.
 
 ## Rule 6 — CLI-emitted CRs obey the same rules
 

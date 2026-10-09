@@ -44,10 +44,6 @@ spec:
 apiVersion: unifi.supporterino.de/v1alpha1
 kind: UnifiNetwork
 metadata:
-  annotations:
-    unifi.supporterino.de/unresolved-device-tag: upstream device binding is an opaque
-      device id that cannot be expressed as a UnifiDeviceTag reference; spec.switch.deviceTagRef.name
-      is a placeholder and must be set to the managing device tag
   name: iot
 spec:
   enabled: true
@@ -57,8 +53,8 @@ spec:
     name: default
   switch:
     cellularBackupEnabled: true
-    deviceTagRef:
-      name: unresolved-device-tag
+    deviceTag:
+      name: iot-switch
     ipv4Configuration:
       autoScaleEnabled: false
       hostIpAddress: 192.168.30.1

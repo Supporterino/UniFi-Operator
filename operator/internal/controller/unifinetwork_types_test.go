@@ -31,6 +31,7 @@ const (
 	testSiteRefName       = "site"
 	testManagementSwitch  = "SWITCH"
 	testSwitchNetworkName = "iot"
+	testSwitchHostIP      = "10.0.3.1"
 )
 
 var _ = Describe("UnifiNetwork CRD validation", func() {
@@ -94,10 +95,10 @@ var _ = Describe("UnifiNetwork CRD validation", func() {
 				IsolationEnabled:      true,
 				IPv4Configuration: unifiv1alpha1.SwitchManagedIPv4Configuration{
 					AutoScaleEnabled: false,
-					HostIPAddress:    "10.0.3.1",
+					HostIPAddress:    testSwitchHostIP,
 					PrefixLength:     24,
 				},
-				DeviceTagRef: unifiv1alpha1.CoreRef{Name: "core-switch"},
+				DeviceTag: unifiv1alpha1.DeviceTagSelector{Name: "core-switch"},
 			},
 		})
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -151,9 +152,26 @@ var _ = Describe("UnifiNetwork CRD validation", func() {
 			Switch: &unifiv1alpha1.SwitchNetworkOptions{
 				IPv4Configuration: unifiv1alpha1.SwitchManagedIPv4Configuration{
 					AutoScaleEnabled: false,
-					HostIPAddress:    "10.0.3.1",
+					HostIPAddress:    testSwitchHostIP,
 					PrefixLength:     24,
 				},
+			},
+		}))).NotTo(Succeed())
+	})
+
+	It("rejects a switch network with an empty device-tag selector", func() {
+		Expect(k8sClient.Create(ctx, newNetwork("net-switch-empty-tag", unifiv1alpha1.UnifiNetworkSpec{
+			SiteRef:    unifiv1alpha1.CoreRef{Name: testSiteRefName},
+			Management: testManagementSwitch,
+			Name:       testSwitchNetworkName,
+			VLANID:     30,
+			Switch: &unifiv1alpha1.SwitchNetworkOptions{
+				IPv4Configuration: unifiv1alpha1.SwitchManagedIPv4Configuration{
+					AutoScaleEnabled: false,
+					HostIPAddress:    testSwitchHostIP,
+					PrefixLength:     24,
+				},
+				DeviceTag: unifiv1alpha1.DeviceTagSelector{Name: ""},
 			},
 		}))).NotTo(Succeed())
 	})

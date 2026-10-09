@@ -92,11 +92,37 @@ before implementing either consumer.
 | PUT | `/v1/sites/{siteId}/networks/{networkId}` | Update a network | `client.UpdateNetwork` | — |
 | DELETE | `/v1/sites/{siteId}/networks/{networkId}` | Delete a network | `client.DeleteNetwork` | — |
 
-> The rows above are the consumed surface for the implemented slice (`UnifiController`,
-> `UnifiSite`, `UnifiNetwork`). The frozen v10.4.57 document also exposes devices, clients, WiFi
-> broadcasts, firewall zones/policies, ACL rules, DNS policies, traffic matching lists, switching,
-> VPN, RADIUS, and device tags; a row is added here when each kind is implemented. The
-> authoritative full endpoint list is the upstream
+### `UnifiFirewallZone`
+
+| Method | Endpoint | Purpose | Operator | CLI |
+|--------|----------|---------|----------|-----|
+| GET | `/v1/sites/{siteId}/firewall/zones` | List firewall zones | `client.ListZones` | `snapshot firewall-zones` |
+| GET | `/v1/sites/{siteId}/firewall/zones/{id}` | Read one firewall zone | `client.GetZone` | — |
+| POST | `/v1/sites/{siteId}/firewall/zones` | Create a custom firewall zone | `client.CreateZone` | — |
+| PUT | `/v1/sites/{siteId}/firewall/zones/{id}` | Update a custom firewall zone | `client.UpdateZone` | — |
+| DELETE | `/v1/sites/{siteId}/firewall/zones/{id}` | Delete a custom firewall zone | `client.DeleteZone` | — |
+
+Writes are limited to custom (`USER_DEFINED`) zones and carry `{name, networkIds}` only; a
+system-defined upstream zone is adopted read-only and never created, updated, or deleted.
+`UnifiFirewallZone` is the single writer of a network's zone membership — see
+[CRD conventions](crd-conventions.md).
+
+### Device tags
+
+| Method | Endpoint | Purpose | Operator | CLI |
+|--------|----------|---------|----------|-----|
+| GET | `/v1/sites/{siteId}/device-tags` | List device tags (read-only) | `client.ListDeviceTags` | `snapshot device-tags` (read-only listing) |
+
+The frozen v10.4.57 surface exposes device tags **read-only**: there is no create, update, or
+delete endpoint and no tag-assignment endpoint. A consuming resource selects devices through a
+typed, name-based device-tag selector resolved against this list (see
+[CRD conventions](crd-conventions.md)); there is no `UnifiDeviceTag` Custom Resource.
+
+> The rows above are the consumed surface for the implemented kinds (`UnifiController`,
+> `UnifiSite`, `UnifiNetwork`, `UnifiFirewallZone`) plus the read-only device-tag selector. The
+> frozen v10.4.57 document also exposes devices, clients, WiFi broadcasts, firewall policies, ACL
+> rules, DNS policies, traffic matching lists, switching, VPN, and RADIUS; a row is added here when
+> each kind is implemented. The authoritative full endpoint list is the upstream
 > [llms.txt](https://developer.ui.com/network/v10.4.57/llms.txt) and
 > [openapi.json](https://developer.ui.com/network/v10.4.57/openapi.json).
 

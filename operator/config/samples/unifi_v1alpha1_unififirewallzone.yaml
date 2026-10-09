@@ -1,0 +1,13 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiFirewallZone
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unififirewallzone-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  name: iot
+  networkRefs:
+  - name: unifinetwork-sample

@@ -1,0 +1,23 @@
+{
+  "count": 2,
+  "data": [
+    {
+      "id": "bb1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "name": "iot-switch",
+      "deviceIds": ["aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"],
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "cc1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "name": "aps",
+      "deviceIds": [
+        "ee1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        "ff1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+      ],
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 2
+}

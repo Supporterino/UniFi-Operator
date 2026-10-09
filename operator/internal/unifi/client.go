@@ -246,6 +246,21 @@ type Client interface {
 	UpdateNetwork(ctx context.Context, siteID, networkID string, req NetworkRequest) (Network, error)
 	// DeleteNetwork deletes the network with the given UUID on the given site.
 	DeleteNetwork(ctx context.Context, siteID, networkID string) error
+	// ListZones returns every firewall zone on the given site.
+	ListZones(ctx context.Context, siteID string) ([]FirewallZone, error)
+	// GetZone returns the firewall zone with the given UUID on the given site.
+	GetZone(ctx context.Context, siteID, zoneID string) (FirewallZone, error)
+	// CreateZone creates a custom firewall zone on the given site.
+	CreateZone(ctx context.Context, siteID string, req FirewallZoneRequest) (FirewallZone, error)
+	// UpdateZone replaces the firewall zone with the given UUID on the given
+	// site.
+	UpdateZone(ctx context.Context, siteID, zoneID string, req FirewallZoneRequest) (FirewallZone, error)
+	// DeleteZone deletes the custom firewall zone with the given UUID on the
+	// given site.
+	DeleteZone(ctx context.Context, siteID, zoneID string) error
+	// ListDeviceTags returns every device tag on the given site. Tags are
+	// read-only upstream; a name-based selector is resolved against this list.
+	ListDeviceTags(ctx context.Context, siteID string) ([]DeviceTag, error)
 }
 
 // APIError describes a non-successful response from the UniFi controller. The

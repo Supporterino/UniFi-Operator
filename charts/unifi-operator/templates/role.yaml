@@ -24,6 +24,7 @@ rules:
   - unifi.supporterino.de
   resources:
   - unificontrollers/status
+  - unififirewallzones/status
   - unifinetworks/status
   - unifisites/status
   verbs:
@@ -33,6 +34,7 @@ rules:
 - apiGroups:
   - unifi.supporterino.de
   resources:
+  - unififirewallzones
   - unifinetworks
   verbs:
   - delete

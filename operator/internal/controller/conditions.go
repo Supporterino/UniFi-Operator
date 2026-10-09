@@ -58,9 +58,14 @@ const (
 	// reasonSiteNotAdopted marks a UnifiNetwork whose UnifiSite has not yet
 	// adopted an upstream site (status.siteID is empty).
 	reasonSiteNotAdopted = "SiteNotAdopted"
-	// reasonSwitchManagedUnsupported marks a UnifiNetwork with management
-	// SWITCH, which cannot be reconciled until UnifiDeviceTag is implemented.
-	reasonSwitchManagedUnsupported = "SwitchManagedUnsupported"
+	// reasonDeviceTagNotFound marks a SWITCH-managed network whose device-tag
+	// selector names a tag that does not exist on the site. The controller
+	// fails closed and does not modify the upstream network (design D5).
+	reasonDeviceTagNotFound = "DeviceTagNotFound"
+	// reasonDeviceTagAmbiguous marks a SWITCH-managed network whose device-tag
+	// selector resolves to zero or more than one device. The binding requires
+	// exactly one device, so the controller fails closed (design D5).
+	reasonDeviceTagAmbiguous = "DeviceTagAmbiguous"
 	// reasonWANLookupUnsupported marks a network whose IPv6 prefix delegation
 	// needs a WAN interface lookup the client does not yet provide.
 	reasonWANLookupUnsupported = "WANLookupUnsupported"
@@ -74,6 +79,18 @@ const (
 	// is not USER_DEFINED. The controller refuses to overwrite or delete a
 	// system-managed object (design D11).
 	reasonSystemObjectReadOnly = "SystemObjectReadOnly"
+	// reasonMembershipConflict marks a UnifiFirewallZone that claims a network
+	// another zone in the same site also claims. No membership is written until
+	// a single writer remains (design D3).
+	reasonMembershipConflict = "MembershipConflict"
+	// reasonZoneNameConflict marks a UnifiFirewallZone whose spec.name matches
+	// another zone in the same site. Upstream zone identity is by name, so
+	// neither object creates or updates an upstream zone (design D3).
+	reasonZoneNameConflict = "ZoneNameConflict"
+	// reasonCrossSiteReference marks a UnifiFirewallZone that lists a
+	// UnifiNetwork belonging to a different site. A network can only be a member
+	// of a zone on its own site, so no membership is written (design D3).
+	reasonCrossSiteReference = "CrossSiteReference"
 )
 
 // maxStatusMessageLen caps how much controller-provided text is copied into a

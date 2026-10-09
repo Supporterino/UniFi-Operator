@@ -34,8 +34,10 @@ const (
 )
 
 const (
-	pathSites    = "/proxy/network/integration/v1/sites"
-	pathNetworks = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/networks"
+	pathSites         = "/proxy/network/integration/v1/sites"
+	pathNetworks      = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/networks"
+	pathDeviceTags    = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/device-tags"
+	pathFirewallZones = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/firewall/zones"
 )
 
 func readFixture(t *testing.T, name string) []byte {
@@ -66,6 +68,8 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 
 	sites := readFixture(t, "sites.json")
 	networks := readFixture(t, "networks.json")
+	deviceTags := readFixture(t, "device-tags.json")
+	firewallZones := readFixture(t, "firewall-zones.json")
 	details := networkDetailFixtures(t)
 	emptyPage := []byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
 
@@ -76,6 +80,10 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write(sites)
 		case r.URL.Path == pathNetworks:
 			_, _ = w.Write(networks)
+		case r.URL.Path == pathDeviceTags:
+			_, _ = w.Write(deviceTags)
+		case r.URL.Path == pathFirewallZones:
+			_, _ = w.Write(firewallZones)
 		case r.URL.Path == "/proxy/network/integration/v1/sites/"+fixtureBranchSiteID+"/networks":
 			_, _ = w.Write(emptyPage)
 		case strings.HasPrefix(r.URL.Path, pathNetworks+"/"):
@@ -134,6 +142,25 @@ func TestSnapshotNetworksGolden(t *testing.T) {
 	srv := newFixtureServer(t)
 	out, _ := runSnapshot(t, "networks", "--controller", srv.URL)
 	compareGolden(t, "networks.golden.yaml", out)
+}
+
+func TestSnapshotFirewallZonesGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "firewall-zones", "--controller", srv.URL)
+	compareGolden(t, "firewall-zones.golden.yaml", out)
+}
+
+func TestSnapshotDeviceTagsListing(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "device-tags", "--controller", srv.URL)
+
+	want := "iot-switch\t1\naps\t2\n"
+	if out != want {
+		t.Errorf("device-tags output = %q, want %q", out, want)
+	}
+	if strings.Contains(out, fixtureDeviceID) {
+		t.Errorf("device-tags listing leaks a device UUID:\n%s", out)
+	}
 }
 
 func TestSnapshotSitesGolden(t *testing.T) {
@@ -299,9 +326,9 @@ func validateSwitchSpec(v any) error {
 			return fmt.Errorf("spec.switch.%s is required and must be a boolean", field)
 		}
 	}
-	deviceTagRef, ok := switchSpec["deviceTagRef"].(map[string]any)
-	if !ok || asString(deviceTagRef["name"]) == "" {
-		return errors.New("spec.switch.deviceTagRef.name is required")
+	deviceTag, ok := switchSpec["deviceTag"].(map[string]any)
+	if !ok || asString(deviceTag["name"]) == "" {
+		return errors.New("spec.switch.deviceTag.name is required")
 	}
 	return validateIPv4(switchSpec["ipv4Configuration"])
 }

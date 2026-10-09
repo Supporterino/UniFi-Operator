@@ -56,17 +56,37 @@ foundation is:
 |------|------|
 | `UnifiController` | The connection to one UniFi Network console: `spec.url`, the API-key `spec.secretRef`, and the TLS opt-out. It is the only kind that holds connection details, so credentials never leak into children. |
 | `UnifiSite` | Adopts an existing upstream site by name (`spec.internalReference`) and points at its controller (`spec.controllerRef`). It is the ownership-root anchor and never creates or deletes upstream sites. |
-| `UnifiNetwork` | A network on Integration v1, discriminated by `spec.management` (`GATEWAY`/`SWITCH`/`UNMANAGED`); it points at its site through `spec.siteRef`. |
+| `UnifiNetwork` | A network on Integration v1, discriminated by `spec.management` (`GATEWAY`/`SWITCH`/`UNMANAGED`); it points at its site through `spec.siteRef`. A `SWITCH` network binds its managing device through a name-based `spec.switch.deviceTag` selector, never a raw device UUID. |
+| `UnifiFirewallZone` | A firewall zone on the site; it points at its site through `spec.siteRef` and declares member networks through `spec.networkRefs`. It is the single writer of upstream zone network membership. |
 
 References are name-only and resolve in the same namespace:
 
 ```text
 UnifiNetwork.spec.siteRef ──▶ UnifiSite.spec.controllerRef ──▶ UnifiController
+UnifiFirewallZone.spec.siteRef ──▶ UnifiSite
+UnifiFirewallZone.spec.networkRefs ──▶ UnifiNetwork
 ```
 
 The full reference and ownership contract — including the rationale for name-only,
 same-namespace references — lives in [CRD conventions](crd-conventions.md); this page fixes
 only the graph.
+
+### Firewall zones and device selection
+
+`UnifiFirewallZone` is the **single writer** of upstream zone network membership: it declares
+member networks through `spec.networkRefs`, and `UnifiNetwork.spec` carries no zone reference.
+Only user-defined (`USER_DEFINED`) upstream zones are created, updated, or deleted; a
+system-defined zone is adopted **read-only** and fails closed rather than being mutated.
+Membership and zone-name uniqueness are enforced at runtime, because CRD markers cannot express
+cross-object uniqueness. The rules live in [CRD conventions](crd-conventions.md); the zone write
+surface is in the [UniFi API contract](unifi-api.md).
+
+`UnifiNetwork.spec.switch` binds a switch-managed network to its managing device through a
+name-based `deviceTag` selector, resolved against the read-only device-tags list. Device tags
+are read-only upstream, so there is **no `UnifiDeviceTag` kind** — no API type, CRD manifest, or
+controller is generated for it. An unknown tag, or a tag that does not resolve to exactly one
+device, fails closed. A zone membership write re-reconciles the affected networks, which report
+the resolved zone in `UnifiNetwork.status.zoneID`.
 
 ### Ownership tree
 
@@ -97,12 +117,16 @@ The endpoint → operator method → CLI map is [UniFi API contract](unifi-api.m
 
 ### Implemented vs designed kinds
 
-This change implements `UnifiController`, `UnifiSite`, and `UnifiNetwork` end to end — API
-types, generated CRD manifests, the Integration v1 client, and reconcilers. The remaining
-declarative kinds (WiFi broadcasts, firewall zones/policies/ordering, ACL rules/ordering, DNS
-policies, traffic matching lists, switching, VPN, RADIUS profiles, and device tags) are
-**designed as contracts only**: they have no Go types or CRD manifests yet and are implemented
-by later changes. Treat those designs as intent, not as a shipped surface.
+The implemented kinds are `UnifiController`, `UnifiSite`, `UnifiNetwork`, and
+`UnifiFirewallZone` — API types, generated CRD manifests, the Integration v1 client, and
+reconcilers. The remaining declarative kinds (WiFi broadcasts, firewall policies/ordering, ACL
+rules/ordering, DNS policies, traffic matching lists, switching kinds, VPN, and RADIUS profiles)
+are **designed as contracts only**: they have no Go types or CRD manifests yet and are
+implemented by later changes. Treat those designs as intent, not as a shipped surface.
+
+Device tags are not a kind at all: the upstream surface is read-only, so **no `UnifiDeviceTag`
+Custom Resource is generated**. Consumers select devices through the name-based device-tag
+selector resolved from the read-only list (see [CRD conventions](crd-conventions.md)).
 
 ## Reconcile model
 

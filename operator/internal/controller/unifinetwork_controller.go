@@ -86,13 +86,16 @@ type UnifiNetworkReconciler struct {
 
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifinetworks,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifinetworks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unififirewallzones,verbs=get;list;watch
 
 // Reconcile resolves the network's site and controller, applies the
 // declarative network to the console, and reports the result in status. It is
 // idempotent: re-running it on an unchanged object performs no writes. It fails
 // closed (Ready=False, no upstream mutation) on an unresolved site, a version
-// below the networks minimum, or a SWITCH-managed network, and adds/removes its
-// finalizer symmetrically around the upstream network's lifecycle.
+// below the networks minimum, a SWITCH-managed network below the Official API
+// minimum, or a device-tag selector that names a missing tag (DeviceTagNotFound)
+// or does not resolve to exactly one device (DeviceTagAmbiguous), and adds/removes
+// its finalizer symmetrically around the upstream network's lifecycle.
 func (r *UnifiNetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	network := &unifiv1alpha1.UnifiNetwork{}
 	if err := r.Get(ctx, req.NamespacedName, network); err != nil {
@@ -178,9 +181,8 @@ func (r *UnifiNetworkReconciler) ensureOwnership(
 }
 
 // reconcileUpstream resolves the console through the site's controllerRef, gates
-// on the networks capability, and creates or updates the upstream network. A
-// SWITCH-managed network fails closed because its device binding references a
-// UnifiDeviceTag that is not implemented yet.
+// on the networks capability, resolves a SWITCH-managed network's device-tag
+// selector, and creates or updates the upstream network.
 func (r *UnifiNetworkReconciler) reconcileUpstream(
 	ctx context.Context,
 	network *unifiv1alpha1.UnifiNetwork,
@@ -205,8 +207,12 @@ func (r *UnifiNetworkReconciler) reconcileUpstream(
 
 	switch network.Spec.Management {
 	case networkManagementSwitch:
-		return r.updateStatus(ctx, network, false, reasonSwitchManagedUnsupported,
-			switchUnsupportedMessage(network), nil, nil)
+		// The device-tags list is part of the Official API surface, whose
+		// minimum sits above the networks minimum. Fail closed on a console
+		// between the two rather than attempting the tag list (design D5/D7).
+		if err := CheckCapability(controller.Status.ApplicationVersion, CapabilityOfficialAPI); err != nil {
+			return r.updateStatus(ctx, network, false, reasonVersionUnsupported, err.Error(), nil, nil)
+		}
 	case networkManagementGateway, networkManagementUnmanaged:
 		// Handled below.
 	default:
@@ -228,12 +234,29 @@ func (r *UnifiNetworkReconciler) reconcileUpstream(
 		return ctrl.Result{}, fmt.Errorf("resolve controller client: %w", err)
 	}
 
+	var deviceID string
+	if network.Spec.Management == networkManagementSwitch {
+		if network.Spec.Switch == nil {
+			return r.updateStatus(ctx, network, false, reasonInvalidSpec,
+				"management SWITCH requires the switch fields", nil, nil)
+		}
+		tags, err := apiClient.ListDeviceTags(ctx, site.Status.SiteID)
+		if err != nil {
+			return r.handleUpstreamError(ctx, network, err)
+		}
+		reason, message := "", ""
+		deviceID, reason, message = resolveSwitchDevice(network, tags)
+		if reason != "" {
+			return r.updateStatus(ctx, network, false, reason, message, nil, nil)
+		}
+	}
+
 	networks, err := apiClient.ListNetworks(ctx, site.Status.SiteID)
 	if err != nil {
 		return r.handleUpstreamError(ctx, network, err)
 	}
 
-	request := buildNetworkRequest(network)
+	request := buildNetworkRequest(network, deviceID)
 	existing, err := resolveExistingNetwork(ctx, apiClient, site.Status.SiteID, network, networks)
 	if err != nil {
 		return r.handleUpstreamError(ctx, network, err)
@@ -435,9 +458,11 @@ func (r *UnifiNetworkReconciler) updateStatus(
 }
 
 // buildNetworkRequest maps the declarative spec onto the upstream create/update
-// body. The request deliberately has no zoneId: UnifiFirewallZone owns network
-// membership and the controller omits zoneId on writes (design D5).
-func buildNetworkRequest(network *unifiv1alpha1.UnifiNetwork) unifi.NetworkRequest {
+// body. deviceID is the UUID resolved from a SWITCH-managed network's device-tag
+// selector; it is ignored for other management variants. The request
+// deliberately has no zoneId: UnifiFirewallZone owns network membership and the
+// controller omits zoneId on writes (design D5).
+func buildNetworkRequest(network *unifiv1alpha1.UnifiNetwork, deviceID string) unifi.NetworkRequest {
 	spec := network.Spec
 	enabled := true
 	if spec.Enabled != nil {
@@ -460,6 +485,14 @@ func buildNetworkRequest(network *unifiv1alpha1.UnifiNetwork) unifi.NetworkReque
 			MDNSForwardingEnabled: spec.Gateway.MDNSForwardingEnabled,
 		}
 	}
+	if spec.Switch != nil {
+		request.Switch = &unifi.SwitchNetworkRequest{
+			CellularBackupEnabled: spec.Switch.CellularBackupEnabled,
+			IsolationEnabled:      spec.Switch.IsolationEnabled,
+			IPv4Configuration:     convertSwitchIPv4(spec.Switch.IPv4Configuration),
+			DeviceID:              deviceID,
+		}
+	}
 	return request
 }
 
@@ -472,12 +505,35 @@ func isPrefixDelegation(network *unifiv1alpha1.UnifiNetwork) bool {
 		network.Spec.Gateway.IPv6Configuration.InterfaceType == ipv6InterfacePrefixDelegation
 }
 
-// switchUnsupportedMessage describes why a SWITCH-managed network fails closed.
-func switchUnsupportedMessage(network *unifiv1alpha1.UnifiNetwork) string {
-	if network.Spec.Switch != nil {
-		return fmt.Sprintf("management SWITCH requires UnifiDeviceTag %q, which is not implemented yet; no upstream network was modified", network.Spec.Switch.DeviceTagRef.Name)
+// resolveSwitchDevice resolves a SWITCH-managed network's device-tag selector
+// against the read-only device-tags list. It returns the single member device
+// UUID, or a non-empty reason and message when the named tag is absent or does
+// not resolve to exactly one device. The resolved device's hardware type is not
+// verified (design Non-Goals): the binding accepts any single-device tag and
+// lets the console reject an unusable one.
+func resolveSwitchDevice(network *unifiv1alpha1.UnifiNetwork, tags []unifi.DeviceTag) (deviceID, reason, message string) {
+	tagName := network.Spec.Switch.DeviceTag.Name
+	tag := findDeviceTagByName(tags, tagName)
+	if tag == nil {
+		return "", reasonDeviceTagNotFound, fmt.Sprintf(
+			"device tag %q does not exist on the site; no upstream network was modified", tagName)
 	}
-	return "management SWITCH requires a device binding that is not implemented yet; no upstream network was modified"
+	if len(tag.DeviceIDs) != 1 {
+		return "", reasonDeviceTagAmbiguous, fmt.Sprintf(
+			"device tag %q resolves to %d devices; exactly one is required; no upstream network was modified",
+			tagName, len(tag.DeviceIDs))
+	}
+	return tag.DeviceIDs[0], "", ""
+}
+
+// convertSwitchIPv4 maps the switch IPv4 configuration.
+func convertSwitchIPv4(in unifiv1alpha1.SwitchManagedIPv4Configuration) unifi.IPv4Configuration {
+	return unifi.IPv4Configuration{
+		AutoScaleEnabled:        in.AutoScaleEnabled,
+		HostIPAddress:           in.HostIPAddress,
+		PrefixLength:            in.PrefixLength,
+		AdditionalHostIPSubnets: in.AdditionalHostIPSubnets,
+	}
 }
 
 // convertDHCPGuarding maps the CR DHCP guarding configuration.
@@ -523,6 +579,16 @@ func findNetworkByName(networks []unifi.Network, name string) *unifi.Network {
 	for i := range networks {
 		if networks[i].Name == name {
 			return &networks[i]
+		}
+	}
+	return nil
+}
+
+// findDeviceTagByName returns the device tag matching name, or nil.
+func findDeviceTagByName(tags []unifi.DeviceTag, name string) *unifi.DeviceTag {
+	for i := range tags {
+		if tags[i].Name == name {
+			return &tags[i]
 		}
 	}
 	return nil
@@ -583,8 +649,9 @@ func systemObjectMessage(existing unifi.Network) string {
 // networkMatchesRequest reports whether the observed upstream network already
 // matches the desired write, so the reconciler can skip the PUT and stay
 // idempotent. Only authored fields are compared; observed fields (id, default,
-// metadata, zoneId, deviceId) are ignored. Nil and empty collections are
-// normalized, and slice order is insignificant.
+// metadata, zoneId) are ignored. deviceId is authored for a SWITCH-managed
+// network (resolved from the device-tag selector) and is compared. Nil and
+// empty collections are normalized, and slice order is insignificant.
 func networkMatchesRequest(existing unifi.Network, req unifi.NetworkRequest) bool {
 	if existing.Management != req.Management ||
 		existing.Name != req.Name ||
@@ -656,8 +723,8 @@ func gatewayMatches(existing unifi.Network, req unifi.GatewayNetworkRequest) boo
 	return ipv6Matches(existing.IPv6Configuration, req.IPv6Configuration)
 }
 
-// switchMatches compares the SWITCH variant. The switch variant fails closed
-// upstream of this comparison, but it is handled for completeness.
+// switchMatches compares the SWITCH variant, including the resolved device ID
+// the reconciler supplies from the device-tag selector.
 func switchMatches(existing unifi.Network, req unifi.SwitchNetworkRequest) bool {
 	if boolValue(existing.CellularBackupEnabled) != req.CellularBackupEnabled ||
 		boolValue(existing.IsolationEnabled) != req.IsolationEnabled ||
@@ -771,21 +838,60 @@ func firstNonEmpty(values ...string) string {
 // no-op reconcile while still handling spec changes and the first deletion.
 // The controller also watches its UnifiSite and UnifiController dependencies so
 // a status-only change there (for example a late-adopted siteID or a detected
-// application version) retriggers reconciliation.
+// application version) retriggers reconciliation. It watches UnifiFirewallZone
+// so a membership write re-reconciles the networks the zone claims, refreshing
+// UnifiNetwork.status.zoneID (design D2). Only the networks the changed zone
+// lists in spec.networkRefs are enqueued, so the zone's own status writes
+// (conflict marking, dependency requeues) do not bounce every network in the
+// namespace.
 func (r *UnifiNetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unifiv1alpha1.UnifiNetwork{}, builder.WithPredicates(networkPredicate())).
 		Watches(&unifiv1alpha1.UnifiController{}, handler.EnqueueRequestsFromMapFunc(r.networksInNamespace)).
 		Watches(&unifiv1alpha1.UnifiSite{}, handler.EnqueueRequestsFromMapFunc(r.networksForSite)).
+		Watches(&unifiv1alpha1.UnifiFirewallZone{}, handler.EnqueueRequestsFromMapFunc(r.networksForZone)).
 		Named("unifinetwork").
 		Complete(r)
 }
 
 // networksInNamespace enqueues every UnifiNetwork in the changed object's
 // namespace. A dependency (UnifiController or UnifiSite) may be referenced by
-// any network, so the dependency's status-only change retriggers all of them.
+// any network, so the dependency's change retriggers all of them.
 func (r *UnifiNetworkReconciler) networksInNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
 	return r.listNetworkRequests(ctx, obj.GetNamespace(), "")
+}
+
+// networksForZone enqueues only the UnifiNetworks a changed UnifiFirewallZone
+// lists in spec.networkRefs. A zone writes membership for exactly those
+// networks, so only they need to re-reconcile to refresh status.zoneID after
+// the write; the rest of the namespace is left untouched. This keeps the
+// membership-refresh trigger (design D2) without the namespace-wide churn of
+// mapping every network on each zone status write.
+func (r *UnifiNetworkReconciler) networksForZone(ctx context.Context, obj client.Object) []reconcile.Request {
+	zone, ok := obj.(*unifiv1alpha1.UnifiFirewallZone)
+	if !ok || len(zone.Spec.NetworkRefs) == 0 {
+		return nil
+	}
+	var networks unifiv1alpha1.UnifiNetworkList
+	if err := r.List(ctx, &networks, client.InNamespace(zone.Namespace)); err != nil {
+		logf.FromContext(ctx).Error(err, "list networks for firewall zone watch", "namespace", zone.Namespace)
+		return nil
+	}
+	claimed := make(map[string]struct{}, len(zone.Spec.NetworkRefs))
+	for _, ref := range zone.Spec.NetworkRefs {
+		claimed[ref.Name] = struct{}{}
+	}
+	requests := make([]reconcile.Request, 0, len(zone.Spec.NetworkRefs))
+	for i := range networks.Items {
+		item := &networks.Items[i]
+		if _, ok := claimed[item.Name]; !ok {
+			continue
+		}
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: item.Namespace, Name: item.Name},
+		})
+	}
+	return requests
 }
 
 // networksForSite enqueues the UnifiNetworks that reference the changed

@@ -22,6 +22,8 @@ const (
 	KindUnifiSite = "UnifiSite"
 	// KindUnifiNetwork is the kind for a projected UniFi network.
 	KindUnifiNetwork = "UnifiNetwork"
+	// KindUnifiFirewallZone is the kind for a projected UniFi firewall zone.
+	KindUnifiFirewallZone = "UnifiFirewallZone"
 
 	// Management discriminator values accepted by UnifiNetwork.spec.management.
 	ManagementGateway   = "GATEWAY"
@@ -32,8 +34,11 @@ const (
 	// metadata.name was disambiguated to avoid a collision.
 	AnnotationOriginalName = "unifi.supporterino.de/original-name"
 	// AnnotationUnresolvedDeviceTag records that a switch-managed network's upstream
-	// device binding could not be expressed as a UnifiDeviceTag reference.
+	// device binding could not be resolved to exactly one device tag.
 	AnnotationUnresolvedDeviceTag = "unifi.supporterino.de/unresolved-device-tag"
+	// AnnotationUnresolvedNetworkRef records that a firewall zone referenced an upstream
+	// network that was not emitted, so spec.networkRefs is incomplete.
+	AnnotationUnresolvedNetworkRef = "unifi.supporterino.de/unresolved-network-ref"
 	// AnnotationUnrepresentedIPv6 records that part of a gateway network's IPv6
 	// configuration could not be represented in spec.
 	AnnotationUnrepresentedIPv6 = "unifi.supporterino.de/unrepresented-ipv6"
@@ -52,9 +57,9 @@ const (
 	DefaultSecretName = "unifi-api-key"
 	DefaultSecretKey  = "api-key"
 
-	// unresolvedDeviceTagName is the deterministic placeholder deviceTagRef.name
-	// emitted for a switch-managed network. The upstream deviceId is opaque and cannot
-	// be turned into a UnifiDeviceTag reference.
+	// unresolvedDeviceTagName is the deterministic placeholder deviceTag.name emitted
+	// for a switch-managed network whose upstream device binding is not uniquely
+	// resolvable to a device tag.
 	unresolvedDeviceTagName = "unresolved-device-tag"
 
 	minVLAN = 1
@@ -69,6 +74,13 @@ const (
 
 // CoreRef is a reference to another Custom Resource by Kubernetes name, same namespace.
 type CoreRef struct {
+	Name string `json:"name"`
+}
+
+// DeviceTagSelector selects an existing, read-only upstream device tag by name. It
+// mirrors the operator's DeviceTagSelector; the opaque tag and device UUIDs never reach
+// spec.
+type DeviceTagSelector struct {
 	Name string `json:"name"`
 }
 
@@ -138,14 +150,15 @@ type GatewayNetworkOptions struct {
 	MDNSForwardingEnabled *bool              `json:"mdnsForwardingEnabled,omitempty"`
 }
 
-// SwitchNetworkOptions is the emitted SWITCH variant. DeviceTagRef is required by the
-// CRD; because the upstream deviceId is opaque it is emitted as a deterministic
+// SwitchNetworkOptions is the emitted SWITCH variant. DeviceTag is required by the CRD.
+// It names the read-only upstream device tag that manages the network; when the upstream
+// device binding cannot be uniquely resolved to a tag it is emitted as a deterministic
 // placeholder and the resource is annotated.
 type SwitchNetworkOptions struct {
 	CellularBackupEnabled bool              `json:"cellularBackupEnabled"`
 	IsolationEnabled      bool              `json:"isolationEnabled"`
 	IPv4Configuration     IPv4Configuration `json:"ipv4Configuration"`
-	DeviceTagRef          CoreRef           `json:"deviceTagRef"`
+	DeviceTag             DeviceTagSelector `json:"deviceTag"`
 }
 
 // UnifiNetworkSpec is the desired state emitted for a UniFi network. The field names and
@@ -161,6 +174,16 @@ type UnifiNetworkSpec struct {
 	DHCPGuarding *DHCPGuarding          `json:"dhcpGuarding,omitempty"`
 	Gateway      *GatewayNetworkOptions `json:"gateway,omitempty"`
 	Switch       *SwitchNetworkOptions  `json:"switch,omitempty"`
+}
+
+// UnifiFirewallZoneSpec is the desired state emitted for a UniFi firewall zone. It
+// mirrors the operator's UnifiFirewallZoneSpec: member networks are referenced by the
+// Kubernetes name of the UnifiNetwork CR (never the upstream zone or network UUID) and
+// the upstream zone UUID is left to status.
+type UnifiFirewallZoneSpec struct {
+	SiteRef     CoreRef   `json:"siteRef"`
+	Name        string    `json:"name"`
+	NetworkRefs []CoreRef `json:"networkRefs"`
 }
 
 // Controller emits a UnifiController template: the console URL plus a placeholder
@@ -240,13 +263,20 @@ func Sites(controllerRef string, sites []unifi.Site) ([]emit.Resource, map[strin
 // the metadata.name of the target UnifiSite as returned by Sites, so siteRef.name always
 // matches the emitted site. Colliding projected names get a stable numeric suffix and an
 // AnnotationOriginalName annotation rather than overwriting one another.
-func Networks(siteName string, networks []unifi.Network) ([]emit.Resource, []string) {
+//
+// deviceTags is the read-only device-tag list of the site, used to reverse-map a
+// switch-managed network's observed deviceId to a tag name. The returned map is the
+// upstream-network-id -> emitted-name map (including any collision suffix); callers that
+// reference networks by name, such as FirewallZones, must use it rather than re-deriving
+// names, which can disagree with the emitted resources once a collision is disambiguated.
+func Networks(siteName string, networks []unifi.Network, deviceTags []unifi.DeviceTag) ([]emit.Resource, map[string]string, []string) {
 	resources := make([]emit.Resource, 0, len(networks))
+	names := make(map[string]string, len(networks))
 	var warnings []string
 	alloc := newNameAllocator()
 
 	for _, network := range networks {
-		spec, annotations, networkWarnings, ok := buildNetworkSpec(siteName, network)
+		spec, annotations, networkWarnings, ok := buildNetworkSpec(siteName, network, deviceTags)
 		if !ok {
 			warnings = append(warnings, networkWarnings...)
 			continue
@@ -254,6 +284,7 @@ func Networks(siteName string, networks []unifi.Network) ([]emit.Resource, []str
 
 		base := DNSSafeName(network.Name)
 		name, collided := alloc.allocate(base)
+		names[network.ID] = name
 		metadata := emit.Metadata{Name: name}
 		if collided {
 			if annotations == nil {
@@ -276,13 +307,13 @@ func Networks(siteName string, networks []unifi.Network) ([]emit.Resource, []str
 		})
 		warnings = append(warnings, networkWarnings...)
 	}
-	return resources, warnings
+	return resources, names, warnings
 }
 
 // buildNetworkSpec maps one upstream network into a spec valid against the CRD. It
 // returns ok=false (with a warning and no resource) when a required variant field is
 // missing or cannot be represented faithfully, so the CLI never emits an invalid CR.
-func buildNetworkSpec(siteName string, network unifi.Network) (UnifiNetworkSpec, map[string]string, []string, bool) {
+func buildNetworkSpec(siteName string, network unifi.Network, deviceTags []unifi.DeviceTag) (UnifiNetworkSpec, map[string]string, []string, bool) {
 	if network.VLANID < minVLAN || network.VLANID > maxVLAN {
 		return UnifiNetworkSpec{}, nil, []string{fmt.Sprintf(
 			"network %q: upstream vlanId %d is outside the CRD range %d..%d; skipping",
@@ -314,7 +345,7 @@ func buildNetworkSpec(siteName string, network unifi.Network) (UnifiNetworkSpec,
 		spec.Gateway = gateway
 		warnings = append(warnings, gatewayWarnings...)
 	case ManagementSwitch:
-		switchOptions, switchWarnings, ok := switchNetworkOptions(network, &annotations)
+		switchOptions, switchWarnings, ok := switchNetworkOptions(network, deviceTags, &annotations)
 		if !ok {
 			return UnifiNetworkSpec{}, nil, switchWarnings, false
 		}
@@ -367,11 +398,12 @@ func gatewayOptions(network unifi.Network, annotations *map[string]string) (*Gat
 }
 
 // switchNetworkOptions maps the observed switch union into the emitted SWITCH variant.
-// The upstream device binding is an opaque deviceId; DeviceTagRef is emitted as a
-// deterministic placeholder and the gap is recorded in an annotation and a warning. It
-// returns ok=false when a required switch field is missing or invalid so no invalid CR
-// is emitted.
-func switchNetworkOptions(network unifi.Network, annotations *map[string]string) (*SwitchNetworkOptions, []string, bool) {
+// The upstream device binding is an opaque deviceId; when it belongs to exactly one
+// device tag that tag's name becomes the emitted selector. When it belongs to no tag or
+// more than one tag the selector would be unresolvable, so a deterministic placeholder is
+// emitted and the gap is recorded in an annotation and a warning. It returns ok=false
+// when a required switch field is missing or invalid so no invalid CR is emitted.
+func switchNetworkOptions(network unifi.Network, deviceTags []unifi.DeviceTag, annotations *map[string]string) (*SwitchNetworkOptions, []string, bool) {
 	if network.CellularBackupEnabled == nil || network.IsolationEnabled == nil {
 		return nil, []string{fmt.Sprintf(
 			"network %q: switch configuration is missing from the controller response; skipping", network.Name)}, false
@@ -385,15 +417,126 @@ func switchNetworkOptions(network unifi.Network, annotations *map[string]string)
 		return nil, []string{fmt.Sprintf("network %q: %v; skipping", network.Name, err)}, false
 	}
 
-	reason := "upstream device binding is an opaque device id that cannot be expressed as a UnifiDeviceTag reference; spec.switch.deviceTagRef.name is a placeholder and must be set to the managing device tag"
-	setAnnotation(annotations, AnnotationUnresolvedDeviceTag, reason)
-
-	return &SwitchNetworkOptions{
+	options := &SwitchNetworkOptions{
 		CellularBackupEnabled: *network.CellularBackupEnabled,
 		IsolationEnabled:      *network.IsolationEnabled,
 		IPv4Configuration:     *ipv4,
-		DeviceTagRef:          CoreRef{Name: unresolvedDeviceTagName},
-	}, []string{fmt.Sprintf("network %q: %s", network.Name, reason)}, true
+	}
+	if tagName, ok := deviceTagNameFor(deviceTags, network.DeviceID); ok {
+		options.DeviceTag = DeviceTagSelector{Name: tagName}
+		return options, nil, true
+	}
+
+	reason := "upstream device binding is not uniquely resolvable to a device tag; spec.switch.deviceTag.name is a placeholder and must be set to the managing device tag"
+	setAnnotation(annotations, AnnotationUnresolvedDeviceTag, reason)
+	options.DeviceTag = DeviceTagSelector{Name: unresolvedDeviceTagName}
+
+	return options, []string{fmt.Sprintf("network %q: %s", network.Name, reason)}, true
+}
+
+// deviceTagNameFor returns the name of the single device tag that contains deviceID and
+// resolves to exactly one device. It returns ok=false when deviceID is empty, belongs to
+// no tag or to more than one tag, or the matched tag has more than one member, since the
+// operator requires the selector to name a single-device tag. The caller keeps the
+// annotated placeholder instead of emitting a selector the operator cannot resolve.
+func deviceTagNameFor(deviceTags []unifi.DeviceTag, deviceID string) (string, bool) {
+	if deviceID == "" {
+		return "", false
+	}
+	name := ""
+	matches := 0
+	for _, tag := range deviceTags {
+		if !containsString(tag.DeviceIDs, deviceID) {
+			continue
+		}
+		if len(tag.DeviceIDs) != 1 {
+			return "", false
+		}
+		name = tag.Name
+		matches++
+	}
+	if matches != 1 || name == "" {
+		return "", false
+	}
+	return name, true
+}
+
+// containsString reports whether values contains want.
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+// FirewallZones projects each upstream firewall zone into a UnifiFirewallZone. siteName
+// is the metadata.name of the target UnifiSite. networkNames is the upstream-network-id ->
+// emitted-name map returned by Networks; each zone's member networks are resolved through
+// it so networkRefs always name the UnifiNetwork resources this snapshot emitted,
+// including any collision suffix. A member network that was not emitted is omitted from
+// spec.networkRefs and recorded in an annotation and a warning rather than re-derived from
+// its upstream name, which could disagree with the emitted CR.
+func FirewallZones(siteName string, networkNames map[string]string, zones []unifi.FirewallZone) ([]emit.Resource, []string) {
+	resources := make([]emit.Resource, 0, len(zones))
+	var warnings []string
+	alloc := newNameAllocator()
+
+	for _, zone := range zones {
+		refs, unresolved := firewallZoneNetworkRefs(zone, networkNames)
+
+		var annotations map[string]string
+		if unresolved > 0 {
+			setAnnotation(&annotations, AnnotationUnresolvedNetworkRef,
+				"member networks missing from the snapshot were omitted from spec.networkRefs; set them to the intended UnifiNetwork names")
+			warnings = append(warnings, fmt.Sprintf(
+				"firewall zone %q: %d member network(s) were not emitted; spec.networkRefs may be incomplete",
+				zone.Name, unresolved))
+		}
+
+		base := DNSSafeName(zone.Name)
+		name, collided := alloc.allocate(base)
+		if collided {
+			setAnnotation(&annotations, AnnotationOriginalName, zone.Name)
+			warnings = append(warnings, fmt.Sprintf(
+				"firewall zone %q: projected name %q is already in use; emitting as %q",
+				zone.Name, base, name))
+		}
+
+		metadata := emit.Metadata{Name: name}
+		if len(annotations) > 0 {
+			metadata.Annotations = annotations
+		}
+		resources = append(resources, emit.Resource{
+			APIVersion: Group + "/" + Version,
+			Kind:       KindUnifiFirewallZone,
+			Metadata:   metadata,
+			Spec: UnifiFirewallZoneSpec{
+				SiteRef:     CoreRef{Name: siteName},
+				Name:        zone.Name,
+				NetworkRefs: refs,
+			},
+		})
+	}
+	return resources, warnings
+}
+
+// firewallZoneNetworkRefs resolves a zone's upstream member-network ids to the emitted
+// UnifiNetwork names. It returns the number of ids that were not among the emitted
+// networks so the caller can record the gap.
+func firewallZoneNetworkRefs(zone unifi.FirewallZone, networkNames map[string]string) ([]CoreRef, int) {
+	refs := make([]CoreRef, 0, len(zone.NetworkIDs))
+	unresolved := 0
+	for _, id := range zone.NetworkIDs {
+		name, ok := networkNames[id]
+		if !ok {
+			unresolved++
+			continue
+		}
+		refs = append(refs, CoreRef{Name: name})
+	}
+	return refs, unresolved
 }
 
 // mapIPv4 validates and maps the observed IPv4 configuration.

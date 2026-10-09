@@ -81,6 +81,28 @@ type stubUnifiClient struct {
 	deletedSiteID    string
 	deletedNetworkID string
 
+	zones    []unifi.FirewallZone
+	zonesErr error
+	// getZoneErr, when set, is returned by GetZone instead of a lookup.
+	getZoneErr error
+
+	createdZone   unifi.FirewallZone
+	createZoneErr error
+	updatedZone   unifi.FirewallZone
+	updateZoneErr error
+
+	zoneCreateRequests []unifi.FirewallZoneRequest
+	zoneUpdateRequests []unifi.FirewallZoneRequest
+	// updatedZoneID records the identifier passed to UpdateZone.
+	updatedZoneID string
+
+	deleteZoneErr     error
+	deletedZoneSiteID string
+	deletedZoneID     string
+
+	deviceTags    []unifi.DeviceTag
+	deviceTagsErr error
+
 	calls []string
 }
 
@@ -160,6 +182,61 @@ func (s *stubUnifiClient) DeleteNetwork(_ context.Context, siteID, networkID str
 	s.deletedSiteID = siteID
 	s.deletedNetworkID = networkID
 	return s.deleteErr
+}
+
+func (s *stubUnifiClient) ListZones(context.Context, string) ([]unifi.FirewallZone, error) {
+	s.record("ListZones")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.zones, s.zonesErr
+}
+
+func (s *stubUnifiClient) GetZone(_ context.Context, _, zoneID string) (unifi.FirewallZone, error) {
+	s.record("GetZone")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getZoneErr != nil {
+		return unifi.FirewallZone{}, s.getZoneErr
+	}
+	for _, zone := range s.zones {
+		if zone.ID == zoneID {
+			return zone, nil
+		}
+	}
+	return unifi.FirewallZone{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) CreateZone(_ context.Context, _ string, req unifi.FirewallZoneRequest) (unifi.FirewallZone, error) {
+	s.record("CreateZone")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.zoneCreateRequests = append(s.zoneCreateRequests, req)
+	return s.createdZone, s.createZoneErr
+}
+
+func (s *stubUnifiClient) UpdateZone(_ context.Context, _, zoneID string, req unifi.FirewallZoneRequest) (unifi.FirewallZone, error) {
+	s.record("UpdateZone")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.zoneUpdateRequests = append(s.zoneUpdateRequests, req)
+	s.updatedZoneID = zoneID
+	return s.updatedZone, s.updateZoneErr
+}
+
+func (s *stubUnifiClient) DeleteZone(_ context.Context, siteID, zoneID string) error {
+	s.record("DeleteZone")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deletedZoneSiteID = siteID
+	s.deletedZoneID = zoneID
+	return s.deleteZoneErr
+}
+
+func (s *stubUnifiClient) ListDeviceTags(context.Context, string) ([]unifi.DeviceTag, error) {
+	s.record("ListDeviceTags")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deviceTags, s.deviceTagsErr
 }
 
 // recordingFactory is a ConnectionFactory that captures the arguments a

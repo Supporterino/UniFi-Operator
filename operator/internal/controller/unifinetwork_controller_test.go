@@ -40,6 +40,8 @@ const (
 	testUpstreamNetworkID   = "net-uuid-1"
 	testUpstreamZoneID      = "zone-uuid-1"
 	testSwitchDeviceTag     = "core-switch"
+	testSwitchDeviceID      = "dd1b2c3d-4e5f-4a6b-7c8d-9e0f1a2b3c4d"
+	testMissingDeviceTag    = "missing-tag"
 	testIPv6InterfaceStatic = "STATIC"
 	testIPv6HostAddress     = "fd00:10::1"
 )
@@ -120,7 +122,7 @@ func newSwitchNetwork() *unifiv1alpha1.UnifiNetwork {
 			HostIPAddress: "10.0.4.1",
 			PrefixLength:  24,
 		},
-		DeviceTagRef: unifiv1alpha1.CoreRef{Name: testSwitchDeviceTag},
+		DeviceTag: unifiv1alpha1.DeviceTagSelector{Name: testSwitchDeviceTag},
 	}
 	return network
 }
@@ -344,11 +346,11 @@ func TestUnifiNetworkReconcileFailsClosed(t *testing.T) {
 			wantRequeue: true,
 		},
 		{
-			name:       "switch management unsupported",
+			name:       "switch device tag missing",
 			network:    newSwitchNetwork(),
 			site:       ownedSite(),
 			controller: readyController(testAppVersion),
-			wantReason: reasonSwitchManagedUnsupported,
+			wantReason: reasonDeviceTagNotFound,
 		},
 	}
 
@@ -392,6 +394,115 @@ func TestUnifiNetworkReconcileFailsClosed(t *testing.T) {
 				t.Errorf("upstream mutations = %v, want none", mutations)
 			}
 		})
+	}
+}
+
+func TestUnifiNetworkReconcileSwitchDeviceTag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		tags       []unifi.DeviceTag
+		wantReason string
+		wantDevice string
+		wantCreate bool
+	}{
+		{
+			name:       "single device resolves",
+			tags:       []unifi.DeviceTag{{Name: testSwitchDeviceTag, DeviceIDs: []string{testSwitchDeviceID}}},
+			wantDevice: testSwitchDeviceID,
+			wantCreate: true,
+		},
+		{
+			name:       "tag missing fails closed",
+			tags:       []unifi.DeviceTag{{Name: testMissingDeviceTag, DeviceIDs: []string{testSwitchDeviceID}}},
+			wantReason: reasonDeviceTagNotFound,
+		},
+		{
+			name:       "zero devices fails closed",
+			tags:       []unifi.DeviceTag{{Name: testSwitchDeviceTag}},
+			wantReason: reasonDeviceTagAmbiguous,
+		},
+		{
+			name:       "multiple devices fails closed",
+			tags:       []unifi.DeviceTag{{Name: testSwitchDeviceTag, DeviceIDs: []string{testSwitchDeviceID, "device-2"}}},
+			wantReason: reasonDeviceTagAmbiguous,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stub := &stubUnifiClient{
+				deviceTags: tt.tags,
+				created:    unifi.Network{ID: testUpstreamNetworkID, Name: testNetworkUpstreamName},
+			}
+			factory := &recordingFactory{client: stub}
+			fakeClient, _, _ := newNetworkFakeClient(t,
+				newSwitchNetwork(), ownedSite(), readyController(testAppVersion), apiKeySecret())
+			reconciler := &UnifiNetworkReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+
+			if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testNetworkResourceName)); err != nil {
+				t.Fatalf("Reconcile error = %v, want nil", err)
+			}
+
+			got := getNetwork(t, fakeClient)
+			cond := requireReady(t, got.Status.Conditions)
+			if tt.wantReason != "" {
+				if cond.Status != metav1.ConditionFalse || cond.Reason != tt.wantReason {
+					t.Errorf("Ready = %s/%s, want False/%s", cond.Status, cond.Reason, tt.wantReason)
+				}
+				if mutations := upstreamMutations(stub.called()); len(mutations) != 0 {
+					t.Errorf("upstream mutations = %v, want none", mutations)
+				}
+				return
+			}
+			if cond.Status != metav1.ConditionTrue || cond.Reason != reasonReconciled {
+				t.Errorf("Ready = %s/%s, want True/%s", cond.Status, cond.Reason, reasonReconciled)
+			}
+			if !slices.Contains(stub.called(), "ListDeviceTags") {
+				t.Errorf("upstream calls = %v, want ListDeviceTags", stub.called())
+			}
+			if tt.wantCreate {
+				if len(stub.createRequests) != 1 {
+					t.Fatalf("create requests = %d, want 1", len(stub.createRequests))
+				}
+				req := stub.createRequests[0]
+				if req.Switch == nil {
+					t.Fatalf("create request switch = nil, want the resolved switch variant")
+				}
+				if req.Switch.DeviceID != tt.wantDevice {
+					t.Errorf("create request deviceID = %q, want %q", req.Switch.DeviceID, tt.wantDevice)
+				}
+			}
+		})
+	}
+}
+
+func TestUnifiNetworkReconcileSwitchBelowOfficialAPIMinimum(t *testing.T) {
+	t.Parallel()
+
+	// 10.1.0 satisfies the networks minimum (10.0.162) but not the Official API
+	// minimum (10.1.78) the device-tags list requires, so the switch binding
+	// fails closed without attempting the tag list.
+	stub := &stubUnifiClient{}
+	factory := &recordingFactory{client: stub}
+	fakeClient, _, _ := newNetworkFakeClient(t,
+		newSwitchNetwork(), ownedSite(), readyController("10.1.0"), apiKeySecret())
+	reconciler := &UnifiNetworkReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+
+	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testNetworkResourceName)); err != nil {
+		t.Fatalf("Reconcile error = %v, want nil", err)
+	}
+
+	got := getNetwork(t, fakeClient)
+	cond := requireReady(t, got.Status.Conditions)
+	if cond.Status != metav1.ConditionFalse || cond.Reason != reasonVersionUnsupported {
+		t.Errorf("Ready = %s/%s, want False/%s", cond.Status, cond.Reason, reasonVersionUnsupported)
+	}
+	if calls := stub.called(); len(calls) != 0 {
+		t.Errorf("upstream calls = %v, want none below the device-tags minimum", calls)
 	}
 }
 

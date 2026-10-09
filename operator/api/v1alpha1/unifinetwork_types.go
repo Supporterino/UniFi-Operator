@@ -119,11 +119,12 @@ type SwitchNetworkOptions struct {
 	// IPv4Configuration is the IPv4 configuration for this network.
 	IPv4Configuration SwitchManagedIPv4Configuration `json:"ipv4Configuration"`
 
-	// DeviceTagRef references the UnifiDeviceTag whose device manages this
-	// network. The reference resolves in the same namespace and keeps the
-	// opaque upstream device UUID out of spec. The network reconciler fails
-	// closed for management SWITCH until UnifiDeviceTag is implemented.
-	DeviceTagRef CoreRef `json:"deviceTagRef"`
+	// DeviceTag selects the existing device tag whose member device manages
+	// this network. Tags are read-only upstream (there is no device-tag Custom
+	// Resource), so the selector names the tag and keeps the opaque upstream
+	// device UUID out of spec. The reconciler resolves the tag through the
+	// read-only device-tags list and requires exactly one member device.
+	DeviceTag DeviceTagSelector `json:"deviceTag"`
 }
 
 // GatewayManagedIPv4Configuration is the gateway IPv4 configuration. Only the

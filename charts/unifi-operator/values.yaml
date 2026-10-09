@@ -2,16 +2,17 @@
 #
 # This chart renders the same core objects as the canonical kustomize deployment
 # in operator/config/default: the manager Deployment, its ServiceAccount and
-# RBAC, the metrics Service, and the UnifiNetwork CRD. Keep the two paths in
-# sync when either changes.
+# RBAC, the metrics Service, and the UnifiController, UnifiSite, and UnifiNetwork
+# CRDs. Keep the two paths in sync when either changes.
 #
-# The manager currently runs a fixture-backed UniFi client and reads no controller
-# credentials. Never put credentials in this file or in a values override.
+# The manager resolves UniFi API credentials at reconcile time from a
+# same-namespace Secret referenced by each UnifiController's spec.secretRef.
+# Never put credentials in this file or in a values override.
 #
-# The UnifiNetwork CRD ships in the chart's crds/ directory. Helm installs it on
-# first `helm install` only; `helm upgrade` does not upgrade CRDs. Pass --skip-crds
-# to skip installation. Note that `helm template` omits crds/ output unless it is
-# run with --include-crds.
+# The UnifiController, UnifiSite, and UnifiNetwork CRDs ship in the chart's crds/
+# directory. Helm installs them on first `helm install` only; `helm upgrade` does
+# not upgrade CRDs. Pass --skip-crds to skip installation. Note that `helm template`
+# omits crds/ output unless it is run with --include-crds.
 
 # -- Number of manager replicas. Leader election keeps a single active manager.
 replicaCount: 1
@@ -42,8 +43,8 @@ serviceAccount:
 
 rbac:
   # -- Create the manager ClusterRole/ClusterRoleBinding, the leader-election
-  # Role/RoleBinding, the metrics RBAC, and the UnifiNetwork admin/editor/viewer
-  # ClusterRoles.
+  # Role/RoleBinding, the metrics RBAC, and the UnifiController, UnifiSite, and
+  # UnifiNetwork admin/editor/viewer helper ClusterRoles.
   create: true
 
 leaderElection:
@@ -57,13 +58,6 @@ metrics:
   enabled: true
   # -- Port the metrics Service and manager endpoint listen on.
   port: 8443
-
-# -- Name of an existing Secret whose keys are injected as environment variables
-# into the manager Pod (for example UNIFI_URL and UNIFI_API_KEY). The scaffolded
-# manager does not consume them yet; this exists for future controller
-# integration. Leave empty to inject nothing. This chart never contains
-# credential material.
-existingSecret: ""
 
 # -- Annotations added to the manager Pod.
 podAnnotations: {}

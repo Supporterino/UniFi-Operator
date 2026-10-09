@@ -44,11 +44,6 @@ spec:
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         name: manager
-        {{- with .Values.existingSecret }}
-        envFrom:
-        - secretRef:
-            name: {{ . }}
-        {{- end }}
         securityContext:
           {{- toYaml .Values.securityContext | nindent 10 }}
         livenessProbe:

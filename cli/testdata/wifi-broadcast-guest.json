@@ -9,7 +9,7 @@
   "channel2gLockedTo6": false,
   "dtimPeriod2gLockedTo3": false,
   "type": "STANDARD",
-  "metadata": { "origin": "USER_DEFINED" },
+  "metadata": { "origin": "USER_DEFINED", "configurable": true },
   "network": { "type": "SPECIFIC", "networkId": "77b2c3d4-e5f6-4a7b-9c8d-9e0f1a2b3c4d" },
   "securityConfiguration": {
     "type": "WPA2_ENTERPRISE",

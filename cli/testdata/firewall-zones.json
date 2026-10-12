@@ -8,7 +8,7 @@
         "66a1b2c3-d4e5-4f6a-8b7c-8d9e0f1a2b3c",
         "88c3d4e5-f6a7-4b8c-9d0e-0f1a2b3c4d5e"
       ],
-      "metadata": { "origin": "USER_DEFINED" }
+      "metadata": { "origin": "USER_DEFINED", "configurable": true }
     },
     {
       "id": "88f5a6b7-c8d9-4e0f-1a2b-3c4d5e6f7081",
@@ -16,7 +16,7 @@
       "networkIds": [
         "77b2c3d4-e5f6-4a7b-9c8d-9e0f1a2b3c4d"
       ],
-      "metadata": { "origin": "SYSTEM_DEFINED" }
+      "metadata": { "origin": "SYSTEM_DEFINED", "configurable": true }
     }
   ],
   "limit": 200,

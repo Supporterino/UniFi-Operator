@@ -165,10 +165,81 @@ func TestSnapshotNetworksGolden(t *testing.T) {
 	compareGolden(t, "networks.golden.yaml", out)
 }
 
+// TestSnapshotNetworksFiltersEmptyGuardEntries checks the recorded live-shape network
+// (trustedDhcpServerIpAddresses ["192.168.2.1","",""]) is emitted with only the valid
+// address and that the dropped entries are warned about, so the emitted CR passes the
+// tightened dhcpGuarding schema.
+func TestSnapshotNetworksFiltersEmptyGuardEntries(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, errOut := runSnapshot(t, "networks", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 3 {
+		t.Fatalf("got %d networks, want 3", len(docs))
+	}
+	var found bool
+	for _, doc := range docs {
+		if doc.Metadata.Name != "default" {
+			continue
+		}
+		found = true
+		guarding, ok := doc.Spec["dhcpGuarding"].(map[string]any)
+		if !ok {
+			t.Fatalf("default spec.dhcpGuarding = %v, want the valid entry", doc.Spec["dhcpGuarding"])
+		}
+		addresses, _ := guarding["trustedDhcpServerIpAddresses"].([]any)
+		if len(addresses) != 1 || asString(addresses[0]) != "192.168.2.1" {
+			t.Errorf("trustedDhcpServerIpAddresses = %v, want [192.168.2.1]", addresses)
+		}
+	}
+	if !found {
+		t.Fatal("no emitted network named default")
+	}
+	if !strings.Contains(errOut, "Default") || !strings.Contains(errOut, "trusted DHCP") {
+		t.Errorf("stderr = %q, want a warning naming the dropped empty guard entries", errOut)
+	}
+}
+
 func TestSnapshotFirewallZonesGolden(t *testing.T) {
 	srv := newFixtureServer(t)
 	out, _ := runSnapshot(t, "firewall-zones", "--controller", srv.URL)
 	compareGolden(t, "firewall-zones.golden.yaml", out)
+}
+
+// newZBFOffServer serves the default site and an empty network list, and answers the
+// firewall-zones endpoint with the recorded zone-based-firewall-not-configured 400 so the
+// snapshot must treat the subsystem as empty rather than fail.
+func newZBFOffServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	emptyPage := []byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
+	zbfOff := readFixture(t, "firewall-zones-unconfigured.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case pathSites:
+			_, _ = w.Write([]byte(`{"count":1,"data":[{"id":"` + fixtureSiteID +
+				`","internalReference":"default","name":"Default"}],"limit":200,"offset":0,"totalCount":1}`))
+		case pathNetworks:
+			_, _ = w.Write(emptyPage)
+		case pathFirewallZones:
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write(zbfOff)
+		default:
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestSnapshotFirewallZonesUnconfiguredExitsZero(t *testing.T) {
+	srv := newZBFOffServer(t)
+	out, _ := runSnapshot(t, "firewall-zones", "--controller", srv.URL)
+
+	if docs := parseEmittedCRs(t, out); len(docs) != 0 {
+		t.Fatalf("got %d CRs for an unconfigured firewall, want 0:\n%s", len(docs), out)
+	}
 }
 
 func TestSnapshotWifiGolden(t *testing.T) {

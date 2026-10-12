@@ -185,7 +185,10 @@ func TestGetNetwork(t *testing.T) {
 			"zoneId":"zone-1","cellularBackupEnabled":false,"internetAccessEnabled":true,
 			"isolationEnabled":true,"mdnsForwardingEnabled":true,
 			"dhcpGuarding":{"trustedDhcpServerIpAddresses":["10.0.0.2"]},
-			"ipv4Configuration":{"autoScaleEnabled":true,"hostIpAddress":"192.168.20.1","prefixLength":24},
+			"ipv4Configuration":{"autoScaleEnabled":true,"hostIpAddress":"192.168.20.1","prefixLength":24,
+			  "dhcpConfiguration":{"mode":"SERVER","ipAddressRange":{"start":"192.168.20.10","stop":"192.168.20.200"},
+			    "dnsServerIpAddressesOverride":["192.168.20.1"],"leaseTimeSeconds":86400,
+			    "domainName":"guest.example","pingConflictDetectionEnabled":true}},
 			"ipv6Configuration":{"interfaceType":"STATIC","clientAddressAssignment":{"slaacEnabled":true},
 			  "hostIpAddress":"fd00:20::1","prefixLength":64}}`)
 	}))
@@ -224,6 +227,19 @@ func TestGetNetwork(t *testing.T) {
 	}
 	if network.IPv4Configuration == nil || network.IPv4Configuration.HostIPAddress != "192.168.20.1" {
 		t.Errorf("IPv4Configuration = %+v", network.IPv4Configuration)
+	}
+	if dhcp := network.IPv4Configuration.DHCPConfiguration; dhcp == nil {
+		t.Error("IPv4Configuration.DHCPConfiguration = nil, want the DHCP settings")
+	} else {
+		if dhcp.Mode != "SERVER" || dhcp.DomainName != "guest.example" || dhcp.LeaseTimeSeconds != 86400 {
+			t.Errorf("DHCPConfiguration = %+v", dhcp)
+		}
+		if dhcp.IPAddressRange == nil || dhcp.IPAddressRange.Start != "192.168.20.10" || dhcp.IPAddressRange.Stop != "192.168.20.200" {
+			t.Errorf("DHCPConfiguration.IPAddressRange = %+v", dhcp.IPAddressRange)
+		}
+		if len(dhcp.DNSServerIPAddressesOverride) != 1 || !dhcp.PingConflictDetectionEnabled {
+			t.Errorf("DHCPConfiguration = %+v", dhcp)
+		}
 	}
 	if network.IPv6Configuration == nil || network.IPv6Configuration.InterfaceType != "STATIC" {
 		t.Errorf("IPv6Configuration = %+v", network.IPv6Configuration)

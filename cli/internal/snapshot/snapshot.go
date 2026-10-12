@@ -5,6 +5,7 @@ package snapshot
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"github.com/Supporterino/UniFi-Operator/cli/internal/emit"
@@ -111,6 +112,10 @@ const (
 	minVLAN = 1
 	maxVLAN = 4009
 
+	// maxIPv4AddressLength is the CRD's MaxLength on a trusted DHCP server
+	// address; a well-formed IPv4 address is at most "255.255.255.255".
+	maxIPv4AddressLength = 15
+
 	minIPv4Prefix = 8
 	maxIPv4Prefix = 30
 
@@ -161,7 +166,30 @@ type IPv4Configuration struct {
 	AutoScaleEnabled        bool     `json:"autoScaleEnabled"`
 	HostIPAddress           string   `json:"hostIpAddress"`
 	PrefixLength            int32    `json:"prefixLength"`
-	AdditionalHostIPSubnets []string `json:"additionalHostIpSubnets,omitempty"`
+	AdditionalHostIPSubnets []string `json:"additionalHostIPSubnets,omitempty"`
+
+	// DHCPConfiguration is the DHCP configuration handed to clients on this network.
+	// Omit to leave DHCP unconfigured.
+	DHCPConfiguration *DHCPConfiguration `json:"dhcpConfiguration,omitempty"`
+}
+
+// DHCPConfiguration is the emitted DHCP configuration nested under IPv4Configuration. It
+// mirrors the operator's UnifiNetworkSpec.dhcpConfiguration so an emitted network keeps
+// its console DHCP settings when adopted. It is pure desired state and carries no upstream
+// identifier.
+type DHCPConfiguration struct {
+	Mode                         string              `json:"mode"`
+	IPAddressRange               *DHCPIPAddressRange `json:"ipAddressRange,omitempty"`
+	DNSServerIPAddressesOverride []string            `json:"dnsServerIpAddressesOverride,omitempty"`
+	LeaseTimeSeconds             int32               `json:"leaseTimeSeconds,omitempty"`
+	DomainName                   string              `json:"domainName,omitempty"`
+	PingConflictDetectionEnabled bool                `json:"pingConflictDetectionEnabled,omitempty"`
+}
+
+// DHCPIPAddressRange is the lease address range of an emitted DHCP configuration.
+type DHCPIPAddressRange struct {
+	Start string `json:"start"`
+	Stop  string `json:"stop"`
 }
 
 // IPv6ClientAddressAssignment configures IPv6 client addressing.
@@ -522,14 +550,24 @@ func buildNetworkSpec(siteName string, network unifi.Network, deviceTags []unifi
 		Enabled:    network.Enabled,
 		VLANID:     network.VLANID,
 	}
-	if network.DHCPGuarding != nil && len(network.DHCPGuarding.TrustedDHCPServerIPAddresses) > 0 {
-		spec.DHCPGuarding = &DHCPGuarding{
-			TrustedDHCPServerIPAddresses: network.DHCPGuarding.TrustedDHCPServerIPAddresses,
-		}
-	}
 
 	var annotations map[string]string
 	var warnings []string
+
+	if network.DHCPGuarding != nil && len(network.DHCPGuarding.TrustedDHCPServerIPAddresses) > 0 {
+		// A live console can return junk entries such as ["192.168.2.1","",""], which
+		// the tightened CRD schema now rejects. Keep only the addresses the schema
+		// accepts and warn about the rest so the emitted CR stays valid.
+		trusted, dropped := validTrustedDHCPServers(network.DHCPGuarding.TrustedDHCPServerIPAddresses)
+		if len(trusted) > 0 {
+			spec.DHCPGuarding = &DHCPGuarding{TrustedDHCPServerIPAddresses: trusted}
+		}
+		if dropped > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"network %q: dropped %d invalid trusted DHCP server address(es) that the CRD dhcpGuarding schema rejects",
+				network.Name, dropped))
+		}
+	}
 
 	switch network.Management {
 	case ManagementGateway:
@@ -664,6 +702,36 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// validTrustedDHCPServers keeps the entries that satisfy the CRD's tightened
+// trustedDhcpServerIpAddresses schema — non-empty, well-formed IPv4 addresses of
+// at most 15 characters — and returns the number it removed. A console can return
+// junk entries such as ["192.168.2.1","",""], which the API server now rejects.
+func validTrustedDHCPServers(in []string) ([]string, int) {
+	out := make([]string, 0, len(in))
+	dropped := 0
+	for _, address := range in {
+		if !validIPv4Address(address) {
+			dropped++
+			continue
+		}
+		out = append(out, address)
+	}
+	return out, dropped
+}
+
+// validIPv4Address reports whether address satisfies the CRD's
+// trustedDhcpServerIpAddresses item schema: a string of at most 15 characters
+// that parses as an IPv4 address. netip rejects IPv4-mapped IPv6 forms such as
+// "::ffff:1.2.3.4" because Is4() is false for them, matching the CEL rule
+// ip(self).family() == 4, and the length bound matches MaxLength=15.
+func validIPv4Address(address string) bool {
+	if len(address) > maxIPv4AddressLength {
+		return false
+	}
+	parsed, err := netip.ParseAddr(address)
+	return err == nil && parsed.Is4()
 }
 
 // FirewallZones projects each upstream firewall zone into a UnifiFirewallZone. siteName
@@ -1126,19 +1194,51 @@ func wifiSAE(in *unifi.WifiSAEConfiguration) WifiSAEConfiguration {
 	}
 }
 
-// mapIPv4 validates and maps the observed IPv4 configuration.
+// mapIPv4 validates and maps the observed IPv4 configuration, including the nested DHCP
+// configuration when the console provides one. An unrepresentable DHCP block (empty mode)
+// returns an error so the whole network skips by design; see mapDHCPConfiguration.
 func mapIPv4(in *unifi.IPv4Configuration) (*IPv4Configuration, error) {
 	if in.HostIPAddress == "" || in.PrefixLength < minIPv4Prefix || in.PrefixLength > maxIPv4Prefix {
 		return nil, fmt.Errorf(
 			"ipv4Configuration is incomplete or out of range (hostIpAddress=%q prefixLength=%d)",
 			in.HostIPAddress, in.PrefixLength)
 	}
-	return &IPv4Configuration{
+	out := &IPv4Configuration{
 		AutoScaleEnabled:        in.AutoScaleEnabled,
 		HostIPAddress:           in.HostIPAddress,
 		PrefixLength:            in.PrefixLength,
 		AdditionalHostIPSubnets: in.AdditionalHostIPSubnets,
-	}, nil
+	}
+	if in.DHCPConfiguration != nil {
+		dhcp, err := mapDHCPConfiguration(in.DHCPConfiguration)
+		if err != nil {
+			return nil, err
+		}
+		out.DHCPConfiguration = dhcp
+	}
+	return out, nil
+}
+
+// mapDHCPConfiguration maps the observed DHCP configuration. The CRD requires a non-empty
+// mode whenever the block is present, so a console value without one cannot be represented
+// and the caller skips the network rather than emit an invalid CR. That skip is by design:
+// omitting the block would emit a partially projected resource, which the unifi-snapshot
+// spec forbids, so the network is skipped with a warning rather than annotated.
+func mapDHCPConfiguration(in *unifi.DHCPConfiguration) (*DHCPConfiguration, error) {
+	if in.Mode == "" {
+		return nil, errors.New("ipv4Configuration.dhcpConfiguration.mode is empty and cannot be represented")
+	}
+	out := &DHCPConfiguration{
+		Mode:                         in.Mode,
+		DNSServerIPAddressesOverride: in.DNSServerIPAddressesOverride,
+		LeaseTimeSeconds:             in.LeaseTimeSeconds,
+		DomainName:                   in.DomainName,
+		PingConflictDetectionEnabled: in.PingConflictDetectionEnabled,
+	}
+	if in.IPAddressRange != nil {
+		out.IPAddressRange = &DHCPIPAddressRange{Start: in.IPAddressRange.Start, Stop: in.IPAddressRange.Stop}
+	}
+	return out, nil
 }
 
 // mapIPv6 maps the observed IPv6 configuration. Prefix-delegation IPv6 references the WAN

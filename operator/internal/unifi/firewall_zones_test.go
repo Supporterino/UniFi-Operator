@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"testing"
 )
 
@@ -238,5 +239,88 @@ func TestCreateZoneUnauthorizedFailsClosed(t *testing.T) {
 	}
 	if apiErr.Retryable() {
 		t.Errorf("401 must not be retryable")
+	}
+}
+
+// writeZBFBadRequest writes the flat Error Message body a console returns when
+// Zone-Based Firewall is unconfigured.
+func writeZBFBadRequest(w http.ResponseWriter, code, message string) {
+	w.WriteHeader(http.StatusBadRequest)
+	_, _ = fmt.Fprintf(w, `{"statusCode":400,"statusName":"BAD_REQUEST","code":%q,"message":%q}`,
+		code, message)
+}
+
+func TestListZonesMapsUnconfiguredZBFToEmpty(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		code      string
+		message   string
+		wantEmpty bool
+	}{
+		{
+			name:      "unconfigured code maps to an empty set",
+			code:      "api.firewall.zone-based-firewall-not-configured",
+			message:   "Zone based firewall is not configured",
+			wantEmpty: true,
+		},
+		{
+			name:      "the code alone decides, not the message text",
+			code:      "api.firewall.zone-based-firewall-not-configured",
+			message:   "something else entirely",
+			wantEmpty: true,
+		},
+		{
+			name:      "the same message with another code stays an error",
+			code:      "api.firewall.some-other-problem",
+			message:   "Zone based firewall is not configured",
+			wantEmpty: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				writeZBFBadRequest(w, tt.code, tt.message)
+			}))
+
+			zones, err := client.ListZones(context.Background(), testSiteID)
+			if tt.wantEmpty {
+				if err != nil {
+					t.Fatalf("ListZones = %v, want nil error", err)
+				}
+				if len(zones) != 0 {
+					t.Errorf("zones = %+v, want empty", zones)
+				}
+				return
+			}
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("error = %v, want *APIError", err)
+			}
+			if apiErr.Code != tt.code {
+				t.Errorf("code = %q, want %q", apiErr.Code, tt.code)
+			}
+		})
+	}
+}
+
+func TestGetZoneMapsUnconfiguredZBFToNotFound(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeZBFBadRequest(w, "api.firewall.zone-based-firewall-not-configured",
+			"Zone based firewall is not configured")
+	}))
+
+	zone, err := client.GetZone(context.Background(), testSiteID, testZoneID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("errors.Is(err, ErrNotFound) = false, err = %v", err)
+	}
+	if !reflect.DeepEqual(zone, FirewallZone{}) {
+		t.Errorf("zone = %+v, want the zero value", zone)
 	}
 }

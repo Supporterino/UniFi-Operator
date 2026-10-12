@@ -1,0 +1,6 @@
+{
+  "statusCode": 400,
+  "statusName": "BAD_REQUEST",
+  "code": "api.firewall.zone-based-firewall-not-configured",
+  "message": "Zone-based firewall is not configured"
+}

@@ -76,14 +76,52 @@ type DHCPGuarding struct {
 }
 
 // IPv4Configuration is the IPv4 configuration of a network, shared by the
-// gateway- and switch-managed variants. The upstream optional `dhcpConfiguration`
-// union and WAN-specific `natOutboundIpAddressConfiguration` are deliberately
-// unmodeled.
+// gateway- and switch-managed variants. The upstream optional
+// `dhcpConfiguration` object is modeled; only the WAN-specific
+// `natOutboundIpAddressConfiguration` remains deliberately unmodeled.
 type IPv4Configuration struct {
 	AutoScaleEnabled        bool     `json:"autoScaleEnabled"`
 	HostIPAddress           string   `json:"hostIpAddress"`
 	PrefixLength            int32    `json:"prefixLength"`
 	AdditionalHostIPSubnets []string `json:"additionalHostIpSubnets,omitempty"`
+
+	// DHCPConfiguration is the optional DHCP configuration nested under this
+	// IPv4 configuration. A nil value is omitted from a request body.
+	DHCPConfiguration *DHCPConfiguration `json:"dhcpConfiguration,omitempty"`
+}
+
+// DHCPConfiguration is the DHCP configuration nested under a network's IPv4
+// configuration. It mirrors the upstream `dhcpConfiguration` object, modeled
+// flat so a snapshot can round-trip the observed DHCP settings; a
+// mode-discriminated union can replace it when a non-SERVER mode appears. It is
+// pure configuration and never carries an upstream identifier.
+//
+// Mode is required. Every other field follows "omit (zero value) to leave
+// unchanged": an unset field is not sent as desired state, so a partial DHCP
+// block leaves the console's corresponding setting untouched rather than
+// resetting it.
+type DHCPConfiguration struct {
+	// Mode is the DHCP addressing mode (for example SERVER).
+	Mode string `json:"mode"`
+	// IPAddressRange is the lease address range; omit to leave it unchanged.
+	IPAddressRange *DHCPIPAddressRange `json:"ipAddressRange,omitempty"`
+	// DNSServerIPAddressesOverride is the DNS-server override list; omit to
+	// leave it unchanged.
+	DNSServerIPAddressesOverride []string `json:"dnsServerIpAddressesOverride,omitempty"`
+	// LeaseTimeSeconds is the lease time in seconds; omit (0) to leave it
+	// unchanged.
+	LeaseTimeSeconds int32 `json:"leaseTimeSeconds,omitempty"`
+	// DomainName is the DNS domain; omit to leave it unchanged.
+	DomainName string `json:"domainName,omitempty"`
+	// PingConflictDetectionEnabled is the ICMP conflict-detection flag; omit
+	// (false) to leave it unchanged.
+	PingConflictDetectionEnabled bool `json:"pingConflictDetectionEnabled,omitempty"`
+}
+
+// DHCPIPAddressRange is the lease address range of a DHCP configuration.
+type DHCPIPAddressRange struct {
+	Start string `json:"start"`
+	Stop  string `json:"stop"`
 }
 
 // IPv6ClientAddressAssignment configures IPv6 client addressing. Only SLAAC is

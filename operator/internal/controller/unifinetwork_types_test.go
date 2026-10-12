@@ -219,4 +219,96 @@ var _ = Describe("UnifiNetwork CRD validation", func() {
 		}
 		Expect(k8sClient.Create(ctx, newNetwork("net-bad-ipv6-static", spec))).NotTo(Succeed())
 	})
+
+	It("accepts valid DHCP guarding entries", func() {
+		spec := gatewaySpec()
+		spec.Name = "net-dhcp-guarding"
+		spec.DHCPGuarding = &unifiv1alpha1.DHCPGuarding{
+			TrustedDHCPServerIPAddresses: []string{"192.168.2.1", "10.0.0.254"},
+		}
+		resource := newNetwork("net-dhcp-guarding", spec)
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+		})
+	})
+
+	DescribeTable("rejects an invalid DHCP guarding entry",
+		func(entry string) {
+			spec := gatewaySpec()
+			spec.DHCPGuarding = &unifiv1alpha1.DHCPGuarding{
+				TrustedDHCPServerIPAddresses: []string{"192.168.2.1", entry},
+			}
+			Expect(k8sClient.Create(ctx, newNetwork("net-dhcp-guarding-bad", spec))).NotTo(Succeed())
+		},
+		Entry("empty string", ""),
+		Entry("out-of-range octet", "192.168.2.256"),
+		Entry("not an address", "not-an-ip"),
+	)
+
+	It("round-trips the gateway DHCP configuration through the API server", func() {
+		spec := gatewaySpec()
+		spec.Name = "net-dhcp-config"
+		spec.Gateway.IPv4Configuration.DHCPConfiguration = &unifiv1alpha1.DHCPConfiguration{
+			Mode: testDHCPMode,
+			IPAddressRange: &unifiv1alpha1.DHCPIPAddressRange{
+				Start: "192.168.2.6",
+				Stop:  "192.168.2.254",
+			},
+			DNSServerIPAddressesOverride: []string{testDHCPDNSPrimary, "8.8.8.8"},
+			LeaseTimeSeconds:             86400,
+			DomainName:                   "example.local",
+			PingConflictDetectionEnabled: true,
+		}
+		resource := newNetwork("net-dhcp-config", spec)
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+		})
+
+		got := &unifiv1alpha1.UnifiNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "net-dhcp-config", Namespace: testNamespace}, got)).To(Succeed())
+		dhcp := got.Spec.Gateway.IPv4Configuration.DHCPConfiguration
+		Expect(dhcp).NotTo(BeNil())
+		Expect(dhcp.Mode).To(Equal(testDHCPMode))
+		Expect(dhcp.IPAddressRange).NotTo(BeNil())
+		Expect(dhcp.IPAddressRange.Start).To(Equal("192.168.2.6"))
+		Expect(dhcp.IPAddressRange.Stop).To(Equal("192.168.2.254"))
+		Expect(dhcp.DNSServerIPAddressesOverride).To(Equal([]string{testDHCPDNSPrimary, "8.8.8.8"}))
+		Expect(dhcp.LeaseTimeSeconds).To(Equal(int32(86400)))
+		Expect(dhcp.DomainName).To(Equal("example.local"))
+		Expect(dhcp.PingConflictDetectionEnabled).To(BeTrue())
+	})
+
+	It("round-trips the switch DHCP configuration through the API server", func() {
+		resource := newNetwork("net-switch-dhcp-config", unifiv1alpha1.UnifiNetworkSpec{
+			SiteRef:    unifiv1alpha1.CoreRef{Name: testSiteRefName},
+			Management: testManagementSwitch,
+			Name:       testSwitchNetworkName,
+			VLANID:     30,
+			Switch: &unifiv1alpha1.SwitchNetworkOptions{
+				IPv4Configuration: unifiv1alpha1.SwitchManagedIPv4Configuration{
+					AutoScaleEnabled: false,
+					HostIPAddress:    testSwitchHostIP,
+					PrefixLength:     24,
+					DHCPConfiguration: &unifiv1alpha1.DHCPConfiguration{
+						Mode:             testDHCPMode,
+						LeaseTimeSeconds: 3600,
+					},
+				},
+				DeviceTag: unifiv1alpha1.DeviceTagSelector{Name: "core-switch"},
+			},
+		})
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+		})
+
+		got := &unifiv1alpha1.UnifiNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "net-switch-dhcp-config", Namespace: testNamespace}, got)).To(Succeed())
+		dhcp := got.Spec.Switch.IPv4Configuration.DHCPConfiguration
+		Expect(dhcp).NotTo(BeNil())
+		Expect(dhcp.Mode).To(Equal(testDHCPMode))
+		Expect(dhcp.LeaseTimeSeconds).To(Equal(int32(3600)))
+	})
 })

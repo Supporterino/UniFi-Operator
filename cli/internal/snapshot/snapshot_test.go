@@ -188,6 +188,181 @@ func TestNetworksGatewayMapping(t *testing.T) {
 	}
 }
 
+func TestNetworksGatewayCarriesDHCPConfiguration(t *testing.T) {
+	t.Parallel()
+
+	resources, _, warnings := Networks("default", []unifi.Network{{
+		ID:                    "id-1",
+		Management:            ManagementGateway,
+		Name:                  "LAN",
+		VLANID:                10,
+		CellularBackupEnabled: boolPtr(false),
+		InternetAccessEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(false),
+		IPv4Configuration: &unifi.IPv4Configuration{
+			AutoScaleEnabled: true,
+			HostIPAddress:    "192.168.10.1",
+			PrefixLength:     24,
+			DHCPConfiguration: &unifi.DHCPConfiguration{
+				Mode:                         "SERVER",
+				IPAddressRange:               &unifi.DHCPIPAddressRange{Start: "192.168.10.10", Stop: "192.168.10.200"},
+				DNSServerIPAddressesOverride: []string{"192.168.10.1"},
+				LeaseTimeSeconds:             86400,
+				DomainName:                   "lan.example",
+				PingConflictDetectionEnabled: true,
+			},
+		},
+	}}, nil)
+	if len(resources) != 1 || len(warnings) != 0 {
+		t.Fatalf("got %d resources, %d warnings; want 1 and 0: %v", len(resources), len(warnings), warnings)
+	}
+
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.Gateway == nil {
+		t.Fatal("gateway = nil")
+	}
+	dhcp := spec.Gateway.IPv4Configuration.DHCPConfiguration
+	if dhcp == nil {
+		t.Fatal("ipv4Configuration.dhcpConfiguration = nil, want the DHCP settings")
+	}
+	if dhcp.Mode != "SERVER" || dhcp.DomainName != "lan.example" ||
+		dhcp.LeaseTimeSeconds != 86400 || !dhcp.PingConflictDetectionEnabled {
+		t.Errorf("dhcp = %+v", dhcp)
+	}
+	if dhcp.IPAddressRange == nil || dhcp.IPAddressRange.Start != "192.168.10.10" || dhcp.IPAddressRange.Stop != "192.168.10.200" {
+		t.Errorf("ipAddressRange = %+v", dhcp.IPAddressRange)
+	}
+	if len(dhcp.DNSServerIPAddressesOverride) != 1 || dhcp.DNSServerIPAddressesOverride[0] != "192.168.10.1" {
+		t.Errorf("dnsServerIpAddressesOverride = %v", dhcp.DNSServerIPAddressesOverride)
+	}
+}
+
+func TestNetworksSwitchCarriesDHCPConfiguration(t *testing.T) {
+	t.Parallel()
+
+	resources, _, warnings := Networks("default", []unifi.Network{{
+		ID:                    "id-1",
+		Management:            ManagementSwitch,
+		Name:                  "IoT",
+		VLANID:                30,
+		CellularBackupEnabled: boolPtr(false),
+		IsolationEnabled:      boolPtr(false),
+		IPv4Configuration: &unifi.IPv4Configuration{
+			AutoScaleEnabled: false,
+			HostIPAddress:    "192.168.30.1",
+			PrefixLength:     24,
+			DHCPConfiguration: &unifi.DHCPConfiguration{
+				Mode: "SERVER",
+			},
+		},
+	}}, nil)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
+	}
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.Switch == nil || spec.Switch.IPv4Configuration.DHCPConfiguration == nil {
+		t.Fatalf("switch ipv4Configuration.dhcpConfiguration = %+v, want the DHCP settings", spec.Switch)
+	}
+	if got := spec.Switch.IPv4Configuration.DHCPConfiguration.Mode; got != "SERVER" {
+		t.Errorf("dhcp mode = %q, want SERVER", got)
+	}
+}
+
+func TestNetworksFiltersInvalidTrustedDHCPServers(t *testing.T) {
+	t.Parallel()
+
+	resources, _, warnings := Networks("default", []unifi.Network{{
+		Management: ManagementUnmanaged,
+		Name:       "Default",
+		Enabled:    boolPtr(true),
+		VLANID:     1,
+		DHCPGuarding: &unifi.DHCPGuarding{TrustedDHCPServerIPAddresses: []string{
+			"192.168.1.254",
+			"",
+			"",
+			"not-an-ip",
+			// IPv4-mapped IPv6 is rejected by the CEL rule ip(self).family() == 4.
+			"::ffff:1.2.3.4",
+			// Over the item schema's MaxLength=15.
+			"192.168.100.1000",
+		}},
+	}}, nil)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
+	}
+
+	spec := resources[0].Spec.(UnifiNetworkSpec)
+	if spec.DHCPGuarding == nil || len(spec.DHCPGuarding.TrustedDHCPServerIPAddresses) != 1 {
+		t.Fatalf("dhcpGuarding = %+v, want exactly one trusted address", spec.DHCPGuarding)
+	}
+	if got := spec.DHCPGuarding.TrustedDHCPServerIPAddresses[0]; got != "192.168.1.254" {
+		t.Errorf("trusted[0] = %q, want 192.168.1.254", got)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	if strings.Contains(string(raw), `""`) {
+		t.Errorf("spec contains an empty entry: %s", raw)
+	}
+	found := false
+	for _, warning := range warnings {
+		if strings.Contains(warning, "Default") && strings.Contains(warning, "trusted DHCP") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want one naming the network and the dropped entries", warnings)
+	}
+}
+
+func TestNetworksOmitsGuardingWhenAllEntriesInvalid(t *testing.T) {
+	t.Parallel()
+
+	resources, _, warnings := Networks("default", []unifi.Network{{
+		Management:   ManagementUnmanaged,
+		Name:         "Default",
+		Enabled:      boolPtr(true),
+		VLANID:       1,
+		DHCPGuarding: &unifi.DHCPGuarding{TrustedDHCPServerIPAddresses: []string{"", ""}},
+	}}, nil)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
+	}
+	if spec := resources[0].Spec.(UnifiNetworkSpec); spec.DHCPGuarding != nil {
+		t.Errorf("dhcpGuarding = %+v, want omitted when no entry is valid", spec.DHCPGuarding)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want one naming the dropped entries", warnings)
+	}
+}
+
+func TestNetworksSkipsUnrepresentableDHCPConfiguration(t *testing.T) {
+	t.Parallel()
+
+	resources, _, warnings := Networks("default", []unifi.Network{{
+		Management:            ManagementGateway,
+		Name:                  "LAN",
+		VLANID:                10,
+		CellularBackupEnabled: boolPtr(false),
+		InternetAccessEnabled: boolPtr(true),
+		IsolationEnabled:      boolPtr(false),
+		IPv4Configuration: &unifi.IPv4Configuration{
+			AutoScaleEnabled:  false,
+			HostIPAddress:     "10.0.0.1",
+			PrefixLength:      24,
+			DHCPConfiguration: &unifi.DHCPConfiguration{Mode: ""},
+		},
+	}}, nil)
+	if len(resources) != 0 {
+		t.Fatalf("got %d resources, want 0 (an empty DHCP mode cannot be represented)", len(resources))
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want one skipped-network warning", warnings)
+	}
+}
+
 func TestNetworksGatewayPrefixDelegationAnnotated(t *testing.T) {
 	t.Parallel()
 

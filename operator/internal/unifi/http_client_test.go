@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -300,6 +301,109 @@ func TestCreateNetworkUnmanaged(t *testing.T) {
 	req := NetworkRequest{Management: managementUnmanaged, Name: testNetworkName, Enabled: true, VLANID: 10}
 	if _, err := client.CreateNetwork(context.Background(), testSiteID, req); err != nil {
 		t.Fatalf("CreateNetwork: %v", err)
+	}
+}
+
+func TestNetworkRequestCarriesDHCPConfiguration(t *testing.T) {
+	t.Parallel()
+
+	const fixture = `{
+		"management": "GATEWAY",
+		"name": "lan",
+		"enabled": true,
+		"vlanId": 10,
+		"cellularBackupEnabled": false,
+		"internetAccessEnabled": true,
+		"isolationEnabled": false,
+		"ipv4Configuration": {
+			"autoScaleEnabled": true,
+			"hostIpAddress": "10.0.0.1",
+			"prefixLength": 24,
+			"dhcpConfiguration": {
+				"mode": "SERVER",
+				"ipAddressRange": {"start": "10.0.0.6", "stop": "10.0.0.254"},
+				"dnsServerIpAddressesOverride": ["1.1.1.1", "8.8.8.8"],
+				"leaseTimeSeconds": 86400,
+				"domainName": "example.local",
+				"pingConflictDetectionEnabled": true
+			}
+		}
+	}`
+
+	var want map[string]any
+	if err := json.Unmarshal([]byte(fixture), &want); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+
+	req := NetworkRequest{
+		Management: managementGateway,
+		Name:       testNetworkName,
+		Enabled:    true,
+		VLANID:     10,
+		Gateway: &GatewayNetworkRequest{
+			InternetAccessEnabled: true,
+			IPv4Configuration: IPv4Configuration{
+				AutoScaleEnabled: true,
+				HostIPAddress:    testHostIPAddress,
+				PrefixLength:     24,
+				DHCPConfiguration: &DHCPConfiguration{
+					Mode: "SERVER",
+					IPAddressRange: &DHCPIPAddressRange{
+						Start: "10.0.0.6",
+						Stop:  "10.0.0.254",
+					},
+					DNSServerIPAddressesOverride: []string{"1.1.1.1", "8.8.8.8"},
+					LeaseTimeSeconds:             86400,
+					DomainName:                   "example.local",
+					PingConflictDetectionEnabled: true,
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name   string
+		method string
+		send   func(*HTTPClient) error
+	}{
+		{
+			name:   "create",
+			method: http.MethodPost,
+			send: func(c *HTTPClient) error {
+				_, err := c.CreateNetwork(context.Background(), testSiteID, req)
+				return err
+			},
+		},
+		{
+			name:   "update",
+			method: http.MethodPut,
+			send: func(c *HTTPClient) error {
+				_, err := c.UpdateNetwork(context.Background(), testSiteID, testNetworkID, req)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got map[string]any
+			client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != tt.method {
+					t.Errorf("method = %q, want %q", r.Method, tt.method)
+				}
+				got = decodeBody(t, r)
+				_, _ = io.WriteString(w, `{"id":"`+testNetworkID+`","management":"GATEWAY","name":"lan","enabled":true,"vlanId":10,"default":false,"metadata":{"origin":"USER_DEFINED"}}`)
+			}))
+
+			if err := tt.send(client); err != nil {
+				t.Fatalf("%s: %v", tt.name, err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("request body = %v, want %v", got, want)
+			}
+		})
 	}
 }
 

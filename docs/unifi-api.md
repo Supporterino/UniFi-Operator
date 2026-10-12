@@ -43,8 +43,11 @@ The surface is **version-gated**. A capability is only usable when the console's
 `UnifiController.status.applicationVersion` records the detected version and gates which
 capabilities are available. Below a capability's minimum the controller fails closed with
 `Ready=False` rather than guessing. These thresholds are product-level — they are not encoded in
-the OpenAPI document — so they are pinned by the design and confirmed against a live console
-when one is available.
+the OpenAPI document — so they are pinned by the design.
+
+A read-only probe of a live console observed `applicationVersion` **10.6.106**, above every
+minimum above. The gates stay a **floor**, not a pinned version: a console newer than the
+thresholds remains usable, and the client keeps tolerating unknown response fields.
 
 ## Authentication
 
@@ -54,12 +57,10 @@ when one is available.
 - **No session auth.** Local-account login (`/api/login`) and session cookies are not part of
   this contract.
 
-Header casing: HTTP header names are case-insensitive, and `X-API-Key` is the documented contract
-value here. Go's `net/http` canonicalizes header names on the wire (so writing `X-API-Key`
-produces `X-Api-Key`), which is valid and independent of casing. The upstream v10.4.57
-documentation renders the header as `X-API-KEY`; the exact console behavior has not been
-confirmed against a live target console in this environment, so **live-console confirmation of
-the spelling remains pending**.
+The header **casing is irrelevant**: a live console returned `200` for `X-API-Key`, `X-API-KEY`,
+and `x-api-key`, so this contract records no canonical spelling and no casing-sensitive behavior
+is required. Go's `net/http` canonicalizes header names on the wire (writing `X-API-Key` sends
+`X-Api-Key`), which the console accepts.
 
 ## Endpoint map
 
@@ -140,6 +141,12 @@ upstream API, but the CR carries them as same-namespace `Secret` key selectors, 
 controller reads each passphrase at reconcile time and never records it in `status`. See
 [Security](security.md) and [CRD conventions](crd-conventions.md).
 
+A broadcast carries a `network` reference — the upstream `Wifi network reference` union — whose
+`type` discriminator is `SPECIFIC` (carrying the target network UUID) or `NATIVE`. The CRD exposes
+only the `SPECIFIC` binding, so a broadcast bound to the `NATIVE` variant cannot be represented
+losslessly: `snapshot wifi` skips it with a warning naming the broadcast and the unresolved
+network rather than dropping it silently or emitting a partial resource.
+
 > The rows above are the consumed surface for the implemented kinds (`UnifiController`,
 > `UnifiSite`, `UnifiNetwork`, `UnifiFirewallZone`, `UnifiWifiBroadcast`) plus the read-only
 > device-tag selector. The frozen v10.4.57 document also exposes devices, clients, firewall
@@ -150,7 +157,9 @@ controller reads each passphrase at reconcile time and never records it in `stat
 
 ## Response envelope
 
-The Integration v1 API returns plain JSON; there is no `{meta,data}` wrapper.
+The Integration v1 API returns plain JSON; there is no `{meta,data}` wrapper. This was confirmed
+against a live console: lists carry the page envelope `{offset,limit,count,totalCount,data}`, and
+single-object endpoints return the resource shape directly.
 
 - **List endpoints** return a page:
 
@@ -214,8 +223,12 @@ union on `management`:
 
 - `name`, `enabled`, `management`, and `vlanId` are required for every variant; `vlanId` is
   `1..4009`, with `1` reserved for the default network.
-- `dhcpGuarding.trustedDhcpServerIpAddresses` requires at least one entry; omitting
-  `dhcpGuarding` disables the feature.
+- `dhcpGuarding.trustedDhcpServerIpAddresses` requires at least one entry, and each entry must be
+  a non-empty IPv4 address; omitting `dhcpGuarding` disables the feature.
+- `ipv4Configuration.dhcpConfiguration` models the nested DHCP settings: `mode` is required, and
+  `ipAddressRange` (`start`/`stop`), `dnsServerIpAddressesOverride`, `leaseTimeSeconds`,
+  `domainName`, and `pingConflictDetectionEnabled` are optional — omitted fields leave the
+  console's setting unchanged.
 - `deviceId` is an opaque device UUID upstream; the CR exposes it as a typed device selector
   (see [CRD conventions](crd-conventions.md)), never as a raw UUID in `spec`.
 - `zoneId` is accepted on writes, but per the membership-ownership rule in
@@ -244,6 +257,10 @@ Errors are a **flat** JSON body (the OpenAPI `Error Message` schema), not nested
 }
 ```
 
+This flat shape was confirmed against a live console. `statusName` is **context-dependent** — it
+names the failing context rather than a fixed value per `statusCode` — so match on `code` and
+`statusCode`, never on `statusName`.
+
 The client maps any non-2xx response to a typed `*unifi.APIError` carrying these fields, then:
 
 - Transient failures (network, `5xx`, timeouts) return an error that the reconciler propagates
@@ -252,6 +269,10 @@ The client maps any non-2xx response to a typed `*unifi.APIError` carrying these
   `InvalidSpec`) rather than an infinite retry.
 - `401`/authentication failure fails closed: the reconciler sets a failing condition and does
   not fall back to a default credential. There is no session re-authentication.
+- A `400` carrying the machine-readable code `api.firewall.zone-based-firewall-not-configured` is
+  not bad input: it means Zone-Based Firewall is unconfigured on that console. The operator and
+  CLI clients map it to an **empty zone set** rather than an error, so firewall reconciliation
+  reports no zones instead of failing.
 
 ## Rules
 

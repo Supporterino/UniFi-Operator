@@ -252,6 +252,13 @@ func (r *UnifiFirewallZoneReconciler) reconcileUpstream(
 
 	request := unifi.FirewallZoneRequest{Name: zone.Spec.Name, NetworkIDs: networkIDs}
 
+	// The unconfigured-ZBF mapping in the UniFi client is a read-path mapping
+	// only: ListZones returns an empty set and GetZone returns ErrNotFound so
+	// reconciliation resolves "no zones" and does not fail on the unconfigured
+	// subsystem. It does not extend to writes: when a console whose Zone-Based
+	// Firewall is off rejects a create or update, that is a genuine upstream
+	// error and must fail closed through handleUpstreamError, not be mistaken
+	// for an unconfigured-subsystem read that authorises the write.
 	var (
 		result unifi.FirewallZone
 		action string
@@ -317,7 +324,10 @@ func (r *UnifiFirewallZoneReconciler) reconcileDelete(
 
 // deleteUpstream removes the zone recorded in status from the console. A 404
 // means it is already gone and is treated as success. A system-managed object
-// is never deleted.
+// is never deleted. GetZone also maps a Zone-Based-Firewall-unconfigured 400 to
+// ErrNotFound (see GetZone), so a console with ZBF off is likewise treated as
+// already gone: there is no upstream zone to delete, and removing the finalizer
+// is preferable to stranding the CR in Terminating.
 func (r *UnifiFirewallZoneReconciler) deleteUpstream(ctx context.Context, zone *unifiv1alpha1.UnifiFirewallZone) error {
 	if zone.Status.ZoneID == "" {
 		return nil

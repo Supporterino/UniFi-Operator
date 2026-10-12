@@ -75,7 +75,13 @@ type UnifiNetworkSpec struct {
 type DHCPGuarding struct {
 	// TrustedDHCPServerIPAddresses is the list of trusted DHCP server IP
 	// addresses. At least one entry is required when DHCP guarding is enabled.
+	// Each entry must be a non-empty, well-formed IPv4 address: a console can
+	// return junk entries such as ["192.168.2.1","",""], which the API server
+	// now rejects so they are never round-tripped onto a Custom Resource.
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=15
+	// +kubebuilder:validation:items:XValidation:rule="ip(self).family() == 4",message="must be a valid IPv4 address"
 	TrustedDHCPServerIPAddresses []string `json:"trustedDhcpServerIpAddresses"`
 }
 
@@ -128,10 +134,10 @@ type SwitchNetworkOptions struct {
 }
 
 // GatewayManagedIPv4Configuration is the gateway IPv4 configuration. Only the
-// fields the operator reconciles are modeled; the upstream `dhcpConfiguration`
-// (a deep mode-discriminated union), `natOutboundIpAddressConfiguration` (WAN
-// specific), and per-subnet DHCP addressing are deliberately unmodeled and are
-// left to a later change.
+// fields the operator reconciles are modeled; the upstream
+// `natOutboundIpAddressConfiguration` (WAN specific) is deliberately unmodeled
+// and is left to a later change. The upstream `dhcpConfiguration` object is
+// modeled as DHCPConfiguration.
 type GatewayManagedIPv4Configuration struct {
 	// AutoScaleEnabled allows the subnet to scale based on active DHCP leases.
 	AutoScaleEnabled bool `json:"autoScaleEnabled"`
@@ -149,11 +155,17 @@ type GatewayManagedIPv4Configuration struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=64
 	AdditionalHostIPSubnets []string `json:"additionalHostIpSubnets,omitempty"`
+
+	// DHCPConfiguration is the DHCP configuration for this network. Omit to
+	// leave DHCP unconfigured; the controller then changes no DHCP settings
+	// upstream.
+	// +optional
+	DHCPConfiguration *DHCPConfiguration `json:"dhcpConfiguration,omitempty"`
 }
 
 // SwitchManagedIPv4Configuration is the switch IPv4 configuration. As with the
-// gateway variant, the upstream `dhcpConfiguration` union and per-subnet DHCP
-// addressing are deliberately unmodeled and are left to a later change.
+// gateway variant, only the fields the operator reconciles are modeled; the
+// upstream `dhcpConfiguration` object is modeled as DHCPConfiguration.
 type SwitchManagedIPv4Configuration struct {
 	// AutoScaleEnabled allows the subnet to scale based on active DHCP leases.
 	AutoScaleEnabled bool `json:"autoScaleEnabled"`
@@ -171,6 +183,63 @@ type SwitchManagedIPv4Configuration struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=64
 	AdditionalHostIPSubnets []string `json:"additionalHostIpSubnets,omitempty"`
+
+	// DHCPConfiguration is the DHCP configuration for this network. Omit to
+	// leave DHCP unconfigured; the controller then changes no DHCP settings
+	// upstream.
+	// +optional
+	DHCPConfiguration *DHCPConfiguration `json:"dhcpConfiguration,omitempty"`
+}
+
+// DHCPConfiguration is the DHCP configuration of a network's IPv4
+// configuration. It mirrors the upstream `dhcpConfiguration` object, modeled
+// flat so a snapshot can round-trip the observed DHCP settings; a
+// mode-discriminated union can replace it when a non-`SERVER` mode appears. It
+// is pure desired state and never carries an upstream identifier.
+//
+// Mode is required. Every other field follows "omit to leave unchanged": an
+// unset optional field is not treated as desired state, so a CR that authors
+// only part of the DHCP block leaves the console's other DHCP settings
+// untouched.
+type DHCPConfiguration struct {
+	// Mode is the DHCP addressing mode (for example SERVER).
+	// +kubebuilder:validation:MinLength=1
+	Mode string `json:"mode"`
+
+	// IPAddressRange is the address range handed to DHCP clients. Omit to
+	// leave the console's range unchanged.
+	// +optional
+	IPAddressRange *DHCPIPAddressRange `json:"ipAddressRange,omitempty"`
+
+	// DNSServerIPAddressesOverride are the DNS servers handed to DHCP clients.
+	// Omit to leave the console's override list unchanged.
+	// +optional
+	DNSServerIPAddressesOverride []string `json:"dnsServerIpAddressesOverride,omitempty"`
+
+	// LeaseTimeSeconds is the DHCP lease time in seconds. Omit (or 0) to leave
+	// the console's lease time unchanged.
+	// +optional
+	LeaseTimeSeconds int32 `json:"leaseTimeSeconds,omitempty"`
+
+	// DomainName is the DNS domain handed to DHCP clients. Omit to leave the
+	// console's domain unchanged.
+	// +optional
+	DomainName string `json:"domainName,omitempty"`
+
+	// PingConflictDetectionEnabled enables ICMP conflict detection before a
+	// lease is granted. Omit (or false) to leave the console's setting
+	// unchanged.
+	// +optional
+	PingConflictDetectionEnabled bool `json:"pingConflictDetectionEnabled,omitempty"`
+}
+
+// DHCPIPAddressRange is the lease address range of a DHCP configuration.
+type DHCPIPAddressRange struct {
+	// Start is the first address of the lease range.
+	Start string `json:"start"`
+
+	// Stop is the last address of the lease range.
+	Stop string `json:"stop"`
 }
 
 // +kubebuilder:validation:XValidation:rule="self.interfaceType == 'STATIC' ? (has(self.hostIpAddress) && has(self.prefixLength)) : (!has(self.hostIpAddress) && !has(self.prefixLength))",message="static fields require interfaceType STATIC"

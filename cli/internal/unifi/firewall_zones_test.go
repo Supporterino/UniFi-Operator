@@ -61,6 +61,25 @@ func TestListZonesPaginates(t *testing.T) {
 	}
 }
 
+func TestListZonesUnconfiguredFirewallIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"statusCode":400,"statusName":"BAD_REQUEST",`+
+			`"code":"api.firewall.zone-based-firewall-not-configured",`+
+			`"message":"Zone-based firewall is not configured"}`)
+	}))
+
+	zones, err := client.ListZones(context.Background(), testSiteID)
+	if err != nil {
+		t.Fatalf("ListZones: %v, want nil error for an unconfigured subsystem", err)
+	}
+	if len(zones) != 0 {
+		t.Errorf("zones = %+v, want an empty set", zones)
+	}
+}
+
 func TestListZonesUnauthorized(t *testing.T) {
 	t.Parallel()
 

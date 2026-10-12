@@ -94,13 +94,38 @@ type DHCPGuarding struct {
 }
 
 // IPv4Configuration is the IPv4 configuration of a network, shared by the gateway- and
-// switch-managed variants. The upstream optional `dhcpConfiguration` union and
-// WAN-specific `natOutboundIpAddressConfiguration` are deliberately unmodeled.
+// switch-managed variants. The upstream optional `dhcpConfiguration` object is modeled;
+// only the WAN-specific `natOutboundIpAddressConfiguration` remains deliberately
+// unmodeled.
 type IPv4Configuration struct {
 	AutoScaleEnabled        bool     `json:"autoScaleEnabled"`
 	HostIPAddress           string   `json:"hostIpAddress"`
 	PrefixLength            int32    `json:"prefixLength"`
 	AdditionalHostIPSubnets []string `json:"additionalHostIpSubnets,omitempty"`
+
+	// DHCPConfiguration is the optional DHCP configuration nested under this IPv4
+	// configuration. A nil value is omitted.
+	DHCPConfiguration *DHCPConfiguration `json:"dhcpConfiguration,omitempty"`
+}
+
+// DHCPConfiguration is the DHCP configuration nested under a network's IPv4
+// configuration. It mirrors the upstream `dhcpConfiguration` object, modeled flat so a
+// snapshot can round-trip the observed DHCP settings; a mode-discriminated union can
+// replace it when a non-SERVER mode appears. It is pure configuration and never carries
+// an upstream identifier.
+type DHCPConfiguration struct {
+	Mode                         string              `json:"mode"`
+	IPAddressRange               *DHCPIPAddressRange `json:"ipAddressRange,omitempty"`
+	DNSServerIPAddressesOverride []string            `json:"dnsServerIpAddressesOverride,omitempty"`
+	LeaseTimeSeconds             int32               `json:"leaseTimeSeconds,omitempty"`
+	DomainName                   string              `json:"domainName,omitempty"`
+	PingConflictDetectionEnabled bool                `json:"pingConflictDetectionEnabled,omitempty"`
+}
+
+// DHCPIPAddressRange is the lease address range of a DHCP configuration.
+type DHCPIPAddressRange struct {
+	Start string `json:"start"`
+	Stop  string `json:"stop"`
 }
 
 // IPv6ClientAddressAssignment configures IPv6 client addressing. Only SLAAC is modeled.

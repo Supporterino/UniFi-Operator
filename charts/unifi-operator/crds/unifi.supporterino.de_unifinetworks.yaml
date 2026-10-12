@@ -61,8 +61,16 @@ spec:
                     description: |-
                       TrustedDHCPServerIPAddresses is the list of trusted DHCP server IP
                       addresses. At least one entry is required when DHCP guarding is enabled.
+                      Each entry must be a non-empty, well-formed IPv4 address: a console can
+                      return junk entries such as ["192.168.2.1","",""], which the API server
+                      now rejects so they are never round-tripped onto a Custom Resource.
                     items:
+                      maxLength: 15
+                      minLength: 1
                       type: string
+                      x-kubernetes-validations:
+                      - message: must be a valid IPv4 address
+                        rule: ip(self).family() == 4
                     minItems: 1
                     type: array
                 required:
@@ -102,6 +110,61 @@ spec:
                         description: AutoScaleEnabled allows the subnet to scale based
                           on active DHCP leases.
                         type: boolean
+                      dhcpConfiguration:
+                        description: |-
+                          DHCPConfiguration is the DHCP configuration for this network. Omit to
+                          leave DHCP unconfigured; the controller then changes no DHCP settings
+                          upstream.
+                        properties:
+                          dnsServerIpAddressesOverride:
+                            description: |-
+                              DNSServerIPAddressesOverride are the DNS servers handed to DHCP clients.
+                              Omit to leave the console's override list unchanged.
+                            items:
+                              type: string
+                            type: array
+                          domainName:
+                            description: |-
+                              DomainName is the DNS domain handed to DHCP clients. Omit to leave the
+                              console's domain unchanged.
+                            type: string
+                          ipAddressRange:
+                            description: |-
+                              IPAddressRange is the address range handed to DHCP clients. Omit to
+                              leave the console's range unchanged.
+                            properties:
+                              start:
+                                description: Start is the first address of the lease
+                                  range.
+                                type: string
+                              stop:
+                                description: Stop is the last address of the lease
+                                  range.
+                                type: string
+                            required:
+                            - start
+                            - stop
+                            type: object
+                          leaseTimeSeconds:
+                            description: |-
+                              LeaseTimeSeconds is the DHCP lease time in seconds. Omit (or 0) to leave
+                              the console's lease time unchanged.
+                            format: int32
+                            type: integer
+                          mode:
+                            description: Mode is the DHCP addressing mode (for example
+                              SERVER).
+                            minLength: 1
+                            type: string
+                          pingConflictDetectionEnabled:
+                            description: |-
+                              PingConflictDetectionEnabled enables ICMP conflict detection before a
+                              lease is granted. Omit (or false) to leave the console's setting
+                              unchanged.
+                            type: boolean
+                        required:
+                        - mode
+                        type: object
                       hostIpAddress:
                         description: HostIPAddress is the IPv4 address assigned to
                           the network.
@@ -291,6 +354,61 @@ spec:
                         description: AutoScaleEnabled allows the subnet to scale based
                           on active DHCP leases.
                         type: boolean
+                      dhcpConfiguration:
+                        description: |-
+                          DHCPConfiguration is the DHCP configuration for this network. Omit to
+                          leave DHCP unconfigured; the controller then changes no DHCP settings
+                          upstream.
+                        properties:
+                          dnsServerIpAddressesOverride:
+                            description: |-
+                              DNSServerIPAddressesOverride are the DNS servers handed to DHCP clients.
+                              Omit to leave the console's override list unchanged.
+                            items:
+                              type: string
+                            type: array
+                          domainName:
+                            description: |-
+                              DomainName is the DNS domain handed to DHCP clients. Omit to leave the
+                              console's domain unchanged.
+                            type: string
+                          ipAddressRange:
+                            description: |-
+                              IPAddressRange is the address range handed to DHCP clients. Omit to
+                              leave the console's range unchanged.
+                            properties:
+                              start:
+                                description: Start is the first address of the lease
+                                  range.
+                                type: string
+                              stop:
+                                description: Stop is the last address of the lease
+                                  range.
+                                type: string
+                            required:
+                            - start
+                            - stop
+                            type: object
+                          leaseTimeSeconds:
+                            description: |-
+                              LeaseTimeSeconds is the DHCP lease time in seconds. Omit (or 0) to leave
+                              the console's lease time unchanged.
+                            format: int32
+                            type: integer
+                          mode:
+                            description: Mode is the DHCP addressing mode (for example
+                              SERVER).
+                            minLength: 1
+                            type: string
+                          pingConflictDetectionEnabled:
+                            description: |-
+                              PingConflictDetectionEnabled enables ICMP conflict detection before a
+                              lease is granted. Omit (or false) to leave the console's setting
+                              unchanged.
+                            type: boolean
+                        required:
+                        - mode
+                        type: object
                       hostIpAddress:
                         description: HostIPAddress is the IPv4 address assigned to
                           the network.

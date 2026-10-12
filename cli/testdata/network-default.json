@@ -5,6 +5,6 @@
   "enabled": true,
   "vlanId": 1,
   "default": true,
-  "metadata": { "origin": "USER_DEFINED" },
-  "dhcpGuarding": { "trustedDhcpServerIpAddresses": ["192.168.1.254"] }
+  "metadata": { "origin": "SYSTEM_DEFINED", "configurable": true },
+  "dhcpGuarding": { "trustedDhcpServerIpAddresses": ["192.168.2.1", "", ""] }
 }

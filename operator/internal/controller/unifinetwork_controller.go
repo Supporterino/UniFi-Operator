@@ -549,7 +549,28 @@ func convertSwitchIPv4(in unifiv1alpha1.SwitchManagedIPv4Configuration) unifi.IP
 		HostIPAddress:           in.HostIPAddress,
 		PrefixLength:            in.PrefixLength,
 		AdditionalHostIPSubnets: in.AdditionalHostIPSubnets,
+		DHCPConfiguration:       convertDHCPConfiguration(in.DHCPConfiguration),
 	}
+}
+
+// convertDHCPConfiguration maps the CR DHCP configuration onto the client type,
+// preserving the optional address range. A nil input stays nil so an omitted
+// configuration is left off the request body.
+func convertDHCPConfiguration(in *unifiv1alpha1.DHCPConfiguration) *unifi.DHCPConfiguration {
+	if in == nil {
+		return nil
+	}
+	out := &unifi.DHCPConfiguration{
+		Mode:                         in.Mode,
+		DNSServerIPAddressesOverride: in.DNSServerIPAddressesOverride,
+		LeaseTimeSeconds:             in.LeaseTimeSeconds,
+		DomainName:                   in.DomainName,
+		PingConflictDetectionEnabled: in.PingConflictDetectionEnabled,
+	}
+	if in.IPAddressRange != nil {
+		out.IPAddressRange = &unifi.DHCPIPAddressRange{Start: in.IPAddressRange.Start, Stop: in.IPAddressRange.Stop}
+	}
+	return out
 }
 
 // convertDHCPGuarding maps the CR DHCP guarding configuration.
@@ -567,6 +588,7 @@ func convertIPv4(in unifiv1alpha1.GatewayManagedIPv4Configuration) unifi.IPv4Con
 		HostIPAddress:           in.HostIPAddress,
 		PrefixLength:            in.PrefixLength,
 		AdditionalHostIPSubnets: in.AdditionalHostIPSubnets,
+		DHCPConfiguration:       convertDHCPConfiguration(in.DHCPConfiguration),
 	}
 }
 
@@ -751,12 +773,55 @@ func switchMatches(existing unifi.Network, req unifi.SwitchNetworkRequest) bool 
 }
 
 // ipv4Matches compares the shared IPv4 configuration. The authored fields are
-// compared; an unset additional-subnets collection is optional and ignored.
+// compared; an unset additional-subnets collection is optional and ignored. The
+// nested DHCP configuration is compared by dhcpConfigurationMatches.
 func ipv4Matches(existing unifi.IPv4Configuration, req unifi.IPv4Configuration) bool {
 	return existing.AutoScaleEnabled == req.AutoScaleEnabled &&
 		existing.HostIPAddress == req.HostIPAddress &&
 		existing.PrefixLength == req.PrefixLength &&
-		optionalStringSlicesMatch(req.AdditionalHostIPSubnets, existing.AdditionalHostIPSubnets)
+		optionalStringSlicesMatch(req.AdditionalHostIPSubnets, existing.AdditionalHostIPSubnets) &&
+		dhcpConfigurationMatches(existing.DHCPConfiguration, req.DHCPConfiguration)
+}
+
+// dhcpConfigurationMatches compares the optional DHCP configuration nested in the
+// IPv4 configuration against the desired one. A desired configuration that is
+// unset (nil) is optional: the observed block is ignored entirely, so omitting it
+// never triggers a PUT that could reset DHCP upstream. A desired configuration
+// that is set compares every authored field, where each optional sub-field
+// follows "omit (zero value) to leave unchanged": an unset sub-field is ignored
+// so a CR that authors only part of the DHCP block does not fight the console's
+// other settings. `mode` is required and always compared; a nil observed block
+// when the CR authors a DHCP block is drift. The optional scalar sub-fields
+// inherit the zero-means-unset rule of optionalBoolValueMatches and
+// optionalInt32ValueMatches, so an explicit `false`/`0` cannot be authored to
+// override a non-default console value.
+func dhcpConfigurationMatches(existing, req *unifi.DHCPConfiguration) bool {
+	if req == nil {
+		return true
+	}
+	if existing == nil {
+		return false
+	}
+	return existing.Mode == req.Mode &&
+		dhcpIPAddressRangeMatches(existing.IPAddressRange, req.IPAddressRange) &&
+		optionalStringSlicesMatch(req.DNSServerIPAddressesOverride, existing.DNSServerIPAddressesOverride) &&
+		optionalInt32ValueMatches(existing.LeaseTimeSeconds, req.LeaseTimeSeconds) &&
+		optionalStringMatches(existing.DomainName, req.DomainName) &&
+		optionalBoolValueMatches(existing.PingConflictDetectionEnabled, req.PingConflictDetectionEnabled)
+}
+
+// dhcpIPAddressRangeMatches compares the optional lease address range. A desired
+// range that is unset (nil) is optional and ignored, so an omitted range never
+// treats the console's range as drift. Otherwise the start and stop addresses are
+// compared, and a nil observed range is drift.
+func dhcpIPAddressRangeMatches(existing, req *unifi.DHCPIPAddressRange) bool {
+	if req == nil {
+		return true
+	}
+	if existing == nil {
+		return false
+	}
+	return existing.Start == req.Start && existing.Stop == req.Stop
 }
 
 // ipv6Matches compares the IPv6 configuration against the desired one. The CR
@@ -796,6 +861,32 @@ func optionalBoolMatches(existing, req *bool) bool {
 		return true
 	}
 	return boolValue(existing) == *req
+}
+
+// optionalBoolValueMatches compares an observed plain bool with the desired
+// value. A desired value of false is optional: the comparison ignores the
+// observed value so an omitted optional flag is never treated as drift. This
+// means a zero value is "leave unchanged", so an explicit `false` cannot be
+// authored today to override a non-default console value — a documented
+// limitation shared with the repo's other optional-value helpers.
+func optionalBoolValueMatches(existing, req bool) bool {
+	if !req {
+		return true
+	}
+	return existing == req
+}
+
+// optionalInt32ValueMatches compares an observed plain int32 with the desired
+// value. A desired value that is zero is optional: the comparison ignores the
+// observed value so an omitted optional field is never treated as drift. This
+// means a zero value is "leave unchanged", so an explicit `0` cannot be
+// authored today to override a non-default console value — a documented
+// limitation shared with the repo's other optional-value helpers.
+func optionalInt32ValueMatches(existing, req int32) bool {
+	if req == 0 {
+		return true
+	}
+	return existing == req
 }
 
 // routerAdvertisementMatches compares router advertisement. A desired router

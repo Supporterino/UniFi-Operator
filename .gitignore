@@ -19,6 +19,7 @@ operator/*.test
 
 # Secrets and local config
 .env
+*.env
 *.local.yaml
 kubeconfig*
 !kubeconfig.example

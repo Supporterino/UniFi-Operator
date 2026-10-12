@@ -3,8 +3,23 @@ package unifi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 )
+
+// zbfNotConfiguredCode is the upstream machine-readable error code a console
+// returns when Zone-Based Firewall is not configured. A 400 carrying this code
+// on the firewall-zones endpoints means the subsystem is empty, not that the
+// request was bad (design D3).
+const zbfNotConfiguredCode = "api.firewall.zone-based-firewall-not-configured"
+
+// zoneBasedFirewallUnconfigured reports whether err is the controller's
+// zone-based-firewall-not-configured response. It matches the machine-readable
+// code, never the message text.
+func zoneBasedFirewallUnconfigured(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Code == zbfNotConfiguredCode
+}
 
 // FirewallZone is a firewall zone as returned by the controller's Integration
 // v1 API. ID is an upstream UUID and must be recorded in a Custom Resource's
@@ -48,16 +63,34 @@ func (r FirewallZoneRequest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(requestBody{Name: r.Name, NetworkIDs: networkIDs})
 }
 
-// ListZones returns every firewall zone on the given site.
+// ListZones returns every firewall zone on the given site. A console with
+// Zone-Based Firewall unconfigured answers the endpoint with a
+// zone-based-firewall-not-configured 400, which maps to an empty set rather than
+// an error so reconciliation reports no zones instead of failing.
 func (c *HTTPClient) ListZones(ctx context.Context, siteID string) ([]FirewallZone, error) {
 	endpoint, err := c.endpoint("sites", siteID, "firewall", "zones")
 	if err != nil {
 		return nil, err
 	}
-	return listAll[FirewallZone](ctx, c, endpoint)
+	zones, err := listAll[FirewallZone](ctx, c, endpoint)
+	if zoneBasedFirewallUnconfigured(err) {
+		return []FirewallZone{}, nil
+	}
+	return zones, err
 }
 
-// GetZone returns the firewall zone with the given UUID on the given site.
+// GetZone returns the firewall zone with the given UUID on the given site. A
+// console with Zone-Based Firewall unconfigured has no zones, so the
+// zone-based-firewall-not-configured 400 maps to ErrNotFound: callers already
+// treat a missing zone as absent, and a zero FirewallZone would otherwise be
+// mistaken for a real, empty zone.
+//
+// This mapping deliberately extends to the delete path: deleteUpstream treats
+// ErrNotFound as "already gone" and removes the finalizer without an upstream
+// delete. That is the intended outcome, not an accidental side effect — with
+// Zone-Based Firewall off there is no upstream zone to delete, so a stuck
+// Terminating CR would be worse than a finalizer removed for a zone that cannot
+// exist.
 func (c *HTTPClient) GetZone(ctx context.Context, siteID, zoneID string) (FirewallZone, error) {
 	endpoint, err := c.endpoint("sites", siteID, "firewall", "zones", zoneID)
 	if err != nil {
@@ -65,6 +98,9 @@ func (c *HTTPClient) GetZone(ctx context.Context, siteID, zoneID string) (Firewa
 	}
 	var zone FirewallZone
 	if err := c.do(ctx, http.MethodGet, endpoint, nil, &zone); err != nil {
+		if zoneBasedFirewallUnconfigured(err) {
+			return FirewallZone{}, ErrNotFound
+		}
 		return FirewallZone{}, err
 	}
 	return zone, nil

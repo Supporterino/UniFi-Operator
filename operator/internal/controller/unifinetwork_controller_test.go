@@ -44,6 +44,17 @@ const (
 	testMissingDeviceTag    = "missing-tag"
 	testIPv6InterfaceStatic = "STATIC"
 	testIPv6HostAddress     = "fd00:10::1"
+
+	// testDHCPMode and testDHCPDNSPrimary are shared DHCP-configuration fixture
+	// values, kept as constants so the test package does not repeat the literals.
+	testDHCPMode       = "SERVER"
+	testDHCPDNSPrimary = "1.1.1.1"
+
+	// testDHCPRangeStart, testDHCPRangeStop, and testDHCPDomainName are the
+	// shared DHCP range and domain fixture values.
+	testDHCPRangeStart = "10.0.0.10"
+	testDHCPRangeStop  = "10.0.0.200"
+	testDHCPDomainName = "home.example"
 )
 
 // ownedSite returns the parent UnifiSite fixture with a UID (needed for the
@@ -693,6 +704,169 @@ func TestUnifiNetworkReconcileClearsOmittedOptionalFields(t *testing.T) {
 	}
 	if len(stub.updateRequests) != 1 {
 		t.Errorf("update requests = %d, want 1 after the console reports the fields absent", len(stub.updateRequests))
+	}
+}
+
+// testDHCPConfiguration returns a populated DHCP configuration fixture that
+// exercises every modeled field, as the console would report it.
+func testDHCPConfiguration() *unifi.DHCPConfiguration {
+	return &unifi.DHCPConfiguration{
+		Mode:                         testDHCPMode,
+		IPAddressRange:               &unifi.DHCPIPAddressRange{Start: testDHCPRangeStart, Stop: testDHCPRangeStop},
+		DNSServerIPAddressesOverride: []string{testDHCPDNSPrimary, "9.9.9.9"},
+		LeaseTimeSeconds:             86400,
+		DomainName:                   testDHCPDomainName,
+		PingConflictDetectionEnabled: true,
+	}
+}
+
+// crDHCPConfiguration mirrors testDHCPConfiguration as a Custom Resource spec
+// value.
+func crDHCPConfiguration() *unifiv1alpha1.DHCPConfiguration {
+	return &unifiv1alpha1.DHCPConfiguration{
+		Mode:                         testDHCPMode,
+		IPAddressRange:               &unifiv1alpha1.DHCPIPAddressRange{Start: testDHCPRangeStart, Stop: testDHCPRangeStop},
+		DNSServerIPAddressesOverride: []string{testDHCPDNSPrimary, "9.9.9.9"},
+		LeaseTimeSeconds:             86400,
+		DomainName:                   testDHCPDomainName,
+		PingConflictDetectionEnabled: true,
+	}
+}
+
+func TestUnifiNetworkReconcileAppliesDHCPConfigurationChange(t *testing.T) {
+	t.Parallel()
+
+	// The CR configures DHCP but the console reports no dhcpConfiguration, so the
+	// reconciler must PUT the desired DHCP settings instead of reporting the
+	// network up to date and silently leaving DHCP unapplied.
+	network := newGatewayNetwork()
+	network.Spec.Gateway.IPv4Configuration.DHCPConfiguration = crDHCPConfiguration()
+
+	stub := &stubUnifiClient{
+		networks: []unifi.Network{matchingGatewayNetwork()},
+		updated:  unifi.Network{ID: testUpstreamNetworkID, Name: testNetworkUpstreamName, ZoneID: testUpstreamZoneID},
+	}
+	factory := &recordingFactory{client: stub}
+	fakeClient, _, _ := newNetworkFakeClient(t,
+		network, ownedSite(), readyController(testAppVersion), apiKeySecret())
+
+	reconciler := &UnifiNetworkReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testNetworkResourceName)); err != nil {
+		t.Fatalf("Reconcile error = %v, want nil", err)
+	}
+
+	if len(stub.updateRequests) != 1 {
+		t.Fatalf("update requests = %d, want 1 for a DHCP-only change", len(stub.updateRequests))
+	}
+	encoded, err := json.Marshal(stub.updateRequests[0])
+	if err != nil {
+		t.Fatalf("marshal update request: %v", err)
+	}
+	if !strings.Contains(string(encoded), "dhcpConfiguration") {
+		t.Errorf("update request body %s must carry the desired dhcpConfiguration", encoded)
+	}
+
+	// Once the console converges on the desired DHCP settings, re-reconciling
+	// must not write again.
+	converged := matchingGatewayNetwork()
+	converged.IPv4Configuration.DHCPConfiguration = testDHCPConfiguration()
+	stub.setNetworks([]unifi.Network{converged})
+	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testNetworkResourceName)); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	if len(stub.updateRequests) != 1 {
+		t.Errorf("update requests = %d, want 1 after the console reports the desired DHCP settings", len(stub.updateRequests))
+	}
+}
+
+func TestUnifiNetworkReconcileIgnoresOmittedDHCPConfiguration(t *testing.T) {
+	t.Parallel()
+
+	// The CR omits dhcpConfiguration, whose contract is "leave DHCP unconfigured;
+	// the controller changes no DHCP settings upstream". A console that still
+	// reports a DHCP block is not drift: omitting the block must never trigger a
+	// PUT that could reset the console's DHCP settings.
+	observed := matchingGatewayNetwork()
+	observed.IPv4Configuration.DHCPConfiguration = testDHCPConfiguration()
+
+	stub := &stubUnifiClient{networks: []unifi.Network{observed}}
+	factory := &recordingFactory{client: stub}
+	fakeClient, statusWrites, _ := newNetworkFakeClient(t,
+		newGatewayNetwork(), ownedSite(), readyController(testAppVersion), apiKeySecret())
+
+	reconciler := &UnifiNetworkReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+	for i := 0; i < 2; i++ {
+		if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testNetworkResourceName)); err != nil {
+			t.Fatalf("reconcile %d: %v", i, err)
+		}
+	}
+
+	if len(stub.createRequests) != 0 || len(stub.updateRequests) != 0 {
+		t.Errorf("upstream mutations = create:%d update:%d, want none when the CR omits dhcpConfiguration",
+			len(stub.createRequests), len(stub.updateRequests))
+	}
+	if *statusWrites != 1 {
+		t.Errorf("status writes = %d, want 1 (second reconcile must be a no-op)", *statusWrites)
+	}
+}
+
+func TestUnifiNetworkReconcilePartialDHCPBlockConverges(t *testing.T) {
+	t.Parallel()
+
+	// The CR authors only part of the DHCP block (mode plus the address range).
+	// Each remaining optional sub-field follows "omit to leave unchanged", so a
+	// console reporting a non-default lease time, domain name, DNS override, and
+	// ping-conflict flag alongside the authored values is not drift: the
+	// reconciler must converge after the first apply and issue no further write.
+	network := newGatewayNetwork()
+	network.Spec.Gateway.IPv4Configuration.DHCPConfiguration = &unifiv1alpha1.DHCPConfiguration{
+		Mode:           testDHCPMode,
+		IPAddressRange: &unifiv1alpha1.DHCPIPAddressRange{Start: testDHCPRangeStart, Stop: testDHCPRangeStop},
+	}
+
+	observed := matchingGatewayNetwork()
+	observed.IPv4Configuration.DHCPConfiguration = &unifi.DHCPConfiguration{
+		Mode:                         testDHCPMode,
+		IPAddressRange:               &unifi.DHCPIPAddressRange{Start: testDHCPRangeStart, Stop: testDHCPRangeStop},
+		DNSServerIPAddressesOverride: []string{testDHCPDNSPrimary},
+		LeaseTimeSeconds:             86400,
+		DomainName:                   testDHCPDomainName,
+		PingConflictDetectionEnabled: true,
+	}
+
+	stub := &stubUnifiClient{networks: []unifi.Network{observed}}
+	factory := &recordingFactory{client: stub}
+	fakeClient, statusWrites, _ := newNetworkFakeClient(t,
+		network, ownedSite(), readyController(testAppVersion), apiKeySecret())
+
+	reconciler := &UnifiNetworkReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+	for i := 0; i < 2; i++ {
+		if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testNetworkResourceName)); err != nil {
+			t.Fatalf("reconcile %d: %v", i, err)
+		}
+	}
+
+	if len(stub.createRequests) != 0 || len(stub.updateRequests) != 0 {
+		t.Errorf("upstream mutations = create:%d update:%d, want none when the CR authors only part of the DHCP block",
+			len(stub.createRequests), len(stub.updateRequests))
+	}
+	if *statusWrites != 1 {
+		t.Errorf("status writes = %d, want 1 (second reconcile must be a no-op)", *statusWrites)
+	}
+
+	// A later change to an authored field (the address range) is real drift and
+	// must trigger exactly one update.
+	changed := getNetwork(t, fakeClient)
+	changed.Spec.Gateway.IPv4Configuration.DHCPConfiguration.IPAddressRange =
+		&unifiv1alpha1.DHCPIPAddressRange{Start: "10.0.0.20", Stop: testDHCPRangeStop}
+	if err := fakeClient.Update(context.Background(), changed); err != nil {
+		t.Fatalf("update network spec: %v", err)
+	}
+	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testNetworkResourceName)); err != nil {
+		t.Fatalf("reconcile after spec change: %v", err)
+	}
+	if len(stub.updateRequests) != 1 {
+		t.Errorf("update requests = %d, want 1 after an authored DHCP field changes", len(stub.updateRequests))
 	}
 }
 

@@ -1,0 +1,11 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiVpnServer
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifivpnserver-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  name: corp-wireguard

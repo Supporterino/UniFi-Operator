@@ -299,6 +299,89 @@ type Client interface {
 	// ListDeviceTags returns every device tag on the given site. Tags are
 	// read-only upstream; a name-based selector is resolved against this list.
 	ListDeviceTags(ctx context.Context, siteID string) ([]DeviceTag, error)
+	// ListRadiusProfiles returns every RADIUS authentication profile on the
+	// given site. Profiles are read-only upstream; an existing profile is
+	// adopted by name from this list.
+	ListRadiusProfiles(ctx context.Context, siteID string) ([]RadiusProfile, error)
+	// ListTrafficMatchingLists returns every traffic matching list on the
+	// given site.
+	ListTrafficMatchingLists(ctx context.Context, siteID string) ([]TrafficMatchingList, error)
+	// GetTrafficMatchingList returns the traffic matching list with the given
+	// UUID on the given site.
+	GetTrafficMatchingList(ctx context.Context, siteID, listID string) (TrafficMatchingList, error)
+	// CreateTrafficMatchingList creates a traffic matching list on the given
+	// site.
+	CreateTrafficMatchingList(ctx context.Context, siteID string, req TrafficMatchingListRequest) (TrafficMatchingList, error)
+	// UpdateTrafficMatchingList replaces the traffic matching list with the
+	// given UUID on the given site.
+	UpdateTrafficMatchingList(ctx context.Context, siteID, listID string, req TrafficMatchingListRequest) (TrafficMatchingList, error)
+	// DeleteTrafficMatchingList deletes the traffic matching list with the
+	// given UUID on the given site.
+	DeleteTrafficMatchingList(ctx context.Context, siteID, listID string) error
+	// ListFirewallPolicies returns every firewall policy on the given site.
+	ListFirewallPolicies(ctx context.Context, siteID string) ([]FirewallPolicy, error)
+	// GetFirewallPolicy returns the firewall policy with the given UUID on the
+	// given site.
+	GetFirewallPolicy(ctx context.Context, siteID, policyID string) (FirewallPolicy, error)
+	// CreateFirewallPolicy creates a firewall policy on the given site.
+	CreateFirewallPolicy(ctx context.Context, siteID string, req FirewallPolicyRequest) (FirewallPolicy, error)
+	// UpdateFirewallPolicy replaces the firewall policy with the given UUID on
+	// the given site.
+	UpdateFirewallPolicy(ctx context.Context, siteID, policyID string, req FirewallPolicyRequest) (FirewallPolicy, error)
+	// DeleteFirewallPolicy deletes the firewall policy with the given UUID on
+	// the given site.
+	DeleteFirewallPolicy(ctx context.Context, siteID, policyID string) error
+	// GetFirewallPolicyOrdering returns the user-defined firewall policy
+	// ordering for the given source/destination zone pair.
+	GetFirewallPolicyOrdering(ctx context.Context, siteID, sourceZoneID, destinationZoneID string) (FirewallPolicyOrdering, error)
+	// UpdateFirewallPolicyOrdering replaces the user-defined firewall policy
+	// ordering for the given source/destination zone pair.
+	UpdateFirewallPolicyOrdering(ctx context.Context, siteID, sourceZoneID, destinationZoneID string, req FirewallPolicyOrdering) (FirewallPolicyOrdering, error)
+	// ListAclRules returns every ACL rule on the given site.
+	ListAclRules(ctx context.Context, siteID string) ([]AclRule, error)
+	// GetAclRule returns the ACL rule with the given UUID on the given site.
+	GetAclRule(ctx context.Context, siteID, ruleID string) (AclRule, error)
+	// CreateAclRule creates an ACL rule on the given site.
+	CreateAclRule(ctx context.Context, siteID string, req AclRuleRequest) (AclRule, error)
+	// UpdateAclRule replaces the ACL rule with the given UUID on the given site.
+	UpdateAclRule(ctx context.Context, siteID, ruleID string, req AclRuleRequest) (AclRule, error)
+	// DeleteAclRule deletes the ACL rule with the given UUID on the given site.
+	DeleteAclRule(ctx context.Context, siteID, ruleID string) error
+	// GetAclRuleOrdering returns the site-global ACL-rule ordering.
+	GetAclRuleOrdering(ctx context.Context, siteID string) (AclRuleOrdering, error)
+	// UpdateAclRuleOrdering replaces the site-global ACL-rule ordering.
+	UpdateAclRuleOrdering(ctx context.Context, siteID string, req AclRuleOrdering) (AclRuleOrdering, error)
+	// ListDnsPolicies returns every DNS policy on the given site.
+	ListDnsPolicies(ctx context.Context, siteID string) ([]DnsPolicy, error)
+	// GetDnsPolicy returns the DNS policy with the given UUID on the given site.
+	GetDnsPolicy(ctx context.Context, siteID, policyID string) (DnsPolicy, error)
+	// CreateDnsPolicy creates a DNS policy on the given site.
+	CreateDnsPolicy(ctx context.Context, siteID string, req DnsPolicyRequest) (DnsPolicy, error)
+	// UpdateDnsPolicy replaces the DNS policy with the given UUID on the given
+	// site.
+	UpdateDnsPolicy(ctx context.Context, siteID, policyID string, req DnsPolicyRequest) (DnsPolicy, error)
+	// DeleteDnsPolicy deletes the DNS policy with the given UUID on the given
+	// site.
+	DeleteDnsPolicy(ctx context.Context, siteID, policyID string) error
+	// ListLags returns every LAG on the given site.
+	ListLags(ctx context.Context, siteID string) ([]Lag, error)
+	// GetLag returns the LAG with the given UUID on the given site.
+	GetLag(ctx context.Context, siteID, lagID string) (Lag, error)
+	// ListMcLagDomains returns every MC-LAG domain on the given site.
+	ListMcLagDomains(ctx context.Context, siteID string) ([]McLagDomain, error)
+	// GetMcLagDomain returns the MC-LAG domain with the given UUID on the given
+	// site.
+	GetMcLagDomain(ctx context.Context, siteID, domainID string) (McLagDomain, error)
+	// ListSwitchStacks returns every switch stack on the given site.
+	ListSwitchStacks(ctx context.Context, siteID string) ([]SwitchStack, error)
+	// GetSwitchStack returns the switch stack with the given UUID on the given
+	// site.
+	GetSwitchStack(ctx context.Context, siteID, stackID string) (SwitchStack, error)
+	// ListVpnServers returns every VPN server on the given site.
+	ListVpnServers(ctx context.Context, siteID string) ([]VpnServer, error)
+	// ListSiteToSiteTunnels returns every site-to-site VPN tunnel on the given
+	// site.
+	ListSiteToSiteTunnels(ctx context.Context, siteID string) ([]SiteToSiteTunnel, error)
 	// ListWifiBroadcasts returns every WiFi broadcast overview on the given
 	// site. The list is an overview only; call GetWifiBroadcast for the variant
 	// configuration.

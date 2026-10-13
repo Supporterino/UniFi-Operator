@@ -1,0 +1,29 @@
+{
+  "count": 3,
+  "data": [
+    {
+      "id": "a1b2c3d4-e5f6-4071-8293-a4b5c6d7e8f9",
+      "name": "WireGuard Server",
+      "type": "WIREGUARD",
+      "enabled": true,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "b2c3d4e5-f607-4182-93a4-b5c6d7e8f901",
+      "name": "Legacy L2TP",
+      "type": "L2TP",
+      "enabled": false,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "c3d4e5f6-0718-4293-a4b5-c6d7e8f90123",
+      "name": "",
+      "type": "OPENVPN",
+      "enabled": true,
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 3
+}

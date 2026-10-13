@@ -218,6 +218,102 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiWifiBroadcast")
 		os.Exit(1)
 	}
+	if err := (&controller.UnifiRadiusProfileReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiRadiusProfile")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiTrafficMatchingListReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiTrafficMatchingList")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiFirewallPolicyReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiFirewallPolicy")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiFirewallPolicyOrderingReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiFirewallPolicyOrdering")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiAclRuleReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiAclRule")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiAclRuleOrderingReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiAclRuleOrdering")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiDnsPolicyReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiDnsPolicy")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiSwitchingLagReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiSwitchingLag")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiSwitchingMcLagDomainReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiSwitchingMcLagDomain")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiSwitchingSwitchStackReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiSwitchingSwitchStack")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiVpnServerReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiVpnServer")
+		os.Exit(1)
+	}
+	if err := (&controller.UnifiSiteToSiteTunnelReconciler{
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UnifiSiteToSiteTunnel")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

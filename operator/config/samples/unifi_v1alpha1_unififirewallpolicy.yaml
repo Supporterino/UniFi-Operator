@@ -1,0 +1,30 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiFirewallPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unififirewallpolicy-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  name: block-iot-to-corp
+  enabled: true
+  description: Block IoT traffic from reaching the corporate zone
+  loggingEnabled: true
+  action:
+    type: BLOCK
+  ipProtocolScope:
+    ipVersion: IPV4_AND_IPV6
+  source:
+    zoneRef:
+      name: unififirewallzone-sample
+    filter:
+      type: IP_ADDRESS
+      ipAddress:
+        listRef:
+          name: unifitrafficmatchinglist-sample
+        matchOpposite: false
+  destination:
+    builtInZone:
+      name: Internal

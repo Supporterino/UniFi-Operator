@@ -266,7 +266,7 @@ func (r *UnifiFirewallZoneReconciler) reconcileUpstream(
 	switch {
 	case existing == nil:
 		result, err = apiClient.CreateZone(ctx, site.Status.SiteID, request)
-		action = "created"
+		action = broadcastActionCreated
 	case zoneMatchesRequest(*existing, request):
 		// The upstream object already matches the desired state; skip the PUT so
 		// re-reconciling an unchanged object performs no write.
@@ -276,7 +276,7 @@ func (r *UnifiFirewallZoneReconciler) reconcileUpstream(
 		return r.updateStatus(ctx, zone, true, reasonReconciled, summary, &zoneID, &origin)
 	default:
 		result, err = apiClient.UpdateZone(ctx, site.Status.SiteID, existing.ID, request)
-		action = "updated"
+		action = broadcastActionUpdated
 	}
 	if err != nil {
 		return r.handleUpstreamError(ctx, zone, err)
@@ -661,7 +661,7 @@ func zoneMatchesRequest(existing unifi.FirewallZone, req unifi.FirewallZoneReque
 func systemZoneMessage(existing unifi.FirewallZone) string {
 	origin := existing.Metadata.Origin
 	if origin == "" {
-		origin = "unknown"
+		origin = broadcastOriginUnknown
 	}
 	return fmt.Sprintf("upstream firewall zone %q has metadata.origin %s, not %s; refusing to overwrite a system-managed object",
 		existing.Name, origin, firewallZoneOriginUserDefined)

@@ -1,0 +1,25 @@
+{
+  "count": 2,
+  "data": [
+    {
+      "id": "a4b5c6d7-e8f9-4091-a2b3-c4d5e6f70819",
+      "name": "Core Stack",
+      "members": [
+        { "deviceId": "aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d" },
+        { "deviceId": "ee1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d" }
+      ],
+      "lags": [],
+      "metadata": { "origin": "SYSTEM_DEFINED" }
+    },
+    {
+      "id": "b5c6d7e8-f901-41a2-b3c4-d5e6f708192a",
+      "name": "",
+      "members": [],
+      "lags": [],
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 2
+}

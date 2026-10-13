@@ -1,0 +1,96 @@
+{
+  "count": 10,
+  "data": [
+    {
+      "id": "0a1b2c3d-4e5f-4061-8273-94a5b6c7d8e9",
+      "type": "A_RECORD",
+      "domain": "www.example.com",
+      "enabled": true,
+      "ipv4Address": "192.168.1.10",
+      "ttlSeconds": 14400,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "1b2c3d4e-5f60-4172-9384-a5b6c7d8e9fa",
+      "type": "AAAA_RECORD",
+      "domain": "www.example.com",
+      "enabled": true,
+      "ipv6Address": "fd00::10",
+      "ttlSeconds": 3600,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "2c3d4e5f-6071-4283-a495-b6c7d8e9fa0b",
+      "type": "CNAME_RECORD",
+      "domain": "alias.example.com",
+      "enabled": true,
+      "targetDomain": "www.example.com",
+      "ttlSeconds": 604800,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "3d4e5f60-7182-4394-b5a6-c7d8e9fa0b1c",
+      "type": "MX_RECORD",
+      "domain": "example.com",
+      "enabled": true,
+      "mailServerDomain": "mail.example.com",
+      "priority": 10,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "4e5f6071-8293-44a5-c6b7-d8e9fa0b1c2d",
+      "type": "SRV_RECORD",
+      "domain": "_ldap._tcp.example.com",
+      "enabled": true,
+      "port": 389,
+      "priority": 0,
+      "protocol": "_tcp",
+      "serverDomain": "dc.example.com",
+      "service": "_ldap",
+      "weight": 100,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "5f607182-93a4-45b6-d7c8-e9fa0b1c2d3e",
+      "type": "TXT_RECORD",
+      "domain": "text.example.com",
+      "enabled": false,
+      "text": "v=spf1 -all",
+      "metadata": { "origin": "DERIVED" }
+    },
+    {
+      "id": "60718293-a4b5-46c7-e8d9-fa0b1c2d3e4f",
+      "type": "FORWARD_DOMAIN",
+      "domain": "internal.example.com",
+      "enabled": true,
+      "ipAddress": "1.1.1.1",
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "718293a4-b5c6-47d8-f9ea-0b1c2d3e4f50",
+      "type": "NAPTR_RECORD",
+      "domain": "unknown.example.com",
+      "enabled": true,
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "8293a4b5-c6d7-48e9-0afb-1c2d3e4f5061",
+      "type": "A_RECORD",
+      "domain": "mismatch.example.com",
+      "enabled": true,
+      "targetDomain": "www.example.com",
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "93a4b5c6-d7e8-49fa-1b0c-2d3e4f506172",
+      "type": "A_RECORD",
+      "domain": "missing-ttl.example.com",
+      "enabled": true,
+      "ipv4Address": "192.168.1.20",
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 10
+}

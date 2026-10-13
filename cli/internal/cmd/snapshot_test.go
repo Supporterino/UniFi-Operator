@@ -36,14 +36,65 @@ const (
 	fixtureBroadcastIDTwo   = "d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60"
 	fixtureBroadcastIDThree = "e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6071"
 	fixtureBroadcastIDFour  = "f4a5b6c7-d8e9-4f0a-1b2c-3d4e5f607182"
+
+	fixtureRadiusProfileIDOne = "3f2b1a09-8c7d-4e6f-a1b2-c3d4e5f60718"
+	fixtureRadiusProfileIDTwo = "4a3c2b10-9d8e-4f7a-b2c3-d4e5f6071829"
+
+	fixtureTrafficMatchingListIDOne   = "7c1e2f3a-4b5c-4d6e-8f90-1a2b3c4d5e6f"
+	fixtureTrafficMatchingListIDTwo   = "8d2f3a4b-5c6d-4e7f-9012-2b3c4d5e6f70"
+	fixtureTrafficMatchingListIDThree = "9e3a4b5c-6d7e-4f80-9123-3c4d5e6f7081"
+
+	fixturePolicyIDOne   = "1a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9"
+	fixturePolicyIDTwo   = "2b3c4d5e-6f70-4182-93a4-b5c6d7e8f901"
+	fixturePolicyIDThree = "3c4d5e6f-7081-4293-a4b5-c6d7e8f90123"
+
+	fixtureAclRuleIDOne   = "4d5e6f70-8192-4a3b-c4d5-e6f708192a3b"
+	fixtureAclRuleIDTwo   = "5e6f7081-92a3-4b4c-d5e6-f708192a3b4c"
+	fixtureAclRuleIDThree = "6f708192-a3b4-4c5d-e6f7-08192a3b4c5d"
+	fixtureAclRuleIDFour  = "708192a3-b4c5-4d6e-f708-192a3b4c5d6e"
+	fixtureAclRuleIDFive  = "8192a3b4-c5d6-4e7f-0819-2a3b4c5d6e7f"
+
+	fixtureDnsRecordIDOne     = "0a1b2c3d-4e5f-4061-8273-94a5b6c7d8e9"
+	fixtureDnsRecordIDTwo     = "1b2c3d4e-5f60-4172-9384-a5b6c7d8e9fa"
+	fixtureDnsRecordIDThree   = "2c3d4e5f-6071-4283-a495-b6c7d8e9fa0b"
+	fixtureDnsRecordIDFour    = "3d4e5f60-7182-4394-b5a6-c7d8e9fa0b1c"
+	fixtureDnsRecordIDFive    = "4e5f6071-8293-44a5-c6b7-d8e9fa0b1c2d"
+	fixtureDnsRecordIDSix     = "5f607182-93a4-45b6-d7c8-e9fa0b1c2d3e"
+	fixtureDnsRecordIDSeven   = "60718293-a4b5-46c7-e8d9-fa0b1c2d3e4f"
+	fixtureDnsRecordIDUnknown = "718293a4-b5c6-47d8-f9ea-0b1c2d3e4f50"
+	fixtureDnsRecordIDForeign = "8293a4b5-c6d7-48e9-0afb-1c2d3e4f5061"
+	fixtureDnsRecordIDMissing = "93a4b5c6-d7e8-49fa-1b0c-2d3e4f506172"
+
+	fixtureLagIDOne           = "1f2a3b4c-5d6e-4f70-8192-a3b4c5d6e7f8"
+	fixtureLagIDTwo           = "2a3b4c5d-6e7f-4081-92a3-b4c5d6e7f809"
+	fixtureLagIDThree         = "3b4c5d6e-7f80-4192-a3b4-c5d6e7f8091a"
+	fixtureMcLagDomainID      = "d1e2f3a4-b5c6-4d7e-8f90-1a2b3c4d5e6f"
+	fixtureSwitchStackID      = "a4b5c6d7-e8f9-4091-a2b3-c4d5e6f70819"
+	fixtureSwitchStackIDBlank = "b5c6d7e8-f901-41a2-b3c4-d5e6f708192a"
+
+	fixtureVpnServerIDOne   = "a1b2c3d4-e5f6-4071-8293-a4b5c6d7e8f9"
+	fixtureVpnServerIDTwo   = "b2c3d4e5-f607-4182-93a4-b5c6d7e8f901"
+	fixtureVpnServerIDBlank = "c3d4e5f6-0718-4293-a4b5-c6d7e8f90123"
+	fixtureVpnTunnelID      = "d4e5f607-1829-43a4-b5c6-d7e8f9012345"
+	fixtureVpnTunnelIDBlank = "e5f60718-293a-44b5-c6d7-e8f901234567"
 )
 
 const (
-	pathSites          = "/proxy/network/integration/v1/sites"
-	pathNetworks       = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/networks"
-	pathDeviceTags     = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/device-tags"
-	pathFirewallZones  = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/firewall/zones"
-	pathWifiBroadcasts = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/wifi/broadcasts"
+	pathSites             = "/proxy/network/integration/v1/sites"
+	pathNetworks          = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/networks"
+	pathDeviceTags        = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/device-tags"
+	pathFirewallZones     = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/firewall/zones"
+	pathFirewallPolicies  = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/firewall/policies"
+	pathWifiBroadcasts    = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/wifi/broadcasts"
+	pathRadiusProfiles    = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/radius/profiles"
+	pathTrafficMatching   = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/traffic-matching-lists"
+	pathAclRules          = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/acl-rules"
+	pathDnsPolicies       = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/dns/policies"
+	pathLags              = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/switching/lags"
+	pathMcLagDomains      = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/switching/mc-lag-domains"
+	pathSwitchStacks      = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/switching/switch-stacks"
+	pathVpnServers        = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/vpn/servers"
+	pathSiteToSiteTunnels = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/vpn/site-to-site-tunnels"
 )
 
 func readFixture(t *testing.T, name string) []byte {
@@ -77,6 +128,16 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 	deviceTags := readFixture(t, "device-tags.json")
 	firewallZones := readFixture(t, "firewall-zones.json")
 	wifiBroadcasts := readFixture(t, "wifi-broadcasts.json")
+	radiusProfiles := readFixture(t, "radius-profiles.json")
+	trafficMatchingLists := readFixture(t, "traffic-matching-lists.json")
+	firewallPolicies := readFixture(t, "firewall-policies.json")
+	aclRules := readFixture(t, "acl-rules.json")
+	dnsPolicies := readFixture(t, "dns-policies.json")
+	lags := readFixture(t, "switching-lags.json")
+	mcLagDomains := readFixture(t, "switching-mc-lag-domains.json")
+	switchStacks := readFixture(t, "switching-switch-stacks.json")
+	vpnServers := readFixture(t, "vpn-servers.json")
+	siteToSiteTunnels := readFixture(t, "vpn-site-to-site-tunnels.json")
 	details := networkDetailFixtures(t)
 	wifiDetails := map[string][]byte{
 		fixtureBroadcastIDOne:   readFixture(t, "wifi-broadcast-corp.json"),
@@ -97,8 +158,28 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write(deviceTags)
 		case r.URL.Path == pathFirewallZones:
 			_, _ = w.Write(firewallZones)
+		case r.URL.Path == pathFirewallPolicies:
+			_, _ = w.Write(firewallPolicies)
+		case r.URL.Path == pathAclRules:
+			_, _ = w.Write(aclRules)
+		case r.URL.Path == pathDnsPolicies:
+			_, _ = w.Write(dnsPolicies)
+		case r.URL.Path == pathLags:
+			_, _ = w.Write(lags)
+		case r.URL.Path == pathMcLagDomains:
+			_, _ = w.Write(mcLagDomains)
+		case r.URL.Path == pathSwitchStacks:
+			_, _ = w.Write(switchStacks)
+		case r.URL.Path == pathVpnServers:
+			_, _ = w.Write(vpnServers)
+		case r.URL.Path == pathSiteToSiteTunnels:
+			_, _ = w.Write(siteToSiteTunnels)
 		case r.URL.Path == pathWifiBroadcasts:
 			_, _ = w.Write(wifiBroadcasts)
+		case r.URL.Path == pathRadiusProfiles:
+			_, _ = w.Write(radiusProfiles)
+		case r.URL.Path == pathTrafficMatching:
+			_, _ = w.Write(trafficMatchingLists)
 		case r.URL.Path == "/proxy/network/integration/v1/sites/"+fixtureBranchSiteID+"/networks":
 			_, _ = w.Write(emptyPage)
 		case strings.HasPrefix(r.URL.Path, pathWifiBroadcasts+"/"):
@@ -241,6 +322,530 @@ func TestSnapshotFirewallZonesUnconfiguredExitsZero(t *testing.T) {
 
 	if docs := parseEmittedCRs(t, out); len(docs) != 0 {
 		t.Fatalf("got %d CRs for an unconfigured firewall, want 0:\n%s", len(docs), out)
+	}
+}
+
+func TestSnapshotFirewallPoliciesGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "firewall-policies", "--controller", srv.URL)
+	compareGolden(t, "firewall-policies.golden.yaml", out)
+}
+
+// TestSnapshotFirewallPoliciesResolvesRefsAndSkipsInline checks the projection rules: zone
+// IDs resolve to a zoneRef (user-defined) or builtInZone (system), filter list IDs resolve
+// to a UnifiTrafficMatchingList name, upstream UUIDs never reach spec, and a policy whose
+// filter variant is not modeled is skipped with a warning rather than emitted partially.
+func TestSnapshotFirewallPoliciesResolvesRefsAndSkipsInline(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, errOut := runSnapshot(t, "firewall-policies", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 2 {
+		t.Fatalf("got %d firewall policies, want 2:\n%s", len(docs), out)
+	}
+	for _, doc := range docs {
+		if doc.Kind != "UnifiFirewallPolicy" {
+			t.Fatalf("kind = %q, want UnifiFirewallPolicy", doc.Kind)
+		}
+		if asString(doc.Status["policyID"]) == "" {
+			t.Errorf("%s status.policyID is empty, want the upstream id", doc.Metadata.Name)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixturePolicyIDOne, fixturePolicyIDTwo, fixturePolicyIDThree,
+			"77e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f70",
+			"88f5a6b7-c8d9-4e0f-1a2b-3c4d5e6f7081",
+			fixtureTrafficMatchingListIDOne, fixtureTrafficMatchingListIDThree,
+			`"zoneId"`, `"trafficMatchingListId"`,
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s spec leaks %q: %s", doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
+	}
+
+	byName := map[string]emittedCR{}
+	for _, doc := range docs {
+		byName[doc.Metadata.Name] = doc
+	}
+
+	allow, ok := byName["allow-lan-to-wan"]
+	if !ok {
+		t.Fatalf("no emitted policy named allow-lan-to-wan:\n%s", out)
+	}
+	source, _ := allow.Spec["source"].(map[string]any)
+	if zoneRef, ok := source["zoneRef"].(map[string]any); !ok || asString(zoneRef["name"]) != "custom-zone" {
+		t.Errorf("allow source.zoneRef = %v, want custom-zone", source["zoneRef"])
+	}
+	filter, _ := source["filter"].(map[string]any)
+	ipAddress, _ := filter["ipAddress"].(map[string]any)
+	listRef, _ := ipAddress["listRef"].(map[string]any)
+	if asString(listRef["name"]) != "corp-addresses" {
+		t.Errorf("allow source filter listRef = %v, want corp-addresses", ipAddress["listRef"])
+	}
+	destination, _ := allow.Spec["destination"].(map[string]any)
+	if builtIn, ok := destination["builtInZone"].(map[string]any); !ok || asString(builtIn["name"]) != "Internal" {
+		t.Errorf("allow destination.builtInZone = %v, want Internal", destination["builtInZone"])
+	}
+
+	block, ok := byName["block-iot-to-lan"]
+	if !ok {
+		t.Fatalf("no emitted policy named block-iot-to-lan:\n%s", out)
+	}
+	blockSource, _ := block.Spec["source"].(map[string]any)
+	if builtIn, ok := blockSource["builtInZone"].(map[string]any); !ok || asString(builtIn["name"]) != "Internal" {
+		t.Errorf("block source.builtInZone = %v, want Internal", blockSource["builtInZone"])
+	}
+	blockDestination, _ := block.Spec["destination"].(map[string]any)
+	if zoneRef, ok := blockDestination["zoneRef"].(map[string]any); !ok || asString(zoneRef["name"]) != "custom-zone" {
+		t.Errorf("block destination.zoneRef = %v, want custom-zone", blockDestination["zoneRef"])
+	}
+
+	if !strings.Contains(errOut, "Legacy Inline Drop") || !strings.Contains(errOut, "not representable") {
+		t.Errorf("stderr = %q, want a warning naming the skipped inline-filter policy", errOut)
+	}
+}
+
+func TestSnapshotAclGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "acl", "--controller", srv.URL)
+	compareGolden(t, "acl.golden.yaml", out)
+}
+
+// TestSnapshotAclResolvesRefsAndSkips checks the projection rules: network UUIDs resolve
+// to UnifiNetwork names, an enforcing device UUID resolves to its device-tag name, upstream
+// UUIDs never reach spec, and a rule that cannot be represented (an unknown network or an
+// untagged enforcing device) is skipped with a warning rather than emitted partially.
+func TestSnapshotAclResolvesRefsAndSkips(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, errOut := runSnapshot(t, "acl", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 3 {
+		t.Fatalf("got %d acl rules, want 3:\n%s", len(docs), out)
+	}
+	for _, doc := range docs {
+		if doc.Kind != "UnifiAclRule" {
+			t.Fatalf("kind = %q, want UnifiAclRule", doc.Kind)
+		}
+		if asString(doc.Status["ruleID"]) == "" {
+			t.Errorf("%s status.ruleID is empty, want the upstream id", doc.Metadata.Name)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixtureAclRuleIDOne, fixtureAclRuleIDTwo, fixtureAclRuleIDThree, fixtureAclRuleIDFour, fixtureAclRuleIDFive,
+			"77b2c3d4-e5f6-4a7b-9c8d-9e0f1a2b3c4d",
+			"88c3d4e5-f6a7-4b8c-9d0e-0f1a2b3c4d5e",
+			"aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+			`"networkIds"`, `"networkIdFilter"`, `"deviceIds"`,
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s spec leaks %q: %s", doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
+	}
+
+	byName := map[string]emittedCR{}
+	for _, doc := range docs {
+		byName[doc.Metadata.Name] = doc
+	}
+
+	allow, ok := byName["allow-guest-to-dns"]
+	if !ok {
+		t.Fatalf("no emitted rule named allow-guest-to-dns:\n%s", out)
+	}
+	allowDest, _ := allow.Spec["destination"].(map[string]any)
+	networks, _ := allowDest["networks"].(map[string]any)
+	networkRefs, _ := networks["networkRefs"].([]any)
+	if len(networkRefs) != 1 {
+		t.Fatalf("allow destination networkRefs = %v, want one", networks["networkRefs"])
+	}
+	if ref, _ := networkRefs[0].(map[string]any); asString(ref["name"]) != "guest-wifi" {
+		t.Errorf("allow destination networkRef = %v, want guest-wifi", networkRefs[0])
+	}
+	tags, _ := allow.Spec["enforcingDeviceTags"].([]any)
+	if len(tags) != 1 {
+		t.Fatalf("allow enforcingDeviceTags = %v, want one", allow.Spec["enforcingDeviceTags"])
+	}
+	if tag, _ := tags[0].(map[string]any); asString(tag["name"]) != "iot-switch" {
+		t.Errorf("allow enforcingDeviceTag = %v, want iot-switch", tags[0])
+	}
+
+	mac, ok := byName["allow-switch-mac"]
+	if !ok {
+		t.Fatalf("no emitted rule named allow-switch-mac:\n%s", out)
+	}
+	networkRef, _ := mac.Spec["networkRef"].(map[string]any)
+	if asString(networkRef["name"]) != "iot" {
+		t.Errorf("mac networkRef = %v, want iot", mac.Spec["networkRef"])
+	}
+
+	if !strings.Contains(errOut, "Unknown Network Block") {
+		t.Errorf("stderr = %q, want a warning naming the skipped unknown-network rule", errOut)
+	}
+	if !strings.Contains(errOut, "Untagged Enforcer") || !strings.Contains(errOut, "device tag") {
+		t.Errorf("stderr = %q, want a warning naming the skipped untagged-enforcer rule", errOut)
+	}
+}
+
+func TestSnapshotDnsGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "dns", "--controller", srv.URL)
+	compareGolden(t, "dns.golden.yaml", out)
+}
+
+// TestSnapshotDnsProjectsVariantsAndSkips checks the projection rules: each record emits
+// only its variant sub-object, the CR name is derived from domain + type, upstream UUIDs
+// never reach spec, and an unknown type, a mismatched payload, or a missing required field
+// is skipped with a warning rather than emitted partially.
+func TestSnapshotDnsProjectsVariantsAndSkips(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, errOut := runSnapshot(t, "dns", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 7 {
+		t.Fatalf("got %d dns policies, want 7:\n%s", len(docs), out)
+	}
+	for _, doc := range docs {
+		if doc.Kind != "UnifiDnsPolicy" {
+			t.Fatalf("kind = %q, want UnifiDnsPolicy", doc.Kind)
+		}
+		if asString(doc.Status["policyID"]) == "" {
+			t.Errorf("%s status.policyID is empty, want the upstream id", doc.Metadata.Name)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixtureDnsRecordIDOne, fixtureDnsRecordIDTwo, fixtureDnsRecordIDThree,
+			fixtureDnsRecordIDFour, fixtureDnsRecordIDFive, fixtureDnsRecordIDSix,
+			fixtureDnsRecordIDSeven, fixtureDnsRecordIDUnknown, fixtureDnsRecordIDForeign,
+			fixtureDnsRecordIDMissing,
+			`"policyID"`, `"id"`, `"_id"`,
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s spec leaks %q: %s", doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
+	}
+
+	byName := map[string]emittedCR{}
+	for _, doc := range docs {
+		byName[doc.Metadata.Name] = doc
+	}
+
+	cases := map[string]string{
+		"www-example-com-a-record":            "aRecord",
+		"www-example-com-aaaa-record":         "aaaaRecord",
+		"alias-example-com-cname-record":      "cnameRecord",
+		"example-com-mx-record":               "mxRecord",
+		"ldap-tcp-example-com-srv-record":     "srvRecord",
+		"text-example-com-txt-record":         "txtRecord",
+		"internal-example-com-forward-domain": "forwardDomain",
+	}
+	allVariants := []string{"aRecord", "aaaaRecord", "cnameRecord", "mxRecord", "srvRecord", "txtRecord", "forwardDomain"}
+	for name, wantVariant := range cases {
+		doc, ok := byName[name]
+		if !ok {
+			t.Errorf("no emitted policy named %s:\n%s", name, out)
+			continue
+		}
+		for _, variant := range allVariants {
+			_, present := doc.Spec[variant]
+			if variant == wantVariant && !present {
+				t.Errorf("%s spec.%s is absent, want it present", name, variant)
+			}
+			if variant != wantVariant && present {
+				t.Errorf("%s spec.%s is present, want only %s", name, variant, wantVariant)
+			}
+		}
+	}
+
+	if srv, _ := byName["ldap-tcp-example-com-srv-record"].Spec["srvRecord"].(map[string]any); asString(srv["service"]) != "_ldap" {
+		t.Errorf("srv record = %v, want service _ldap", byName["ldap-tcp-example-com-srv-record"].Spec["srvRecord"])
+	}
+
+	for _, want := range []string{"unknown type", "mismatch.example.com", "missing-ttl.example.com"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr = %q, want a warning mentioning %q", errOut, want)
+		}
+	}
+}
+
+func TestSnapshotSwitchingGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "switching", "--controller", srv.URL)
+	compareGolden(t, "switching.golden.yaml", out)
+}
+
+// TestSnapshotSwitchingAdoptsAndSkips checks the projection rules: LAG members resolve to
+// device-tag names, MC-LAG domains and switch stacks adopt by name, upstream UUIDs never
+// reach spec, and a LAG with an untagged member or a domain/stack without a name is skipped
+// with a warning rather than emitted partially.
+func TestSnapshotSwitchingAdoptsAndSkips(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, errOut := runSnapshot(t, "switching", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 4 {
+		t.Fatalf("got %d switching resources, want 4:\n%s", len(docs), out)
+	}
+
+	kinds := map[string]int{}
+	for _, doc := range docs {
+		kinds[doc.Kind]++
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixtureLagIDOne, fixtureLagIDTwo, fixtureLagIDThree,
+			fixtureMcLagDomainID, fixtureSwitchStackID, fixtureSwitchStackIDBlank,
+			"aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+			"ee1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+			"ff1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+			`"deviceId"`, `"deviceID"`, `"id"`, `"lagID"`, `"domainID"`, `"stackID"`,
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s/%s spec leaks %q: %s", doc.Kind, doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
+	}
+	if kinds["UnifiSwitchingLag"] != 2 || kinds["UnifiSwitchingMcLagDomain"] != 1 || kinds["UnifiSwitchingSwitchStack"] != 1 {
+		t.Fatalf("kind counts = %v, want 2 lags, 1 mc-lag domain, 1 switch stack", kinds)
+	}
+
+	byName := map[string]emittedCR{}
+	for _, doc := range docs {
+		byName[doc.Metadata.Name] = doc
+	}
+
+	local, ok := byName["local-iot-switch-1-2"]
+	if !ok {
+		t.Fatalf("no emitted lag named local-iot-switch-1-2:\n%s", out)
+	}
+	if local.Spec["type"] != "LOCAL" {
+		t.Errorf("lag spec.type = %v, want LOCAL", local.Spec["type"])
+	}
+	members, _ := local.Spec["members"].([]any)
+	if len(members) != 1 {
+		t.Fatalf("lag spec.members = %v, want one", local.Spec["members"])
+	}
+	member, _ := members[0].(map[string]any)
+	tag, _ := member["deviceTag"].(map[string]any)
+	if asString(tag["name"]) != "iot-switch" {
+		t.Errorf("lag member deviceTag = %v, want iot-switch", member["deviceTag"])
+	}
+	if asString(local.Status["lagID"]) == "" || local.Status["type"] != "LOCAL" {
+		t.Errorf("lag status = %v, want lagID and type", local.Status)
+	}
+
+	domain, ok := byName["core-mc-lag"]
+	if !ok {
+		t.Fatalf("no emitted mc-lag domain named core-mc-lag:\n%s", out)
+	}
+	if asString(domain.Spec["name"]) != "Core MC-LAG" || asString(domain.Status["domainID"]) == "" {
+		t.Errorf("mc-lag domain = spec %v status %v", domain.Spec, domain.Status)
+	}
+	peers, _ := domain.Status["peers"].([]any)
+	if len(peers) != 2 {
+		t.Errorf("mc-lag domain status.peers = %v, want 2", domain.Status["peers"])
+	}
+
+	stack, ok := byName["core-stack"]
+	if !ok {
+		t.Fatalf("no emitted switch stack named core-stack:\n%s", out)
+	}
+	if asString(stack.Spec["name"]) != "Core Stack" || asString(stack.Status["stackID"]) == "" {
+		t.Errorf("switch stack = spec %v status %v", stack.Spec, stack.Status)
+	}
+
+	for _, want := range []string{"member device does not belong", "upstream domain has no name", "upstream stack has no name"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr = %q, want a warning mentioning %q", errOut, want)
+		}
+	}
+}
+
+func TestSnapshotVpnGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "vpn", "--controller", srv.URL)
+	compareGolden(t, "vpn.golden.yaml", out)
+}
+
+// TestSnapshotVpnAdoptsAndSkips checks the projection rules: VPN servers and site-to-site
+// tunnels are adopted by name with their upstream UUID/type/enabled in status only, no
+// UUID or credential ever reaches spec, and an object without a name is skipped with a
+// warning rather than emitted partially.
+func TestSnapshotVpnAdoptsAndSkips(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, errOut := runSnapshot(t, "vpn", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 3 {
+		t.Fatalf("got %d vpn resources, want 3:\n%s", len(docs), out)
+	}
+	kinds := map[string]int{}
+	for _, doc := range docs {
+		kinds[doc.Kind]++
+		if asString(doc.Spec["name"]) == "" {
+			t.Errorf("%s spec.name is required and must be non-empty", doc.Metadata.Name)
+		}
+		siteRef, ok := doc.Spec["siteRef"].(map[string]any)
+		if !ok || asString(siteRef["name"]) == "" {
+			t.Errorf("%s spec.siteRef.name is required and must be non-empty", doc.Metadata.Name)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixtureVpnServerIDOne, fixtureVpnServerIDTwo, fixtureVpnServerIDBlank,
+			fixtureVpnTunnelID, fixtureVpnTunnelIDBlank,
+			`"id"`, `"_id"`, `"serverID"`, `"tunnelID"`, `"type"`, `"enabled"`,
+			"preSharedKey", "psk", "secret",
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s spec leaks %q: %s", doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
+	}
+	if kinds["UnifiVpnServer"] != 2 || kinds["UnifiSiteToSiteTunnel"] != 1 {
+		t.Fatalf("kind counts = %v, want 2 vpn servers and 1 site-to-site tunnel", kinds)
+	}
+
+	byName := map[string]emittedCR{}
+	for _, doc := range docs {
+		byName[doc.Metadata.Name] = doc
+	}
+
+	server, ok := byName["wireguard-server"]
+	if !ok {
+		t.Fatalf("no emitted vpn server named wireguard-server:\n%s", out)
+	}
+	if asString(server.Status["serverID"]) != fixtureVpnServerIDOne || server.Status["type"] != "WIREGUARD" {
+		t.Errorf("server status = %v, want serverID and type WIREGUARD", server.Status)
+	}
+	if enabled, ok := server.Status["enabled"].(bool); !ok || !enabled {
+		t.Errorf("server status.enabled = %v, want true", server.Status["enabled"])
+	}
+
+	legacy, ok := byName["legacy-l2tp"]
+	if !ok {
+		t.Fatalf("no emitted vpn server named legacy-l2tp:\n%s", out)
+	}
+	if enabled, ok := legacy.Status["enabled"].(bool); !ok || enabled {
+		t.Errorf("legacy server status.enabled = %v, want false", legacy.Status["enabled"])
+	}
+
+	tunnel, ok := byName["hq-to-branch"]
+	if !ok {
+		t.Fatalf("no emitted tunnel named hq-to-branch:\n%s", out)
+	}
+	if asString(tunnel.Status["tunnelID"]) != fixtureVpnTunnelID || tunnel.Status["type"] != "IPSEC" {
+		t.Errorf("tunnel status = %v, want tunnelID and type IPSEC", tunnel.Status)
+	}
+
+	for _, want := range []string{"upstream server has no name", "upstream tunnel has no name"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr = %q, want a warning mentioning %q", errOut, want)
+		}
+	}
+}
+
+func TestSnapshotRadiusGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "radius", "--controller", srv.URL)
+	compareGolden(t, "radius.golden.yaml", out)
+}
+
+// TestSnapshotRadiusRecordsIDInStatusOnly checks the golden rule for the adoption
+// shape: the upstream profile UUID never reaches spec and is carried in status for
+// correlation, while spec references the site by name only.
+func TestSnapshotRadiusRecordsIDInStatusOnly(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "radius", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 2 {
+		t.Fatalf("got %d radius profiles, want 2", len(docs))
+	}
+	for _, doc := range docs {
+		if doc.Kind != "UnifiRadiusProfile" {
+			t.Fatalf("kind = %q, want UnifiRadiusProfile", doc.Kind)
+		}
+		if asString(doc.Status["radiusProfileID"]) == "" {
+			t.Errorf("%s status.radiusProfileID is empty, want the upstream id", doc.Metadata.Name)
+		}
+		siteRef, ok := doc.Spec["siteRef"].(map[string]any)
+		if !ok || asString(siteRef["name"]) == "" {
+			t.Errorf("%s spec.siteRef.name is required and must be non-empty", doc.Metadata.Name)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixtureRadiusProfileIDOne, fixtureRadiusProfileIDTwo,
+			`"id"`, `"_id"`, `"radiusProfileID"`,
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s spec leaks %q: %s", doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
+	}
+}
+
+func TestSnapshotTrafficMatchingGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "traffic-matching", "--controller", srv.URL)
+	compareGolden(t, "traffic-matching.golden.yaml", out)
+}
+
+// TestSnapshotTrafficMatchingRecordsIDInStatusOnly checks the golden rule: the upstream
+// matching-list UUID never reaches spec and is carried in status for correlation, while
+// spec references the site by name only.
+func TestSnapshotTrafficMatchingRecordsIDInStatusOnly(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "traffic-matching", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 3 {
+		t.Fatalf("got %d traffic matching lists, want 3", len(docs))
+	}
+	for _, doc := range docs {
+		if doc.Kind != "UnifiTrafficMatchingList" {
+			t.Fatalf("kind = %q, want UnifiTrafficMatchingList", doc.Kind)
+		}
+		if asString(doc.Status["listID"]) == "" {
+			t.Errorf("%s status.listID is empty, want the upstream id", doc.Metadata.Name)
+		}
+		if asString(doc.Spec["name"]) == "" {
+			t.Errorf("%s spec.name is required and must be non-empty", doc.Metadata.Name)
+		}
+		siteRef, ok := doc.Spec["siteRef"].(map[string]any)
+		if !ok || asString(siteRef["name"]) == "" {
+			t.Errorf("%s spec.siteRef.name is required and must be non-empty", doc.Metadata.Name)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixtureTrafficMatchingListIDOne, fixtureTrafficMatchingListIDTwo, fixtureTrafficMatchingListIDThree,
+			`"id"`, `"_id"`, `"listID"`,
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s spec leaks %q: %s", doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
 	}
 }
 

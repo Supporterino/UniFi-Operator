@@ -7,6 +7,18 @@ resources:
 - bases/unifi.supporterino.de_unifinetworks.yaml
 - bases/unifi.supporterino.de_unififirewallzones.yaml
 - bases/unifi.supporterino.de_unifiwifibroadcasts.yaml
+- bases/unifi.supporterino.de_unifiradiusprofiles.yaml
+- bases/unifi.supporterino.de_unifitrafficmatchinglists.yaml
+- bases/unifi.supporterino.de_unififirewallpolicies.yaml
+- bases/unifi.supporterino.de_unififirewallpolicyorderings.yaml
+- bases/unifi.supporterino.de_unifiaclrules.yaml
+- bases/unifi.supporterino.de_unifiaclruleorderings.yaml
+- bases/unifi.supporterino.de_unifidnspolicies.yaml
+- bases/unifi.supporterino.de_unifiswitchinglags.yaml
+- bases/unifi.supporterino.de_unifiswitchingmclagdomains.yaml
+- bases/unifi.supporterino.de_unifiswitchingswitchstacks.yaml
+- bases/unifi.supporterino.de_unifivpnservers.yaml
+- bases/unifi.supporterino.de_unifisitetositetunnels.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

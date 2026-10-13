@@ -1,0 +1,66 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiFirewallPolicy
+metadata:
+  name: allow-lan-to-wan
+spec:
+  action:
+    allowReturnTraffic: false
+    type: ALLOW
+  description: Allow LAN clients to reach the internet
+  destination:
+    builtInZone:
+      name: Internal
+    filter:
+      port:
+        listRef:
+          name: web-ports
+        matchOpposite: true
+      type: PORT
+  enabled: true
+  ipProtocolScope:
+    ipVersion: IPV4_AND_IPV6
+  loggingEnabled: false
+  name: Allow LAN to WAN
+  siteRef:
+    name: default
+  source:
+    filter:
+      ipAddress:
+        listRef:
+          name: corp-addresses
+        matchOpposite: false
+      type: IP_ADDRESS
+    zoneRef:
+      name: custom-zone
+status:
+  destinationZoneID: 88f5a6b7-c8d9-4e0f-1a2b-3c4d5e6f7081
+  origin: USER_DEFINED
+  policyID: 1a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9
+  sourceZoneID: 77e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f70
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiFirewallPolicy
+metadata:
+  name: block-iot-to-lan
+spec:
+  action:
+    type: BLOCK
+  destination:
+    zoneRef:
+      name: custom-zone
+  enabled: true
+  ipProtocolScope:
+    ipVersion: IPV4
+  loggingEnabled: true
+  name: Block IoT to LAN
+  siteRef:
+    name: default
+  source:
+    builtInZone:
+      name: Internal
+status:
+  destinationZoneID: 77e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f70
+  origin: USER_DEFINED
+  policyID: 2b3c4d5e-6f70-4182-93a4-b5c6d7e8f901
+  sourceZoneID: 88f5a6b7-c8d9-4e0f-1a2b-3c4d5e6f7081

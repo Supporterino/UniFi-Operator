@@ -1,0 +1,36 @@
+{
+  "count": 3,
+  "data": [
+    {
+      "id": "7c1e2f3a-4b5c-4d6e-8f90-1a2b3c4d5e6f",
+      "name": "Corp Addresses",
+      "type": "IPV4_ADDRESSES",
+      "items": [
+        { "type": "IP_ADDRESS", "value": "10.0.0.1" },
+        { "type": "IP_ADDRESS_RANGE", "start": "10.0.0.10", "stop": "10.0.0.20" },
+        { "type": "SUBNET", "value": "10.0.0.0/24" }
+      ]
+    },
+    {
+      "id": "8d2f3a4b-5c6d-4e7f-9012-2b3c4d5e6f70",
+      "name": "Corp IPv6",
+      "type": "IPV6_ADDRESSES",
+      "items": [
+        { "type": "IP_ADDRESS", "value": "2001:db8::1" },
+        { "type": "SUBNET", "value": "2001:db8::/64" }
+      ]
+    },
+    {
+      "id": "9e3a4b5c-6d7e-4f80-9123-3c4d5e6f7081",
+      "name": "Web Ports",
+      "type": "PORTS",
+      "items": [
+        { "type": "PORT_NUMBER", "value": 443 },
+        { "type": "PORT_NUMBER_RANGE", "start": 8000, "stop": 8080 }
+      ]
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 3
+}

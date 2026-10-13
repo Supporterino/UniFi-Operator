@@ -94,11 +94,68 @@ const (
 	// UnifiNetwork belonging to a different site. A network can only be a member
 	// of a zone on its own site, so no membership is written (design D3).
 	reasonCrossSiteReference = "CrossSiteReference"
-	// reasonRadiusProfileUnsupported marks a UnifiWifiBroadcast whose security
-	// configuration references a UnifiRadiusProfile. The kind is not yet
-	// implemented, so the controller fails closed and does not mutate the
-	// upstream broadcast (design D4).
-	reasonRadiusProfileUnsupported = "RadiusProfileUnsupported"
+	// reasonRadiusProfileRefNotFound marks a UnifiWifiBroadcast whose security
+	// configuration references a UnifiRadiusProfile that does not resolve
+	// (absent, or being deleted). The controller fails closed and does not
+	// mutate the upstream broadcast.
+	reasonRadiusProfileRefNotFound = "RadiusProfileRefNotFound"
+	// reasonProfileNotFound marks a UnifiRadiusProfile whose spec.name matches
+	// no upstream profile on the referenced site. The controller adopts only an
+	// existing profile, so nothing is created or mutated (adoption kind).
+	reasonProfileNotFound = "ProfileNotFound"
+	// reasonZoneRefNotFound marks a UnifiFirewallPolicy whose source or
+	// destination zoneRef does not resolve to a UnifiFirewallZone (absent, or
+	// being deleted). No upstream policy is written.
+	reasonZoneRefNotFound = "ZoneRefNotFound"
+	// reasonBuiltInZoneNotFound marks a UnifiFirewallPolicy whose built-in-zone
+	// selector names no system-defined upstream zone. No upstream policy is
+	// written.
+	reasonBuiltInZoneNotFound = "BuiltInZoneNotFound"
+	// reasonFilterRefNotFound marks a UnifiFirewallPolicy whose traffic filter
+	// references a UnifiTrafficMatchingList that does not resolve (absent, or
+	// being deleted). No upstream policy is written.
+	reasonFilterRefNotFound = "FilterRefNotFound"
+	// reasonPolicyRefNotFound marks a UnifiFirewallPolicyOrdering whose ordered
+	// policy reference does not resolve to a provisioned UnifiFirewallPolicy.
+	// No order is applied.
+	reasonPolicyRefNotFound = "PolicyRefNotFound"
+	// reasonZonePairConflict marks a UnifiFirewallPolicyOrdering that shares its
+	// source/destination zone pair with another ordering object in the same
+	// site. No order is applied until a single unambiguous object remains
+	// (design D2).
+	reasonZonePairConflict = "ZonePairConflict"
+	// reasonFirewallPolicyZonePairMismatch marks a UnifiFirewallPolicyOrdering
+	// that lists a UnifiFirewallPolicy whose resolved source/destination zone
+	// pair differs from the ordering's own pair. No order is applied.
+	reasonFirewallPolicyZonePairMismatch = "FirewallPolicyZonePairMismatch"
+	// reasonSiteOrderingConflict marks a UnifiAclRuleOrdering that shares its
+	// site with another site-global ordering object. No order is applied until a
+	// single unambiguous object remains (design D2).
+	reasonSiteOrderingConflict = "SiteOrderingConflict"
+	// reasonAclRuleRefNotFound marks a UnifiAclRuleOrdering whose ordered ACL
+	// rule reference does not resolve to a provisioned UnifiAclRule. No order is
+	// applied.
+	reasonAclRuleRefNotFound = "AclRuleRefNotFound"
+	// reasonLagSelectorNoMatch marks a UnifiSwitchingLag whose typed composite
+	// selector matches no upstream LAG on the referenced site. The controller
+	// adopts exactly one matching LAG, so nothing is mutated (adoption kind).
+	reasonLagSelectorNoMatch = "LagSelectorNoMatch"
+	// reasonLagSelectorAmbiguous marks a UnifiSwitchingLag whose typed composite
+	// selector matches more than one upstream LAG. Exactly one is required, so
+	// nothing is mutated (adoption kind).
+	reasonLagSelectorAmbiguous = "LagSelectorAmbiguous"
+	// reasonMcLagDomainNotFound marks a UnifiSwitchingMcLagDomain whose spec.name
+	// matches no upstream MC-LAG domain on the referenced site (adoption kind).
+	reasonMcLagDomainNotFound = "McLagDomainNotFound"
+	// reasonSwitchStackNotFound marks a UnifiSwitchingSwitchStack whose spec.name
+	// matches no upstream switch stack on the referenced site (adoption kind).
+	reasonSwitchStackNotFound = "SwitchStackNotFound"
+	// reasonVpnServerNotFound marks a UnifiVpnServer whose spec.name matches no
+	// upstream VPN server on the referenced site (adoption kind).
+	reasonVpnServerNotFound = "VpnServerNotFound"
+	// reasonTunnelNotFound marks a UnifiSiteToSiteTunnel whose spec.name matches
+	// no upstream tunnel on the referenced site (adoption kind).
+	reasonTunnelNotFound = "TunnelNotFound"
 )
 
 // maxStatusMessageLen caps how much controller-provided text is copied into a

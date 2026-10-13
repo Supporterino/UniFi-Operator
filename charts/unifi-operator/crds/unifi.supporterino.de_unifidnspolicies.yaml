@@ -1,0 +1,360 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: unifidnspolicies.unifi.supporterino.de
+spec:
+  group: unifi.supporterino.de
+  names:
+    kind: UnifiDnsPolicy
+    listKind: UnifiDnsPolicyList
+    plural: unifidnspolicies
+    singular: unifidnspolicy
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .spec.domain
+      name: Domain
+      type: string
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: UnifiDnsPolicy is the Schema for the unifidnspolicies API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of UnifiDnsPolicy
+            properties:
+              aRecord:
+                description: |-
+                  ARecord holds the A_RECORD variant fields. Required for type A_RECORD and
+                  forbidden otherwise.
+                properties:
+                  ipv4Address:
+                    description: IPv4Address is the IPv4 address the domain resolves
+                      to.
+                    minLength: 1
+                    type: string
+                  ttlSeconds:
+                    description: TTLSeconds is the record time to live in seconds
+                      (0..86400).
+                    format: int32
+                    maximum: 86400
+                    minimum: 0
+                    type: integer
+                required:
+                - ipv4Address
+                - ttlSeconds
+                type: object
+              aaaaRecord:
+                description: |-
+                  AaaaRecord holds the AAAA_RECORD variant fields. Required for type
+                  AAAA_RECORD and forbidden otherwise.
+                properties:
+                  ipv6Address:
+                    description: IPv6Address is the IPv6 address the domain resolves
+                      to.
+                    minLength: 1
+                    type: string
+                  ttlSeconds:
+                    description: TTLSeconds is the record time to live in seconds
+                      (0..86400).
+                    format: int32
+                    maximum: 86400
+                    minimum: 0
+                    type: integer
+                required:
+                - ipv6Address
+                - ttlSeconds
+                type: object
+              cnameRecord:
+                description: |-
+                  CnameRecord holds the CNAME_RECORD variant fields. Required for type
+                  CNAME_RECORD and forbidden otherwise.
+                properties:
+                  targetDomain:
+                    description: TargetDomain is the canonical name the domain aliases.
+                    minLength: 1
+                    type: string
+                  ttlSeconds:
+                    description: TTLSeconds is the record time to live in seconds
+                      (0..604800).
+                    format: int32
+                    maximum: 604800
+                    minimum: 0
+                    type: integer
+                required:
+                - targetDomain
+                - ttlSeconds
+                type: object
+              domain:
+                description: Domain is the domain the record applies to.
+                maxLength: 127
+                minLength: 1
+                type: string
+              enabled:
+                default: true
+                description: Enabled controls whether the record is active.
+                type: boolean
+              forwardDomain:
+                description: |-
+                  ForwardDomain holds the FORWARD_DOMAIN variant fields. Required for type
+                  FORWARD_DOMAIN and forbidden otherwise.
+                properties:
+                  ipAddress:
+                    description: IPAddress is the DNS server the query is forwarded
+                      to.
+                    minLength: 1
+                    type: string
+                required:
+                - ipAddress
+                type: object
+              mxRecord:
+                description: |-
+                  MxRecord holds the MX_RECORD variant fields. Required for type MX_RECORD
+                  and forbidden otherwise.
+                properties:
+                  mailServerDomain:
+                    description: MailServerDomain is the mail server the domain routes
+                      mail to.
+                    minLength: 1
+                    type: string
+                  priority:
+                    description: |-
+                      Priority ranks this mail server; a lower number is preferred
+                      (0..65535).
+                    format: int32
+                    maximum: 65535
+                    minimum: 0
+                    type: integer
+                required:
+                - mailServerDomain
+                - priority
+                type: object
+              siteRef:
+                description: |-
+                  SiteRef references the UnifiSite that owns this policy. The reference
+                  resolves in the same namespace.
+                properties:
+                  name:
+                    description: |-
+                      Name is the name of the referenced object in the referencing object's
+                      namespace.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              srvRecord:
+                description: |-
+                  SrvRecord holds the SRV_RECORD variant fields. Required for type
+                  SRV_RECORD and forbidden otherwise.
+                properties:
+                  port:
+                    description: Port is the service port (0..65535).
+                    format: int32
+                    maximum: 65535
+                    minimum: 0
+                    type: integer
+                  priority:
+                    description: Priority ranks this record; a lower number is preferred
+                      (0..65535).
+                    format: int32
+                    maximum: 65535
+                    minimum: 0
+                    type: integer
+                  protocol:
+                    description: Protocol is the service protocol (for example _tcp).
+                    minLength: 1
+                    type: string
+                  serverDomain:
+                    description: ServerDomain is the domain of the server running
+                      the service.
+                    minLength: 1
+                    type: string
+                  service:
+                    description: Service is the service name (for example _ldap).
+                    minLength: 1
+                    type: string
+                  weight:
+                    description: |-
+                      Weight is the relative weight for records with the same priority
+                      (0..65535).
+                    format: int32
+                    maximum: 65535
+                    minimum: 0
+                    type: integer
+                required:
+                - port
+                - priority
+                - protocol
+                - serverDomain
+                - service
+                - weight
+                type: object
+              txtRecord:
+                description: |-
+                  TxtRecord holds the TXT_RECORD variant fields. Required for type
+                  TXT_RECORD and forbidden otherwise.
+                properties:
+                  text:
+                    description: Text is the text value.
+                    maxLength: 1024
+                    minLength: 1
+                    type: string
+                required:
+                - text
+                type: object
+              type:
+                description: Type is the DNS-policy union discriminator.
+                enum:
+                - A_RECORD
+                - AAAA_RECORD
+                - CNAME_RECORD
+                - MX_RECORD
+                - SRV_RECORD
+                - TXT_RECORD
+                - FORWARD_DOMAIN
+                type: string
+            required:
+            - domain
+            - siteRef
+            - type
+            type: object
+            x-kubernetes-validations:
+            - message: aRecord fields require type A_RECORD
+              rule: 'self.type == ''A_RECORD'' ? has(self.aRecord) : !has(self.aRecord)'
+            - message: aaaaRecord fields require type AAAA_RECORD
+              rule: 'self.type == ''AAAA_RECORD'' ? has(self.aaaaRecord) : !has(self.aaaaRecord)'
+            - message: cnameRecord fields require type CNAME_RECORD
+              rule: 'self.type == ''CNAME_RECORD'' ? has(self.cnameRecord) : !has(self.cnameRecord)'
+            - message: mxRecord fields require type MX_RECORD
+              rule: 'self.type == ''MX_RECORD'' ? has(self.mxRecord) : !has(self.mxRecord)'
+            - message: srvRecord fields require type SRV_RECORD
+              rule: 'self.type == ''SRV_RECORD'' ? has(self.srvRecord) : !has(self.srvRecord)'
+            - message: txtRecord fields require type TXT_RECORD
+              rule: 'self.type == ''TXT_RECORD'' ? has(self.txtRecord) : !has(self.txtRecord)'
+            - message: forwardDomain fields require type FORWARD_DOMAIN
+              rule: 'self.type == ''FORWARD_DOMAIN'' ? has(self.forwardDomain) : !has(self.forwardDomain)'
+          status:
+            description: status defines the observed state of UnifiDnsPolicy
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the UnifiDnsPolicy resource.
+
+                  The primary readiness signal is the "Ready" condition.
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: |-
+                  observedGeneration is the metadata.generation the controller last
+                  reconciled.
+                format: int64
+                type: integer
+              origin:
+                description: |-
+                  origin is the observed upstream record origin. Only user-defined records
+                  are written; any other origin is adopted read-only and reported here.
+                type: string
+              policyID:
+                description: |-
+                  policyID is the UUID of the upstream DNS policy record. It is recorded in
+                  status only, never in spec.
+                type: string
+              summary:
+                description: summary is a human-readable summary of the last reconciliation.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

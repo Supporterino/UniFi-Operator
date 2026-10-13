@@ -562,7 +562,7 @@ func TestUnifiWifiBroadcastReconcileNativeRejectsCrossSiteReference(t *testing.T
 		wantReason string // empty means reconciled
 	}{
 		{name: "same site as spec.siteRef resolves", site: testSiteResourceName},
-		{name: "foreign site fails closed", site: "other-site", wantReason: reasonCrossSiteReference},
+		{name: "foreign site fails closed", site: testOtherSite, wantReason: reasonCrossSiteReference},
 	}
 
 	for _, tt := range tests {
@@ -666,12 +666,12 @@ func TestUnifiWifiBroadcastReconcileFailsClosed(t *testing.T) {
 
 	enterprise := newWifiBroadcast()
 	enterprise.Spec.SecurityConfiguration = unifiv1alpha1.WifiSecurityConfiguration{
-		Type: "WPA2_ENTERPRISE",
+		Type: testEnterpriseSecurity,
 		WPA2Enterprise: &unifiv1alpha1.WifiWPA2EnterpriseSecurityConfiguration{
 			CoaEnabled: true,
 			RadiusConfiguration: unifiv1alpha1.WifiEnterpriseRadiusConfiguration{
 				NasID:            unifiv1alpha1.WifiRadiusNasID{Type: testNasIDUserDefined, Value: testNasIDValue},
-				RadiusProfileRef: unifiv1alpha1.CoreRef{Name: "radius"},
+				RadiusProfileRef: unifiv1alpha1.CoreRef{Name: testRadiusProfileRefName},
 			},
 		},
 	}
@@ -741,11 +741,42 @@ func TestUnifiWifiBroadcastReconcileFailsClosed(t *testing.T) {
 			wantRequeue: true,
 		},
 		{
-			name: "enterprise security fails closed",
+			name: "enterprise security with a missing profile fails closed",
 			objects: func() []client.Object {
 				return []client.Object{enterprise, ownedNetwork(), ownedSite(), readyController(testAppVersion)}
 			},
-			wantReason: reasonRadiusProfileUnsupported,
+			wantReason:  reasonRadiusProfileRefNotFound,
+			wantRequeue: true,
+		},
+		{
+			name: "enterprise security with an unresolved profile fails closed",
+			objects: func() []client.Object {
+				profile := &unifiv1alpha1.UnifiRadiusProfile{
+					ObjectMeta: metav1.ObjectMeta{Name: testRadiusProfileRefName, Namespace: testNamespace},
+					Spec: unifiv1alpha1.UnifiRadiusProfileSpec{
+						SiteRef: unifiv1alpha1.CoreRef{Name: testSiteResourceName},
+						Name:    testRadiusProfileUpstreamName,
+					},
+				}
+				return []client.Object{enterprise, ownedNetwork(), ownedSite(), readyController(testAppVersion), profile}
+			},
+			wantReason:  reasonDependencyNotReady,
+			wantRequeue: true,
+		},
+		{
+			name: "enterprise security with a cross-site profile fails closed",
+			objects: func() []client.Object {
+				profile := &unifiv1alpha1.UnifiRadiusProfile{
+					ObjectMeta: metav1.ObjectMeta{Name: testRadiusProfileRefName, Namespace: testNamespace},
+					Spec: unifiv1alpha1.UnifiRadiusProfileSpec{
+						SiteRef: unifiv1alpha1.CoreRef{Name: testOtherSite},
+						Name:    testRadiusProfileUpstreamName,
+					},
+				}
+				profile.Status.RadiusProfileID = testRadiusProfileUUID
+				return []client.Object{enterprise, ownedNetwork(), ownedSite(), readyController(testAppVersion), profile}
+			},
+			wantReason: reasonCrossSiteReference,
 		},
 	}
 
@@ -1040,7 +1071,7 @@ func TestUnifiWifiBroadcastCleanupPrefersStatusSite(t *testing.T) {
 	broadcast.Status.SiteID = testUpstreamSiteID // recorded from site A
 
 	const (
-		siteBName       = "other-site"
+		siteBName       = testOtherSite
 		controllerBName = "other-controller"
 		siteBID         = "site-uuid-2"
 		controllerBURL  = "https://other.example.com"
@@ -1206,7 +1237,7 @@ func TestUnifiWifiBroadcastReconcileRejectsCrossSiteReference(t *testing.T) {
 	otherNetwork := &unifiv1alpha1.UnifiNetwork{
 		ObjectMeta: metav1.ObjectMeta{Name: testOtherNetworkName, Namespace: testNamespace},
 		Spec: unifiv1alpha1.UnifiNetworkSpec{
-			SiteRef:    unifiv1alpha1.CoreRef{Name: "other-site"},
+			SiteRef:    unifiv1alpha1.CoreRef{Name: testOtherSite},
 			Management: testManagementUnmanaged,
 			Name:       testOtherNetworkUpstream,
 			VLANID:     10,
@@ -1490,7 +1521,7 @@ func TestUnifiWifiBroadcastReconcilePassphraseSecretFailsClosed(t *testing.T) {
 	}
 }
 
-func TestUnifiWifiBroadcastEnterpriseFailsClosed(t *testing.T) {
+func TestUnifiWifiBroadcastEnterpriseUnresolvableProfileFailsClosed(t *testing.T) {
 	t.Parallel()
 
 	broadcast := newWifiBroadcast()
@@ -1501,7 +1532,7 @@ func TestUnifiWifiBroadcastEnterpriseFailsClosed(t *testing.T) {
 			SecurityMode: "DEFAULT",
 			RadiusConfiguration: unifiv1alpha1.WifiEnterpriseRadiusConfiguration{
 				NasID:            unifiv1alpha1.WifiRadiusNasID{Type: testNasIDUserDefined, Value: testNasIDValue},
-				RadiusProfileRef: unifiv1alpha1.CoreRef{Name: "radius"},
+				RadiusProfileRef: unifiv1alpha1.CoreRef{Name: testRadiusProfileRefName},
 			},
 		},
 	}
@@ -1512,20 +1543,121 @@ func TestUnifiWifiBroadcastEnterpriseFailsClosed(t *testing.T) {
 		broadcast, ownedNetwork(), ownedSite(), readyController(testAppVersion))
 
 	reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
-	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName)); err != nil {
+	result, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName))
+	if err != nil {
 		t.Fatalf("Reconcile error = %v, want nil", err)
+	}
+	if result.RequeueAfter != wifiBroadcastDependencyRequeueAfter {
+		t.Errorf("RequeueAfter = %v, want %v", result.RequeueAfter, wifiBroadcastDependencyRequeueAfter)
 	}
 
 	got := getWifiBroadcast(t, fakeClient)
 	cond := requireReady(t, got.Status.Conditions)
-	if cond.Status != metav1.ConditionFalse || cond.Reason != reasonRadiusProfileUnsupported {
-		t.Errorf("Ready = %s/%s, want False/%s", cond.Status, cond.Reason, reasonRadiusProfileUnsupported)
+	if cond.Status != metav1.ConditionFalse || cond.Reason != reasonRadiusProfileRefNotFound {
+		t.Errorf("Ready = %s/%s, want False/%s", cond.Status, cond.Reason, reasonRadiusProfileRefNotFound)
 	}
 	if factory.calls != 0 {
 		t.Errorf("factory calls = %d, want 0 (no console contact before the fail-closed path)", factory.calls)
 	}
 	if calls := stub.called(); len(calls) != 0 {
 		t.Errorf("upstream calls = %v, want none", calls)
+	}
+}
+
+// TestUnifiWifiBroadcastEnterpriseResolvesRadiusProfile verifies the enterprise
+// resolution path (task 1.8): an enterprise broadcast referencing a
+// UnifiRadiusProfile with a resolved upstream UUID provisions, using the
+// profile's status.radiusProfileID as the upstream profileId.
+func TestUnifiWifiBroadcastEnterpriseResolvesRadiusProfile(t *testing.T) {
+	t.Parallel()
+
+	broadcast := newWifiBroadcast()
+	broadcast.Spec.SecurityConfiguration = unifiv1alpha1.WifiSecurityConfiguration{
+		Type: testEnterpriseSecurity,
+		WPA2Enterprise: &unifiv1alpha1.WifiWPA2EnterpriseSecurityConfiguration{
+			CoaEnabled: true,
+			RadiusConfiguration: unifiv1alpha1.WifiEnterpriseRadiusConfiguration{
+				NasID:            unifiv1alpha1.WifiRadiusNasID{Type: testNasIDUserDefined, Value: testNasIDValue},
+				RadiusProfileRef: unifiv1alpha1.CoreRef{Name: testRadiusProfileResourceName},
+			},
+		},
+	}
+
+	profile := newRadiusProfile()
+	profile.Status.RadiusProfileID = testRadiusProfileUUID
+	profile.Status.Origin = firewallZoneOriginUserDefined
+
+	stub := &stubUnifiClient{
+		createdBroadcast: unifi.WifiBroadcast{ID: testUpstreamBroadcastID, WifiBroadcastRequest: unifi.WifiBroadcastRequest{Name: testBroadcastUpstreamName}},
+	}
+	factory := &recordingFactory{client: stub}
+	fakeClient, _, _ := newBroadcastFakeClient(t,
+		broadcast, ownedNetwork(), ownedSite(), readyController(testAppVersion), apiKeySecret(), profile)
+	reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+
+	result, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName))
+	if err != nil {
+		t.Fatalf("Reconcile error = %v, want nil", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0", result.RequeueAfter)
+	}
+
+	got := getWifiBroadcast(t, fakeClient)
+	cond := requireReady(t, got.Status.Conditions)
+	if cond.Status != metav1.ConditionTrue || cond.Reason != reasonReconciled {
+		t.Fatalf("Ready = %s/%s, want True/%s", cond.Status, cond.Reason, reasonReconciled)
+	}
+	if len(stub.broadcastCreateRequests) != 1 {
+		t.Fatalf("create requests = %d, want 1", len(stub.broadcastCreateRequests))
+	}
+	security := stub.broadcastCreateRequests[0].SecurityConfiguration
+	if security == nil || security.RadiusConfiguration == nil {
+		t.Fatalf("security = %+v, want a RADIUS configuration", security)
+	}
+	if security.Type != testEnterpriseSecurity {
+		t.Errorf("security type = %q, want WPA2_ENTERPRISE", security.Type)
+	}
+	if security.RadiusConfiguration.ProfileID != testRadiusProfileUUID {
+		t.Errorf("radius profileId = %q, want the resolved %q", security.RadiusConfiguration.ProfileID, testRadiusProfileUUID)
+	}
+	if security.RadiusConfiguration.NasID.Value != testNasIDValue {
+		t.Errorf("nasId value = %q, want %q", security.RadiusConfiguration.NasID.Value, testNasIDValue)
+	}
+	if security.CoaEnabled == nil || !*security.CoaEnabled {
+		t.Errorf("coaEnabled = %v, want true", security.CoaEnabled)
+	}
+}
+
+// TestUnifiWifiBroadcastRadiusProfileWatch verifies the UnifiRadiusProfile
+// dependency watch map function: only broadcasts in the profile's namespace
+// whose security configuration references the profile are enqueued.
+func TestUnifiWifiBroadcastRadiusProfileWatch(t *testing.T) {
+	t.Parallel()
+
+	referencing := newWifiBroadcast()
+	referencing.Name = testReferencingName
+	referencing.Spec.SecurityConfiguration = unifiv1alpha1.WifiSecurityConfiguration{
+		Type: testEnterpriseSecurity,
+		WPA2Enterprise: &unifiv1alpha1.WifiWPA2EnterpriseSecurityConfiguration{
+			RadiusConfiguration: unifiv1alpha1.WifiEnterpriseRadiusConfiguration{
+				NasID:            unifiv1alpha1.WifiRadiusNasID{Type: testNasIDUserDefined, Value: testNasIDValue},
+				RadiusProfileRef: unifiv1alpha1.CoreRef{Name: testRadiusProfileResourceName},
+			},
+		},
+	}
+	other := newWifiBroadcast()
+	other.Name = testOtherNamespace
+
+	fakeClient, _, _ := newBroadcastFakeClient(t, referencing, other)
+	reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme()}
+
+	requests := reconciler.broadcastsForRadiusProfile(context.Background(), newRadiusProfile())
+	if len(requests) != 1 {
+		t.Fatalf("requests = %d (%v), want 1", len(requests), requests)
+	}
+	if requests[0].Name != testReferencingName || requests[0].Namespace != testNamespace {
+		t.Errorf("request = %v, want %s/referencing", requests[0].NamespacedName, testNamespace)
 	}
 }
 

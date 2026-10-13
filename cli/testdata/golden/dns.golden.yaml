@@ -1,0 +1,121 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiDnsPolicy
+metadata:
+  name: www-example-com-a-record
+spec:
+  aRecord:
+    ipv4Address: 192.168.1.10
+    ttlSeconds: 14400
+  domain: www.example.com
+  enabled: true
+  siteRef:
+    name: default
+  type: A_RECORD
+status:
+  origin: USER_DEFINED
+  policyID: 0a1b2c3d-4e5f-4061-8273-94a5b6c7d8e9
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiDnsPolicy
+metadata:
+  name: www-example-com-aaaa-record
+spec:
+  aaaaRecord:
+    ipv6Address: fd00::10
+    ttlSeconds: 3600
+  domain: www.example.com
+  enabled: true
+  siteRef:
+    name: default
+  type: AAAA_RECORD
+status:
+  origin: USER_DEFINED
+  policyID: 1b2c3d4e-5f60-4172-9384-a5b6c7d8e9fa
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiDnsPolicy
+metadata:
+  name: alias-example-com-cname-record
+spec:
+  cnameRecord:
+    targetDomain: www.example.com
+    ttlSeconds: 604800
+  domain: alias.example.com
+  enabled: true
+  siteRef:
+    name: default
+  type: CNAME_RECORD
+status:
+  origin: USER_DEFINED
+  policyID: 2c3d4e5f-6071-4283-a495-b6c7d8e9fa0b
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiDnsPolicy
+metadata:
+  name: example-com-mx-record
+spec:
+  domain: example.com
+  enabled: true
+  mxRecord:
+    mailServerDomain: mail.example.com
+    priority: 10
+  siteRef:
+    name: default
+  type: MX_RECORD
+status:
+  origin: USER_DEFINED
+  policyID: 3d4e5f60-7182-4394-b5a6-c7d8e9fa0b1c
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiDnsPolicy
+metadata:
+  name: ldap-tcp-example-com-srv-record
+spec:
+  domain: _ldap._tcp.example.com
+  enabled: true
+  siteRef:
+    name: default
+  srvRecord:
+    port: 389
+    priority: 0
+    protocol: _tcp
+    serverDomain: dc.example.com
+    service: _ldap
+    weight: 100
+  type: SRV_RECORD
+status:
+  origin: USER_DEFINED
+  policyID: 4e5f6071-8293-44a5-c6b7-d8e9fa0b1c2d
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiDnsPolicy
+metadata:
+  name: text-example-com-txt-record
+spec:
+  domain: text.example.com
+  enabled: false
+  siteRef:
+    name: default
+  txtRecord:
+    text: v=spf1 -all
+  type: TXT_RECORD
+status:
+  origin: DERIVED
+  policyID: 5f607182-93a4-45b6-d7c8-e9fa0b1c2d3e
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiDnsPolicy
+metadata:
+  name: internal-example-com-forward-domain
+spec:
+  domain: internal.example.com
+  enabled: true
+  forwardDomain:
+    ipAddress: 1.1.1.1
+  siteRef:
+    name: default
+  type: FORWARD_DOMAIN
+status:
+  origin: USER_DEFINED
+  policyID: 60718293-a4b5-46c7-e8d9-fa0b1c2d3e4f

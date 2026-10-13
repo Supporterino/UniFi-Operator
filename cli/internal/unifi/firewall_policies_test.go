@@ -1,0 +1,97 @@
+package unifi
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"testing"
+)
+
+const (
+	testPolicyID      = "7a6b5c4d-3e2f-4109-8a7b-6c5d4e3f2a10"
+	testPolicyName    = "Allow LAN to WAN"
+	testPolicyZoneID  = "2b1c0d9e-8f7a-4653-b2c1-d0e9f8a7b6c5"
+	testPolicyOtherID = "3c2d1e0f-9a8b-4765-c3d2-e1f0a9b8c7d6"
+	testPolicyListID  = "9e8d7c6b-5a4f-4321-9c8b-7a6d5e4f3c2b"
+)
+
+func TestListFirewallPoliciesPaginates(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	offsets := make([]string, 0, 2)
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		offset := r.URL.Query().Get("offset")
+		offsets = append(offsets, offset)
+		switch offset {
+		case "0":
+			_, _ = io.WriteString(w, `{"count":1,"data":[
+				{"id":"`+testPolicyID+`","index":0,"name":"`+testPolicyName+`","enabled":true,"loggingEnabled":false,
+				 "action":{"type":"ALLOW","allowReturnTraffic":false},
+				 "ipProtocolScope":{"ipVersion":"IPV4_AND_IPV6"},
+				 "source":{"zoneId":"`+testPolicyZoneID+`",
+				   "trafficFilter":{"type":"IP_ADDRESS","ipAddressFilter":{"type":"TRAFFIC_MATCHING_LIST","trafficMatchingListId":"`+testPolicyListID+`","matchOpposite":false}}},
+				 "destination":{"zoneId":"`+testPolicyOtherID+`"},
+				 "metadata":{"origin":"USER_DEFINED"}}],
+				"limit":1,"offset":0,"totalCount":2}`)
+		case "1":
+			_, _ = io.WriteString(w, `{"count":1,"data":[
+				{"id":"policy-2","index":1,"name":"Block","enabled":true,"loggingEnabled":false,
+				 "action":{"type":"BLOCK"},
+				 "ipProtocolScope":{"ipVersion":"IPV4"},
+				 "source":{"zoneId":"`+testPolicyZoneID+`"},"destination":{"zoneId":"`+testPolicyOtherID+`"},
+				 "metadata":{"origin":"SYSTEM_DEFINED"}}],
+				"limit":1,"offset":1,"totalCount":2}`)
+		default:
+			t.Errorf("unexpected offset %q", offset)
+		}
+	}))
+
+	policies, err := client.ListFirewallPolicies(context.Background(), testSiteID)
+	if err != nil {
+		t.Fatalf("ListFirewallPolicies: %v", err)
+	}
+	if want := fmt.Sprintf("/proxy/network/integration/v1/sites/%s/firewall/policies", testSiteID); gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+	if len(policies) != 2 {
+		t.Fatalf("got %d policies, want 2: %+v", len(policies), policies)
+	}
+	if policies[0].ID != testPolicyID || policies[0].Action.Type != "ALLOW" || policies[0].Source.ZoneID != testPolicyZoneID {
+		t.Errorf("unexpected first policy: %+v", policies[0])
+	}
+	if policies[0].Source.TrafficFilter == nil || policies[0].Source.TrafficFilter.IPAddressFilter == nil ||
+		policies[0].Source.TrafficFilter.IPAddressFilter.TrafficMatchingListID != testPolicyListID {
+		t.Errorf("unexpected first policy filter: %+v", policies[0].Source.TrafficFilter)
+	}
+	if policies[0].Metadata.Origin != "USER_DEFINED" || policies[1].Metadata.Origin != "SYSTEM_DEFINED" {
+		t.Errorf("unexpected metadata: %+v", policies)
+	}
+	if len(offsets) != 2 {
+		t.Errorf("offsets = %v, want two pages", offsets)
+	}
+}
+
+func TestListFirewallPoliciesUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"statusCode":401,"statusName":"UNAUTHORIZED","message":"Missing credentials"}`)
+	}))
+
+	_, err := client.ListFirewallPolicies(context.Background(), testSiteID)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v, want *APIError", err)
+	}
+	if apiErr.StatusCode != http.StatusUnauthorized {
+		t.Errorf("StatusCode = %d, want 401", apiErr.StatusCode)
+	}
+	if apiErr.Message != "Missing credentials" {
+		t.Errorf("Message = %q, want %q", apiErr.Message, "Missing credentials")
+	}
+}

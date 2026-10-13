@@ -72,6 +72,18 @@ type UnifiSiteReconciler struct {
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifinetworks,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unififirewallzones,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiwifibroadcasts,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiradiusprofiles,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifitrafficmatchinglists,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unififirewallpolicies,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unififirewallpolicyorderings,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiaclrules,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiaclruleorderings,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifidnspolicies,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiswitchinglags,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiswitchingmclagdomains,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiswitchingswitchstacks,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifivpnservers,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifisitetositetunnels,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile adopts the upstream site named by spec.internalReference, records
@@ -171,7 +183,61 @@ func (r *UnifiSiteReconciler) reconcileDelete(
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	remaining := networksRemaining + zonesRemaining + broadcastsRemaining
+	// A UnifiRadiusProfile is an adoption kind owned by its site; it carries no
+	// finalizer, so the drain removes it directly.
+	radiusProfilesRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiRadiusProfileList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	trafficListsRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiTrafficMatchingListList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	firewallPoliciesRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiFirewallPolicyList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	firewallOrderingsRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiFirewallPolicyOrderingList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	aclRulesRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiAclRuleList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	aclOrderingsRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiAclRuleOrderingList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	dnsPoliciesRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiDnsPolicyList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	lagsRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiSwitchingLagList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	mcLagDomainsRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiSwitchingMcLagDomainList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	switchStacksRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiSwitchingSwitchStackList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	vpnServersRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiVpnServerList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	tunnelsRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiSiteToSiteTunnelList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	remaining := networksRemaining + zonesRemaining + broadcastsRemaining + radiusProfilesRemaining +
+		trafficListsRemaining + firewallPoliciesRemaining + firewallOrderingsRemaining +
+		aclRulesRemaining + aclOrderingsRemaining + dnsPoliciesRemaining +
+		lagsRemaining + mcLagDomainsRemaining + switchStacksRemaining +
+		vpnServersRemaining + tunnelsRemaining
 
 	if remaining > 0 {
 		// Garbage collection only starts after the owner is actually gone, so a
@@ -283,13 +349,30 @@ func (r *UnifiSiteReconciler) updateStatus(
 
 // SetupWithManager sets up the controller with the Manager. It watches the site
 // for generation changes and deletion, and owns UnifiNetwork, UnifiFirewallZone,
-// and UnifiWifiBroadcast children so their deletion progresses the drain.
+// UnifiWifiBroadcast, UnifiRadiusProfile, UnifiTrafficMatchingList,
+// UnifiFirewallPolicy, UnifiFirewallPolicyOrdering, UnifiAclRule,
+// UnifiAclRuleOrdering, and UnifiDnsPolicy children so their deletion progresses
+// the drain, and the read-only adoption kinds (UnifiSwitchingLag,
+// UnifiSwitchingMcLagDomain, UnifiSwitchingSwitchStack, UnifiVpnServer,
+// UnifiSiteToSiteTunnel).
 func (r *UnifiSiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unifiv1alpha1.UnifiSite{}, builder.WithPredicates(sitePredicate())).
 		Owns(&unifiv1alpha1.UnifiNetwork{}).
 		Owns(&unifiv1alpha1.UnifiFirewallZone{}).
 		Owns(&unifiv1alpha1.UnifiWifiBroadcast{}).
+		Owns(&unifiv1alpha1.UnifiRadiusProfile{}).
+		Owns(&unifiv1alpha1.UnifiTrafficMatchingList{}).
+		Owns(&unifiv1alpha1.UnifiFirewallPolicy{}).
+		Owns(&unifiv1alpha1.UnifiFirewallPolicyOrdering{}).
+		Owns(&unifiv1alpha1.UnifiAclRule{}).
+		Owns(&unifiv1alpha1.UnifiAclRuleOrdering{}).
+		Owns(&unifiv1alpha1.UnifiDnsPolicy{}).
+		Owns(&unifiv1alpha1.UnifiSwitchingLag{}).
+		Owns(&unifiv1alpha1.UnifiSwitchingMcLagDomain{}).
+		Owns(&unifiv1alpha1.UnifiSwitchingSwitchStack{}).
+		Owns(&unifiv1alpha1.UnifiVpnServer{}).
+		Owns(&unifiv1alpha1.UnifiSiteToSiteTunnel{}).
 		Named("unifisite").
 		Complete(r)
 }

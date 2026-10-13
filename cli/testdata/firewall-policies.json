@@ -1,0 +1,71 @@
+{
+  "count": 3,
+  "data": [
+    {
+      "id": "1a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9",
+      "index": 0,
+      "name": "Allow LAN to WAN",
+      "enabled": true,
+      "loggingEnabled": false,
+      "description": "Allow LAN clients to reach the internet",
+      "action": { "type": "ALLOW", "allowReturnTraffic": false },
+      "ipProtocolScope": { "ipVersion": "IPV4_AND_IPV6" },
+      "source": {
+        "zoneId": "77e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f70",
+        "trafficFilter": {
+          "type": "IP_ADDRESS",
+          "ipAddressFilter": {
+            "type": "TRAFFIC_MATCHING_LIST",
+            "trafficMatchingListId": "7c1e2f3a-4b5c-4d6e-8f90-1a2b3c4d5e6f",
+            "matchOpposite": false
+          }
+        }
+      },
+      "destination": {
+        "zoneId": "88f5a6b7-c8d9-4e0f-1a2b-3c4d5e6f7081",
+        "trafficFilter": {
+          "type": "PORT",
+          "portFilter": {
+            "type": "TRAFFIC_MATCHING_LIST",
+            "trafficMatchingListId": "9e3a4b5c-6d7e-4f80-9123-3c4d5e6f7081",
+            "matchOpposite": true
+          }
+        }
+      },
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "2b3c4d5e-6f70-4182-93a4-b5c6d7e8f901",
+      "index": 1,
+      "name": "Block IoT to LAN",
+      "enabled": true,
+      "loggingEnabled": true,
+      "action": { "type": "BLOCK" },
+      "ipProtocolScope": { "ipVersion": "IPV4" },
+      "source": { "zoneId": "88f5a6b7-c8d9-4e0f-1a2b-3c4d5e6f7081" },
+      "destination": { "zoneId": "77e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f70" },
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "3c4d5e6f-7081-4293-a4b5-c6d7e8f90123",
+      "index": 2,
+      "name": "Legacy Inline Drop",
+      "enabled": true,
+      "loggingEnabled": false,
+      "action": { "type": "REJECT" },
+      "ipProtocolScope": { "ipVersion": "IPV4" },
+      "source": {
+        "zoneId": "77e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f70",
+        "trafficFilter": {
+          "type": "IP_ADDRESS",
+          "ipAddressFilter": { "type": "IP_ADDRESSES", "matchOpposite": false }
+        }
+      },
+      "destination": { "zoneId": "88f5a6b7-c8d9-4e0f-1a2b-3c4d5e6f7081" },
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 3
+}

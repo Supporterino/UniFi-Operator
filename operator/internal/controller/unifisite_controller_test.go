@@ -136,7 +136,7 @@ func TestUnifiSiteReconcileFailsClosed(t *testing.T) {
 		{
 			name:         "no matching upstream site",
 			objects:      []client.Object{readyController(testAppVersion), apiKeySecret()},
-			stub:         &stubUnifiClient{sites: []unifi.Site{{ID: "other", InternalReference: "other"}}},
+			stub:         &stubUnifiClient{sites: []unifi.Site{{ID: testOtherNamespace, InternalReference: testOtherNamespace}}},
 			wantReason:   reasonSiteNotFound,
 			wantRequeue:  true,
 			wantStatuses: 1,

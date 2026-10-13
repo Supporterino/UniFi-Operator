@@ -103,6 +103,130 @@ type stubUnifiClient struct {
 	deviceTags    []unifi.DeviceTag
 	deviceTagsErr error
 
+	radiusProfiles    []unifi.RadiusProfile
+	radiusProfilesErr error
+
+	trafficMatchingLists    []unifi.TrafficMatchingList
+	trafficMatchingListsErr error
+	// getTrafficMatchingListErr, when set, is returned by GetTrafficMatchingList
+	// instead of a lookup.
+	getTrafficMatchingListErr error
+
+	createdTrafficMatchingList   unifi.TrafficMatchingList
+	createTrafficMatchingListErr error
+	updatedTrafficMatchingList   unifi.TrafficMatchingList
+	updateTrafficMatchingListErr error
+
+	trafficMatchingListCreateRequests []unifi.TrafficMatchingListRequest
+	trafficMatchingListUpdateRequests []unifi.TrafficMatchingListRequest
+	// updatedTrafficMatchingListID records the identifier passed to
+	// UpdateTrafficMatchingList.
+	updatedTrafficMatchingListID string
+
+	deleteTrafficMatchingListErr     error
+	deletedTrafficMatchingListSiteID string
+	deletedTrafficMatchingListID     string
+
+	firewallPolicies    []unifi.FirewallPolicy
+	firewallPoliciesErr error
+	// getFirewallPolicyErr, when set, is returned by GetFirewallPolicy instead
+	// of a lookup.
+	getFirewallPolicyErr error
+
+	createdFirewallPolicy   unifi.FirewallPolicy
+	createFirewallPolicyErr error
+	updatedFirewallPolicy   unifi.FirewallPolicy
+	updateFirewallPolicyErr error
+
+	firewallPolicyCreateRequests []unifi.FirewallPolicyRequest
+	firewallPolicyUpdateRequests []unifi.FirewallPolicyRequest
+	// updatedFirewallPolicyID records the identifier passed to
+	// UpdateFirewallPolicy.
+	updatedFirewallPolicyID string
+
+	deleteFirewallPolicyErr     error
+	deletedFirewallPolicySiteID string
+	deletedFirewallPolicyID     string
+
+	firewallPolicyOrdering    unifi.FirewallPolicyOrdering
+	firewallPolicyOrderingErr error
+
+	updatedFirewallPolicyOrdering    unifi.FirewallPolicyOrdering
+	updateFirewallPolicyOrderingErr  error
+	firewallPolicyOrderingUpdateReqs []unifi.FirewallPolicyOrdering
+	// updatedFirewallOrderingSourceZoneID/DestinationZoneID record the zone
+	// pair passed to UpdateFirewallPolicyOrdering.
+	updatedFirewallOrderingSourceZoneID      string
+	updatedFirewallOrderingDestinationZoneID string
+
+	aclRules    []unifi.AclRule
+	aclRulesErr error
+	// getAclRuleErr, when set, is returned by GetAclRule instead of a lookup.
+	getAclRuleErr error
+
+	createdAclRule   unifi.AclRule
+	createAclRuleErr error
+	updatedAclRule   unifi.AclRule
+	updateAclRuleErr error
+
+	aclRuleCreateRequests []unifi.AclRuleRequest
+	aclRuleUpdateRequests []unifi.AclRuleRequest
+	// updatedAclRuleID records the identifier passed to UpdateAclRule.
+	updatedAclRuleID string
+
+	deleteAclRuleErr     error
+	deletedAclRuleSiteID string
+	deletedAclRuleID     string
+
+	aclRuleOrdering    unifi.AclRuleOrdering
+	aclRuleOrderingErr error
+
+	updatedAclRuleOrdering    unifi.AclRuleOrdering
+	updateAclRuleOrderingErr  error
+	aclRuleOrderingUpdateReqs []unifi.AclRuleOrdering
+
+	dnsPolicies    []unifi.DnsPolicy
+	dnsPoliciesErr error
+	// getDnsPolicyErr, when set, is returned by GetDnsPolicy instead of a lookup.
+	getDnsPolicyErr error
+
+	createdDnsPolicy   unifi.DnsPolicy
+	createDnsPolicyErr error
+	updatedDnsPolicy   unifi.DnsPolicy
+	updateDnsPolicyErr error
+
+	dnsPolicyCreateRequests []unifi.DnsPolicyRequest
+	dnsPolicyUpdateRequests []unifi.DnsPolicyRequest
+	// updatedDnsPolicyID records the identifier passed to UpdateDnsPolicy.
+	updatedDnsPolicyID string
+
+	deleteDnsPolicyErr     error
+	deletedDnsPolicySiteID string
+	deletedDnsPolicyID     string
+
+	lags    []unifi.Lag
+	lagsErr error
+	// getLagErr, when set, is returned by GetLag instead of a lookup.
+	getLagErr error
+
+	mcLagDomains    []unifi.McLagDomain
+	mcLagDomainsErr error
+	// getMcLagDomainErr, when set, is returned by GetMcLagDomain instead of a
+	// lookup.
+	getMcLagDomainErr error
+
+	switchStacks    []unifi.SwitchStack
+	switchStacksErr error
+	// getSwitchStackErr, when set, is returned by GetSwitchStack instead of a
+	// lookup.
+	getSwitchStackErr error
+
+	vpnServers    []unifi.VpnServer
+	vpnServersErr error
+
+	siteToSiteTunnels    []unifi.SiteToSiteTunnel
+	siteToSiteTunnelsErr error
+
 	broadcasts         []unifi.WifiBroadcast
 	broadcastOverviews []unifi.WifiBroadcastOverview
 	broadcastsErr      error
@@ -255,6 +379,317 @@ func (s *stubUnifiClient) ListDeviceTags(context.Context, string) ([]unifi.Devic
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.deviceTags, s.deviceTagsErr
+}
+
+func (s *stubUnifiClient) ListRadiusProfiles(context.Context, string) ([]unifi.RadiusProfile, error) {
+	s.record("ListRadiusProfiles")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.radiusProfiles, s.radiusProfilesErr
+}
+
+func (s *stubUnifiClient) ListTrafficMatchingLists(context.Context, string) ([]unifi.TrafficMatchingList, error) {
+	s.record("ListTrafficMatchingLists")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.trafficMatchingLists, s.trafficMatchingListsErr
+}
+
+func (s *stubUnifiClient) GetTrafficMatchingList(_ context.Context, _, listID string) (unifi.TrafficMatchingList, error) {
+	s.record("GetTrafficMatchingList")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getTrafficMatchingListErr != nil {
+		return unifi.TrafficMatchingList{}, s.getTrafficMatchingListErr
+	}
+	for _, list := range s.trafficMatchingLists {
+		if list.ID == listID {
+			return list, nil
+		}
+	}
+	return unifi.TrafficMatchingList{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) CreateTrafficMatchingList(_ context.Context, _ string, req unifi.TrafficMatchingListRequest) (unifi.TrafficMatchingList, error) {
+	s.record("CreateTrafficMatchingList")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.trafficMatchingListCreateRequests = append(s.trafficMatchingListCreateRequests, req)
+	return s.createdTrafficMatchingList, s.createTrafficMatchingListErr
+}
+
+func (s *stubUnifiClient) UpdateTrafficMatchingList(_ context.Context, _, listID string, req unifi.TrafficMatchingListRequest) (unifi.TrafficMatchingList, error) {
+	s.record("UpdateTrafficMatchingList")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.trafficMatchingListUpdateRequests = append(s.trafficMatchingListUpdateRequests, req)
+	s.updatedTrafficMatchingListID = listID
+	return s.updatedTrafficMatchingList, s.updateTrafficMatchingListErr
+}
+
+func (s *stubUnifiClient) DeleteTrafficMatchingList(_ context.Context, siteID, listID string) error {
+	s.record("DeleteTrafficMatchingList")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deletedTrafficMatchingListSiteID = siteID
+	s.deletedTrafficMatchingListID = listID
+	return s.deleteTrafficMatchingListErr
+}
+
+func (s *stubUnifiClient) ListFirewallPolicies(context.Context, string) ([]unifi.FirewallPolicy, error) {
+	s.record("ListFirewallPolicies")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.firewallPolicies, s.firewallPoliciesErr
+}
+
+func (s *stubUnifiClient) GetFirewallPolicy(_ context.Context, _, policyID string) (unifi.FirewallPolicy, error) {
+	s.record("GetFirewallPolicy")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getFirewallPolicyErr != nil {
+		return unifi.FirewallPolicy{}, s.getFirewallPolicyErr
+	}
+	for _, policy := range s.firewallPolicies {
+		if policy.ID == policyID {
+			return policy, nil
+		}
+	}
+	return unifi.FirewallPolicy{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) CreateFirewallPolicy(_ context.Context, _ string, req unifi.FirewallPolicyRequest) (unifi.FirewallPolicy, error) {
+	s.record("CreateFirewallPolicy")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.firewallPolicyCreateRequests = append(s.firewallPolicyCreateRequests, req)
+	return s.createdFirewallPolicy, s.createFirewallPolicyErr
+}
+
+func (s *stubUnifiClient) UpdateFirewallPolicy(_ context.Context, _, policyID string, req unifi.FirewallPolicyRequest) (unifi.FirewallPolicy, error) {
+	s.record("UpdateFirewallPolicy")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.firewallPolicyUpdateRequests = append(s.firewallPolicyUpdateRequests, req)
+	s.updatedFirewallPolicyID = policyID
+	return s.updatedFirewallPolicy, s.updateFirewallPolicyErr
+}
+
+func (s *stubUnifiClient) DeleteFirewallPolicy(_ context.Context, siteID, policyID string) error {
+	s.record("DeleteFirewallPolicy")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deletedFirewallPolicySiteID = siteID
+	s.deletedFirewallPolicyID = policyID
+	return s.deleteFirewallPolicyErr
+}
+
+func (s *stubUnifiClient) GetFirewallPolicyOrdering(_ context.Context, _, _, _ string) (unifi.FirewallPolicyOrdering, error) {
+	s.record("GetFirewallPolicyOrdering")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.firewallPolicyOrdering, s.firewallPolicyOrderingErr
+}
+
+func (s *stubUnifiClient) UpdateFirewallPolicyOrdering(_ context.Context, _, sourceZoneID, destinationZoneID string, req unifi.FirewallPolicyOrdering) (unifi.FirewallPolicyOrdering, error) {
+	s.record("UpdateFirewallPolicyOrdering")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.firewallPolicyOrderingUpdateReqs = append(s.firewallPolicyOrderingUpdateReqs, req)
+	s.updatedFirewallOrderingSourceZoneID = sourceZoneID
+	s.updatedFirewallOrderingDestinationZoneID = destinationZoneID
+	return s.updatedFirewallPolicyOrdering, s.updateFirewallPolicyOrderingErr
+}
+
+func (s *stubUnifiClient) ListAclRules(context.Context, string) ([]unifi.AclRule, error) {
+	s.record("ListAclRules")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.aclRules, s.aclRulesErr
+}
+
+func (s *stubUnifiClient) GetAclRule(_ context.Context, _, ruleID string) (unifi.AclRule, error) {
+	s.record("GetAclRule")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getAclRuleErr != nil {
+		return unifi.AclRule{}, s.getAclRuleErr
+	}
+	for _, rule := range s.aclRules {
+		if rule.ID == ruleID {
+			return rule, nil
+		}
+	}
+	return unifi.AclRule{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) CreateAclRule(_ context.Context, _ string, req unifi.AclRuleRequest) (unifi.AclRule, error) {
+	s.record("CreateAclRule")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.aclRuleCreateRequests = append(s.aclRuleCreateRequests, req)
+	return s.createdAclRule, s.createAclRuleErr
+}
+
+func (s *stubUnifiClient) UpdateAclRule(_ context.Context, _, ruleID string, req unifi.AclRuleRequest) (unifi.AclRule, error) {
+	s.record("UpdateAclRule")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.aclRuleUpdateRequests = append(s.aclRuleUpdateRequests, req)
+	s.updatedAclRuleID = ruleID
+	return s.updatedAclRule, s.updateAclRuleErr
+}
+
+func (s *stubUnifiClient) DeleteAclRule(_ context.Context, siteID, ruleID string) error {
+	s.record("DeleteAclRule")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deletedAclRuleSiteID = siteID
+	s.deletedAclRuleID = ruleID
+	return s.deleteAclRuleErr
+}
+
+func (s *stubUnifiClient) GetAclRuleOrdering(context.Context, string) (unifi.AclRuleOrdering, error) {
+	s.record("GetAclRuleOrdering")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.aclRuleOrdering, s.aclRuleOrderingErr
+}
+
+func (s *stubUnifiClient) UpdateAclRuleOrdering(_ context.Context, _ string, req unifi.AclRuleOrdering) (unifi.AclRuleOrdering, error) {
+	s.record("UpdateAclRuleOrdering")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.aclRuleOrderingUpdateReqs = append(s.aclRuleOrderingUpdateReqs, req)
+	return s.updatedAclRuleOrdering, s.updateAclRuleOrderingErr
+}
+
+func (s *stubUnifiClient) ListDnsPolicies(context.Context, string) ([]unifi.DnsPolicy, error) {
+	s.record("ListDnsPolicies")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.dnsPolicies, s.dnsPoliciesErr
+}
+
+func (s *stubUnifiClient) GetDnsPolicy(_ context.Context, _, policyID string) (unifi.DnsPolicy, error) {
+	s.record("GetDnsPolicy")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getDnsPolicyErr != nil {
+		return unifi.DnsPolicy{}, s.getDnsPolicyErr
+	}
+	for _, policy := range s.dnsPolicies {
+		if policy.ID == policyID {
+			return policy, nil
+		}
+	}
+	return unifi.DnsPolicy{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) CreateDnsPolicy(_ context.Context, _ string, req unifi.DnsPolicyRequest) (unifi.DnsPolicy, error) {
+	s.record("CreateDnsPolicy")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dnsPolicyCreateRequests = append(s.dnsPolicyCreateRequests, req)
+	return s.createdDnsPolicy, s.createDnsPolicyErr
+}
+
+func (s *stubUnifiClient) UpdateDnsPolicy(_ context.Context, _, policyID string, req unifi.DnsPolicyRequest) (unifi.DnsPolicy, error) {
+	s.record("UpdateDnsPolicy")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dnsPolicyUpdateRequests = append(s.dnsPolicyUpdateRequests, req)
+	s.updatedDnsPolicyID = policyID
+	return s.updatedDnsPolicy, s.updateDnsPolicyErr
+}
+
+func (s *stubUnifiClient) DeleteDnsPolicy(_ context.Context, siteID, policyID string) error {
+	s.record("DeleteDnsPolicy")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deletedDnsPolicySiteID = siteID
+	s.deletedDnsPolicyID = policyID
+	return s.deleteDnsPolicyErr
+}
+
+func (s *stubUnifiClient) ListLags(context.Context, string) ([]unifi.Lag, error) {
+	s.record("ListLags")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lags, s.lagsErr
+}
+
+func (s *stubUnifiClient) GetLag(_ context.Context, _, lagID string) (unifi.Lag, error) {
+	s.record("GetLag")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getLagErr != nil {
+		return unifi.Lag{}, s.getLagErr
+	}
+	for _, lag := range s.lags {
+		if lag.ID == lagID {
+			return lag, nil
+		}
+	}
+	return unifi.Lag{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) ListMcLagDomains(context.Context, string) ([]unifi.McLagDomain, error) {
+	s.record("ListMcLagDomains")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mcLagDomains, s.mcLagDomainsErr
+}
+
+func (s *stubUnifiClient) GetMcLagDomain(_ context.Context, _, domainID string) (unifi.McLagDomain, error) {
+	s.record("GetMcLagDomain")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getMcLagDomainErr != nil {
+		return unifi.McLagDomain{}, s.getMcLagDomainErr
+	}
+	for _, domain := range s.mcLagDomains {
+		if domain.ID == domainID {
+			return domain, nil
+		}
+	}
+	return unifi.McLagDomain{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) ListSwitchStacks(context.Context, string) ([]unifi.SwitchStack, error) {
+	s.record("ListSwitchStacks")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.switchStacks, s.switchStacksErr
+}
+
+func (s *stubUnifiClient) GetSwitchStack(_ context.Context, _, stackID string) (unifi.SwitchStack, error) {
+	s.record("GetSwitchStack")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getSwitchStackErr != nil {
+		return unifi.SwitchStack{}, s.getSwitchStackErr
+	}
+	for _, stack := range s.switchStacks {
+		if stack.ID == stackID {
+			return stack, nil
+		}
+	}
+	return unifi.SwitchStack{}, &unifi.APIError{StatusCode: http.StatusNotFound}
+}
+
+func (s *stubUnifiClient) ListVpnServers(context.Context, string) ([]unifi.VpnServer, error) {
+	s.record("ListVpnServers")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.vpnServers, s.vpnServersErr
+}
+
+func (s *stubUnifiClient) ListSiteToSiteTunnels(context.Context, string) ([]unifi.SiteToSiteTunnel, error) {
+	s.record("ListSiteToSiteTunnels")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.siteToSiteTunnels, s.siteToSiteTunnelsErr
 }
 
 func (s *stubUnifiClient) ListWifiBroadcasts(context.Context, string) ([]unifi.WifiBroadcastOverview, error) {

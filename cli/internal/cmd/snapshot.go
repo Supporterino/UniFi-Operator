@@ -32,12 +32,20 @@ func newSnapshotCommand() *cobra.Command {
 		Short: "Read a UniFi controller and emit adoptable Custom Resources",
 		Long: "snapshot reads objects from a UniFi Network controller over the Integration v1 API\n" +
 			"and writes the equivalent Custom Resources as YAML. Supported kinds: all, controller,\n" +
-			"sites, networks, firewall-zones, wifi, device-tags. `all` emits a UnifiController\n" +
-			"template, the UnifiSites, the UnifiNetworks, and the UnifiWifiBroadcasts of the site\n" +
-			"selected with --site. `firewall-zones` emits the site's UnifiFirewallZones; `wifi`\n" +
-			"emits the site's UnifiWifiBroadcasts (personal passphrases are emitted as placeholder\n" +
-			"Secret references); `device-tags` prints the read-only device-tag names and device\n" +
-			"counts without emitting a resource.",
+			"sites, networks, firewall-zones, firewall-policies, wifi, radius, traffic-matching,\n" +
+			"acl, dns, switching, vpn, device-tags. `all` emits a UnifiController template, the\n" +
+			"UnifiSites, the UnifiNetworks, and the UnifiWifiBroadcasts of the site selected with\n" +
+			"--site. `firewall-zones` emits the site's UnifiFirewallZones; `firewall-policies` emits\n" +
+			"the site's UnifiFirewallPolicies (zone and matching-list references are resolved by\n" +
+			"name); `wifi` emits the site's UnifiWifiBroadcasts (personal passphrases are emitted\n" +
+			"as placeholder Secret references); `radius` emits the site's UnifiRadiusProfiles\n" +
+			"(adopted by name); `traffic-matching` emits the site's UnifiTrafficMatchingLists;\n" +
+			"`acl` emits the site's UnifiAclRules (network and device-tag references are resolved\n" +
+			"by name); `dns` emits the site's UnifiDnsPolicies; `switching` emits the site's\n" +
+			"UnifiSwitchingLags, UnifiSwitchingMcLagDomains, and UnifiSwitchingSwitchStacks\n" +
+			"(adopted); `vpn` emits the site's UnifiVpnServers and UnifiSiteToSiteTunnels (adopted\n" +
+			"by name); `device-tags` prints the read-only device-tag names and device counts\n" +
+			"without emitting a resource.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := "all"
@@ -68,10 +76,10 @@ func newSnapshotCommand() *cobra.Command {
 
 func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Writer) error {
 	switch kind {
-	case "all", "controller", "sites", "networks", "firewall-zones", "wifi", "device-tags":
+	case "all", "controller", "sites", "networks", "firewall-zones", "firewall-policies", "wifi", "radius", "traffic-matching", "acl", "dns", "switching", "vpn", "device-tags":
 	default:
 		return fmt.Errorf(
-			"unknown snapshot kind %q: supported kinds are all, controller, sites, networks, firewall-zones, wifi, device-tags",
+			"unknown snapshot kind %q: supported kinds are all, controller, sites, networks, firewall-zones, firewall-policies, wifi, radius, traffic-matching, acl, dns, switching, vpn, device-tags",
 			kind)
 	}
 	if o.controller == "" {
@@ -121,6 +129,160 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 			return fmt.Errorf("snapshot device-tags: %w", err)
 		}
 		return writeDeviceTags(out, tags)
+	}
+	if kind == "radius" {
+		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+		if err != nil {
+			return err
+		}
+		profiles, err := client.ListRadiusProfiles(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot radius: %w", err)
+		}
+		radiusResources, radiusWarnings := snapshot.RadiusProfiles(siteName, profiles)
+		resources = append(resources, radiusResources...)
+		warnings = append(warnings, radiusWarnings...)
+	}
+	if kind == "traffic-matching" {
+		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+		if err != nil {
+			return err
+		}
+		lists, err := client.ListTrafficMatchingLists(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot traffic-matching: %w", err)
+		}
+		listResources, listWarnings := snapshot.TrafficMatchingLists(siteName, lists)
+		resources = append(resources, listResources...)
+		warnings = append(warnings, listWarnings...)
+	}
+	if kind == "firewall-policies" {
+		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+		if err != nil {
+			return err
+		}
+		zones, err := client.ListZones(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot firewall-policies: %w", err)
+		}
+		policies, err := client.ListFirewallPolicies(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot firewall-policies: %w", err)
+		}
+		// The matching-list endpoints are only needed when a policy carries a traffic
+		// filter, so fetch them lazily: a console without the lists endpoint can still
+		// snapshot filter-free policies.
+		var lists []unifi.TrafficMatchingList
+		if anyFirewallPolicyFilter(policies) {
+			lists, err = client.ListTrafficMatchingLists(ctx, siteID)
+			if err != nil {
+				return fmt.Errorf("snapshot firewall-policies: %w", err)
+			}
+		}
+		policyResources, policyWarnings := snapshot.FirewallPolicies(siteName, zones, lists, policies)
+		resources = append(resources, policyResources...)
+		warnings = append(warnings, policyWarnings...)
+	}
+	if kind == "acl" {
+		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+		if err != nil {
+			return err
+		}
+		// Network membership is referenced by Kubernetes identity, so load the network
+		// projection the `networks` command emits and reuse its UUID -> name map.
+		detailed, tags, loadWarnings, err := loadNetworkProjection(ctx, client, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot acl: %w", err)
+		}
+		warnings = append(warnings, loadWarnings...)
+		_, networkNames, networkWarnings := snapshot.Networks(siteName, detailed, tags)
+		warnings = append(warnings, networkWarnings...)
+
+		rules, err := client.ListAclRules(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot acl: %w", err)
+		}
+		// The device-tag list resolves an enforcing-device UUID to a tag name; it is only
+		// needed when a rule scopes enforcement.
+		deviceTags := tags
+		if anyAclEnforcingFilter(rules) && deviceTags == nil {
+			deviceTags, err = client.ListDeviceTags(ctx, siteID)
+			if err != nil {
+				return fmt.Errorf("snapshot acl: %w", err)
+			}
+		}
+		ruleResources, ruleWarnings := snapshot.AclRules(siteName, networkNames, deviceTags, rules)
+		resources = append(resources, ruleResources...)
+		warnings = append(warnings, ruleWarnings...)
+	}
+	if kind == "dns" {
+		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+		if err != nil {
+			return err
+		}
+		policies, err := client.ListDnsPolicies(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot dns: %w", err)
+		}
+		dnsResources, dnsWarnings := snapshot.DnsPolicies(siteName, policies)
+		resources = append(resources, dnsResources...)
+		warnings = append(warnings, dnsWarnings...)
+	}
+	if kind == "switching" {
+		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+		if err != nil {
+			return err
+		}
+		lags, err := client.ListLags(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot switching: %w", err)
+		}
+		domains, err := client.ListMcLagDomains(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot switching: %w", err)
+		}
+		stacks, err := client.ListSwitchStacks(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot switching: %w", err)
+		}
+		// The device-tag list resolves a LAG member device UUID to a tag name; it is only
+		// needed when at least one LAG is present.
+		var deviceTags []unifi.DeviceTag
+		if len(lags) > 0 {
+			deviceTags, err = client.ListDeviceTags(ctx, siteID)
+			if err != nil {
+				return fmt.Errorf("snapshot switching: %w", err)
+			}
+		}
+		lagResources, lagWarnings := snapshot.SwitchingLags(siteName, deviceTags, lags)
+		resources = append(resources, lagResources...)
+		warnings = append(warnings, lagWarnings...)
+		domainResources, domainWarnings := snapshot.SwitchingMcLagDomains(siteName, domains)
+		resources = append(resources, domainResources...)
+		warnings = append(warnings, domainWarnings...)
+		stackResources, stackWarnings := snapshot.SwitchingSwitchStacks(siteName, stacks)
+		resources = append(resources, stackResources...)
+		warnings = append(warnings, stackWarnings...)
+	}
+	if kind == "vpn" {
+		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+		if err != nil {
+			return err
+		}
+		servers, err := client.ListVpnServers(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot vpn: %w", err)
+		}
+		tunnels, err := client.ListSiteToSiteTunnels(ctx, siteID)
+		if err != nil {
+			return fmt.Errorf("snapshot vpn: %w", err)
+		}
+		serverResources, serverWarnings := snapshot.VpnServers(siteName, servers)
+		resources = append(resources, serverResources...)
+		warnings = append(warnings, serverWarnings...)
+		tunnelResources, tunnelWarnings := snapshot.SiteToSiteTunnels(siteName, tunnels)
+		resources = append(resources, tunnelResources...)
+		warnings = append(warnings, tunnelWarnings...)
 	}
 	if kind == "networks" || kind == "all" || kind == "firewall-zones" || kind == "wifi" {
 		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
@@ -301,6 +463,30 @@ func loadWifiProjection(ctx context.Context, client *unifi.Client, siteID string
 func anyWifiDeviceTagFilter(broadcasts []unifi.WifiBroadcast) bool {
 	for _, broadcast := range broadcasts {
 		if broadcast.BroadcastingDeviceFilter != nil && broadcast.BroadcastingDeviceFilter.Type == "DEVICE_TAGS" {
+			return true
+		}
+	}
+	return false
+}
+
+// anyFirewallPolicyFilter reports whether any policy carries a source or destination
+// traffic filter, the only case that needs the traffic-matching-list endpoint to resolve a
+// filter's list reference to a name.
+func anyFirewallPolicyFilter(policies []unifi.FirewallPolicy) bool {
+	for _, policy := range policies {
+		if policy.Source.TrafficFilter != nil || policy.Destination.TrafficFilter != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// anyAclEnforcingFilter reports whether any ACL rule scopes enforcement to specific
+// devices, the only case that needs the device-tag list to resolve a device UUID to a tag
+// name.
+func anyAclEnforcingFilter(rules []unifi.AclRule) bool {
+	for _, rule := range rules {
+		if rule.EnforcingDeviceFilter != nil {
 			return true
 		}
 	}

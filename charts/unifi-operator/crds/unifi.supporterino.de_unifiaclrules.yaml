@@ -1,0 +1,510 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: unifiaclrules.unifi.supporterino.de
+spec:
+  group: unifi.supporterino.de
+  names:
+    kind: UnifiAclRule
+    listKind: UnifiAclRuleList
+    plural: unifiaclrules
+    singular: unifiaclrule
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .spec.name
+      name: Name
+      type: string
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.action
+      name: Action
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: UnifiAclRule is the Schema for the unifiaclrules API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of UnifiAclRule
+            properties:
+              action:
+                description: Action is the ACL action (ALLOW or BLOCK).
+                enum:
+                - ALLOW
+                - BLOCK
+                type: string
+              description:
+                description: Description is an optional human-readable description.
+                type: string
+              destination:
+                description: Destination is the target traffic filter.
+                properties:
+                  ipAddressesOrSubnets:
+                    description: IPAddressesOrSubnets is set for type IP_ADDRESSES_OR_SUBNETS.
+                    properties:
+                      addresses:
+                        description: |-
+                          Addresses are the IP addresses or subnets (for example 192.168.1.5 or
+                          192.168.1.0/24).
+                        items:
+                          type: string
+                        minItems: 1
+                        type: array
+                      ports:
+                        description: Ports optionally restricts the match to these
+                          ports.
+                        items:
+                          description: AclPort is a TCP/UDP port number (1..65535).
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                        minItems: 1
+                        type: array
+                    required:
+                    - addresses
+                    type: object
+                  macAddresses:
+                    description: MacAddresses is set for type MAC_ADDRESSES.
+                    properties:
+                      macAddresses:
+                        description: MacAddresses are the MAC addresses to match.
+                        items:
+                          type: string
+                        minItems: 1
+                        type: array
+                      prefixLength:
+                        description: PrefixLength restricts the match to a MAC prefix.
+                          Omit for a full match.
+                        format: int32
+                        maximum: 48
+                        minimum: 1
+                        type: integer
+                    required:
+                    - macAddresses
+                    type: object
+                  networks:
+                    description: Networks is set for type NETWORKS.
+                    properties:
+                      networkRefs:
+                        description: |-
+                          NetworkRefs list the UnifiNetwork resources whose traffic is matched. Each
+                          reference resolves in the same namespace.
+                        items:
+                          description: |-
+                            CoreRef is a reference to another Custom Resource by Kubernetes name.
+
+                            References are deliberately name-only and same-namespace: a reference never
+                            exposes a namespace field because a cross-namespace object cannot be an
+                            ownerReference, and same-namespace resolution keeps RBAC to namespaced Roles.
+                            See docs/crd-conventions.md for the reference and ownership model.
+                          properties:
+                            name:
+                              description: |-
+                                Name is the name of the referenced object in the referencing object's
+                                namespace.
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        minItems: 1
+                        type: array
+                      ports:
+                        description: Ports optionally restricts the match to these
+                          ports.
+                        items:
+                          description: AclPort is a TCP/UDP port number (1..65535).
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                        minItems: 1
+                        type: array
+                    required:
+                    - networkRefs
+                    type: object
+                  ports:
+                    description: Ports is set for type PORTS.
+                    properties:
+                      ports:
+                        description: Ports are the ports to match.
+                        items:
+                          description: AclPort is a TCP/UDP port number (1..65535).
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                        minItems: 1
+                        type: array
+                    required:
+                    - ports
+                    type: object
+                  type:
+                    description: Type is the endpoint discriminator.
+                    enum:
+                    - IP_ADDRESSES_OR_SUBNETS
+                    - NETWORKS
+                    - PORTS
+                    - MAC_ADDRESSES
+                    type: string
+                required:
+                - type
+                type: object
+                x-kubernetes-validations:
+                - message: ipAddressesOrSubnets is required for IP_ADDRESSES_OR_SUBNETS
+                    and forbidden otherwise
+                  rule: has(self.ipAddressesOrSubnets) == (self.type == 'IP_ADDRESSES_OR_SUBNETS')
+                - message: networks is required for NETWORKS and forbidden otherwise
+                  rule: has(self.networks) == (self.type == 'NETWORKS')
+                - message: ports is required for PORTS and forbidden otherwise
+                  rule: has(self.ports) == (self.type == 'PORTS')
+                - message: macAddresses is required for MAC_ADDRESSES and forbidden
+                    otherwise
+                  rule: has(self.macAddresses) == (self.type == 'MAC_ADDRESSES')
+              enabled:
+                default: true
+                description: Enabled controls whether the rule is active.
+                type: boolean
+              enforcingDeviceTags:
+                description: |-
+                  EnforcingDeviceTags scopes enforcement to devices carrying the named tags.
+                  Omitting it provisions the rule to all enforcing-capable devices. The
+                  selector is name-based; no opaque device identifier appears in spec.
+                items:
+                  description: |-
+                    DeviceTagSelector selects an existing upstream device tag by its
+                    human-readable name (GET /v1/sites/{siteId}/device-tags). Device tags are
+                    read-only upstream, so there is no device-tag Custom Resource and no opaque
+                    tag or device identifier in spec. The controller resolves the name through
+                    the read-only tag list at reconcile time; a name that resolves to zero or
+                    more than one device fails closed.
+                  properties:
+                    name:
+                      description: Name is the human-readable device-tag name.
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+              name:
+                description: Name is the human-readable ACL-rule name.
+                minLength: 1
+                type: string
+              networkRef:
+                description: |-
+                  NetworkRef references the UnifiNetwork a MAC rule applies to. Required for
+                  type MAC and forbidden for type IPV4.
+                properties:
+                  name:
+                    description: |-
+                      Name is the name of the referenced object in the referencing object's
+                      namespace.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              protocolFilter:
+                description: |-
+                  ProtocolFilter restricts an IPV4 rule to specific transport protocols.
+                  Only valid for type IPV4.
+                items:
+                  description: AclProtocol is a transport protocol an IPV4 ACL rule
+                    applies to.
+                  enum:
+                  - TCP
+                  - UDP
+                  type: string
+                minItems: 1
+                type: array
+              siteRef:
+                description: |-
+                  SiteRef references the UnifiSite that owns this rule. The reference
+                  resolves in the same namespace.
+                properties:
+                  name:
+                    description: |-
+                      Name is the name of the referenced object in the referencing object's
+                      namespace.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              source:
+                description: Source is the originating traffic filter.
+                properties:
+                  ipAddressesOrSubnets:
+                    description: IPAddressesOrSubnets is set for type IP_ADDRESSES_OR_SUBNETS.
+                    properties:
+                      addresses:
+                        description: |-
+                          Addresses are the IP addresses or subnets (for example 192.168.1.5 or
+                          192.168.1.0/24).
+                        items:
+                          type: string
+                        minItems: 1
+                        type: array
+                      ports:
+                        description: Ports optionally restricts the match to these
+                          ports.
+                        items:
+                          description: AclPort is a TCP/UDP port number (1..65535).
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                        minItems: 1
+                        type: array
+                    required:
+                    - addresses
+                    type: object
+                  macAddresses:
+                    description: MacAddresses is set for type MAC_ADDRESSES.
+                    properties:
+                      macAddresses:
+                        description: MacAddresses are the MAC addresses to match.
+                        items:
+                          type: string
+                        minItems: 1
+                        type: array
+                      prefixLength:
+                        description: PrefixLength restricts the match to a MAC prefix.
+                          Omit for a full match.
+                        format: int32
+                        maximum: 48
+                        minimum: 1
+                        type: integer
+                    required:
+                    - macAddresses
+                    type: object
+                  networks:
+                    description: Networks is set for type NETWORKS.
+                    properties:
+                      networkRefs:
+                        description: |-
+                          NetworkRefs list the UnifiNetwork resources whose traffic is matched. Each
+                          reference resolves in the same namespace.
+                        items:
+                          description: |-
+                            CoreRef is a reference to another Custom Resource by Kubernetes name.
+
+                            References are deliberately name-only and same-namespace: a reference never
+                            exposes a namespace field because a cross-namespace object cannot be an
+                            ownerReference, and same-namespace resolution keeps RBAC to namespaced Roles.
+                            See docs/crd-conventions.md for the reference and ownership model.
+                          properties:
+                            name:
+                              description: |-
+                                Name is the name of the referenced object in the referencing object's
+                                namespace.
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        minItems: 1
+                        type: array
+                      ports:
+                        description: Ports optionally restricts the match to these
+                          ports.
+                        items:
+                          description: AclPort is a TCP/UDP port number (1..65535).
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                        minItems: 1
+                        type: array
+                    required:
+                    - networkRefs
+                    type: object
+                  ports:
+                    description: Ports is set for type PORTS.
+                    properties:
+                      ports:
+                        description: Ports are the ports to match.
+                        items:
+                          description: AclPort is a TCP/UDP port number (1..65535).
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                        minItems: 1
+                        type: array
+                    required:
+                    - ports
+                    type: object
+                  type:
+                    description: Type is the endpoint discriminator.
+                    enum:
+                    - IP_ADDRESSES_OR_SUBNETS
+                    - NETWORKS
+                    - PORTS
+                    - MAC_ADDRESSES
+                    type: string
+                required:
+                - type
+                type: object
+                x-kubernetes-validations:
+                - message: ipAddressesOrSubnets is required for IP_ADDRESSES_OR_SUBNETS
+                    and forbidden otherwise
+                  rule: has(self.ipAddressesOrSubnets) == (self.type == 'IP_ADDRESSES_OR_SUBNETS')
+                - message: networks is required for NETWORKS and forbidden otherwise
+                  rule: has(self.networks) == (self.type == 'NETWORKS')
+                - message: ports is required for PORTS and forbidden otherwise
+                  rule: has(self.ports) == (self.type == 'PORTS')
+                - message: macAddresses is required for MAC_ADDRESSES and forbidden
+                    otherwise
+                  rule: has(self.macAddresses) == (self.type == 'MAC_ADDRESSES')
+              type:
+                description: Type is the rule discriminator (IPV4 or MAC).
+                enum:
+                - IPV4
+                - MAC
+                type: string
+            required:
+            - action
+            - destination
+            - name
+            - siteRef
+            - source
+            - type
+            type: object
+            x-kubernetes-validations:
+            - message: MAC rules require MAC_ADDRESSES source/destination filters
+                and a networkRef, and forbid protocolFilter
+              rule: 'self.type == ''MAC'' ? (self.source.type == ''MAC_ADDRESSES''
+                && self.destination.type == ''MAC_ADDRESSES'' && has(self.networkRef)
+                && !has(self.protocolFilter)) : true'
+            - message: IPV4 rules require IP-address-family filters and forbid networkRef
+              rule: 'self.type == ''IPV4'' ? (self.source.type != ''MAC_ADDRESSES''
+                && self.destination.type != ''MAC_ADDRESSES'' && !has(self.networkRef))
+                : true'
+          status:
+            description: status defines the observed state of UnifiAclRule
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the UnifiAclRule resource.
+
+                  The primary readiness signal is the "Ready" condition.
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: |-
+                  observedGeneration is the metadata.generation the controller last
+                  reconciled.
+                format: int64
+                type: integer
+              origin:
+                description: |-
+                  origin is the observed upstream rule origin (USER_DEFINED or DERIVED).
+                  Only USER_DEFINED rules are written; any other origin is adopted read-only
+                  and reported here.
+                type: string
+              ruleID:
+                description: |-
+                  ruleID is the UUID of the upstream ACL rule. It is recorded in status
+                  only, never in spec.
+                type: string
+              summary:
+                description: summary is a human-readable summary of the last reconciliation.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

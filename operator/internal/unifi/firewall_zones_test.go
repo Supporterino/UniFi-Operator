@@ -128,7 +128,7 @@ func TestCreateZone(t *testing.T) {
 		if len(networkIDs) != 1 || networkIDs[0] != testNetworkID {
 			t.Errorf("networkIds = %v, want [%s]", networkIDs, testNetworkID)
 		}
-		for _, key := range []string{"id", "metadata"} {
+		for _, key := range []string{"id", testJSONFieldMetadata} {
 			if _, ok := body[key]; ok {
 				t.Errorf("request must not carry %q: %v", key, body)
 			}
@@ -182,7 +182,7 @@ func TestUpdateZone(t *testing.T) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		body := decodeBody(t, r)
-		if _, ok := body["metadata"]; ok {
+		if _, ok := body[testJSONFieldMetadata]; ok {
 			t.Errorf("request must not carry metadata: %v", body)
 		}
 		_, _ = io.WriteString(w, `{"id":"`+testZoneID+`","name":"`+testZoneName+`","networkIds":[],"metadata":{"origin":"`+testOriginUserDefined+`"}}`)

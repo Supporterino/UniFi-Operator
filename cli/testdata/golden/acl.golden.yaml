@@ -1,0 +1,86 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiAclRule
+metadata:
+  name: allow-guest-to-dns
+spec:
+  action: ALLOW
+  description: Allow guest clients to reach DNS
+  destination:
+    networks:
+      networkRefs:
+      - name: guest-wifi
+    type: NETWORKS
+  enabled: true
+  enforcingDeviceTags:
+  - name: iot-switch
+  name: Allow Guest to DNS
+  protocolFilter:
+  - TCP
+  - UDP
+  siteRef:
+    name: default
+  source:
+    ipAddressesOrSubnets:
+      addresses:
+      - 192.168.20.0/24
+      ports:
+      - 53
+    type: IP_ADDRESSES_OR_SUBNETS
+  type: IPV4
+status:
+  origin: USER_DEFINED
+  ruleID: 4d5e6f70-8192-4a3b-c4d5-e6f708192a3b
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiAclRule
+metadata:
+  name: block-iot-dns
+spec:
+  action: BLOCK
+  destination:
+    ipAddressesOrSubnets:
+      addresses:
+      - 0.0.0.0/0
+    type: IP_ADDRESSES_OR_SUBNETS
+  enabled: false
+  name: Block IoT DNS
+  siteRef:
+    name: default
+  source:
+    ports:
+      ports:
+      - 53
+    type: PORTS
+  type: IPV4
+status:
+  origin: DERIVED
+  ruleID: 5e6f7081-92a3-4b4c-d5e6-f708192a3b4c
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiAclRule
+metadata:
+  name: allow-switch-mac
+spec:
+  action: ALLOW
+  destination:
+    macAddresses:
+      macAddresses:
+      - "00:11:22:33:44:55"
+    type: MAC_ADDRESSES
+  enabled: true
+  name: Allow Switch MAC
+  networkRef:
+    name: iot
+  siteRef:
+    name: default
+  source:
+    macAddresses:
+      macAddresses:
+      - aa:bb:cc:dd:ee:ff
+      prefixLength: 48
+    type: MAC_ADDRESSES
+  type: MAC
+status:
+  origin: USER_DEFINED
+  ruleID: 6f708192-a3b4-4c5d-e6f7-08192a3b4c5d

@@ -1218,3 +1218,791 @@ func TestControllerInsecureURLAnnotated(t *testing.T) {
 		t.Errorf("insecure warning = %q, want it to name https", warnings[1])
 	}
 }
+
+func TestTrafficMatchingListsProjectsTypesAndDropsUpstreamIDs(t *testing.T) {
+	t.Parallel()
+
+	lists := []unifi.TrafficMatchingList{
+		{
+			ID:   "opaque-list-id",
+			Name: "Corp Addresses",
+			Type: TrafficMatchingTypeIPv4Addresses,
+			Items: []unifi.TrafficMatchingItem{
+				{Type: TrafficMatchingItemIPAddress, Value: "10.0.0.1"},
+				{Type: TrafficMatchingItemIPAddressRange, Start: "10.0.0.10", Stop: "10.0.0.20"},
+				{Type: TrafficMatchingItemSubnet, Value: "10.0.0.0/24"},
+			},
+		},
+		{
+			ID:   "opaque-ports-id",
+			Name: "Web Ports",
+			Type: TrafficMatchingTypePorts,
+			Items: []unifi.TrafficMatchingItem{
+				{Type: TrafficMatchingItemPortNumber, Value: "443"},
+				{Type: TrafficMatchingItemPortNumberRange, Start: "8000", Stop: "8080"},
+			},
+		},
+	}
+
+	resources, warnings := TrafficMatchingLists("default", lists)
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2", len(resources))
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if resources[0].Kind != KindUnifiTrafficMatchingList {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiTrafficMatchingList)
+	}
+
+	spec, ok := resources[0].Spec.(UnifiTrafficMatchingListSpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiTrafficMatchingListSpec", resources[0].Spec)
+	}
+	if spec.SiteRef.Name != "default" || spec.Name != "Corp Addresses" || spec.Type != TrafficMatchingTypeIPv4Addresses {
+		t.Errorf("spec = %+v, want siteRef.name=default name=Corp Addresses type=IPV4_ADDRESSES", spec)
+	}
+	if len(spec.Items) != 3 || spec.Items[2].Type != TrafficMatchingItemSubnet ||
+		spec.Items[2].Address == nil || spec.Items[2].Address.Value != "10.0.0.0/24" {
+		t.Errorf("items = %+v, want the three typed entries", spec.Items)
+	}
+	if spec.Items[1].AddressRange == nil || spec.Items[1].AddressRange.Start != "10.0.0.10" || spec.Items[1].AddressRange.Stop != "10.0.0.20" {
+		t.Errorf("items[1] = %+v, want an address range", spec.Items[1])
+	}
+	if spec.Items[0].Address == nil || spec.Items[0].Address.Value != "10.0.0.1" {
+		t.Errorf("items[0] = %+v, want an address value", spec.Items[0])
+	}
+	if status, ok := resources[0].Status.(TrafficMatchingListStatus); !ok || status.ListID != "opaque-list-id" {
+		t.Errorf("status = %+v, want the upstream id in status only", resources[0].Status)
+	}
+
+	ports, ok := resources[1].Spec.(UnifiTrafficMatchingListSpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiTrafficMatchingListSpec", resources[1].Spec)
+	}
+	if ports.Items[0].Port == nil || ports.Items[0].Port.Value != 443 {
+		t.Errorf("ports items[0] = %+v, want port value 443", ports.Items[0])
+	}
+	if ports.Items[1].PortRange == nil || ports.Items[1].PortRange.Start != 8000 || ports.Items[1].PortRange.Stop != 8080 {
+		t.Errorf("ports items[1] = %+v, want a port range", ports.Items[1])
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"opaque-list-id", "opaque-ports-id", `"_id"`, `"id"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains opaque identifier %s: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestTrafficMatchingListsSkipsUnrepresentable(t *testing.T) {
+	t.Parallel()
+
+	lists := []unifi.TrafficMatchingList{
+		{
+			ID:    "bad-type",
+			Name:  "Unknown Type",
+			Type:  "NOT_A_TYPE",
+			Items: []unifi.TrafficMatchingItem{{Type: TrafficMatchingItemIPAddress, Value: "10.0.0.1"}},
+		},
+		{
+			ID:    "mismatch",
+			Name:  "Mismatched Entries",
+			Type:  TrafficMatchingTypePorts,
+			Items: []unifi.TrafficMatchingItem{{Type: TrafficMatchingItemSubnet, Value: "10.0.0.0/24"}},
+		},
+		{
+			ID:    "missing-value",
+			Name:  "Missing Value",
+			Type:  TrafficMatchingTypeIPv4Addresses,
+			Items: []unifi.TrafficMatchingItem{{Type: TrafficMatchingItemIPAddress}},
+		},
+		{
+			ID:    "bad-port",
+			Name:  "Bad Port",
+			Type:  TrafficMatchingTypePorts,
+			Items: []unifi.TrafficMatchingItem{{Type: TrafficMatchingItemPortNumber, Value: "not-a-port"}},
+		},
+		{
+			ID:    "port-out-of-range",
+			Name:  "Port Out Of Range",
+			Type:  TrafficMatchingTypePorts,
+			Items: []unifi.TrafficMatchingItem{{Type: TrafficMatchingItemPortNumber, Value: "70000"}},
+		},
+		{
+			ID:    "good",
+			Name:  "Good List",
+			Type:  TrafficMatchingTypeIPv6Addresses,
+			Items: []unifi.TrafficMatchingItem{{Type: TrafficMatchingItemSubnet, Value: "2001:db8::/64"}},
+		},
+	}
+
+	resources, warnings := TrafficMatchingLists("default", lists)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the representable list): %+v", len(resources), resources)
+	}
+	if resources[0].Metadata.Name != "good-list" {
+		t.Errorf("name = %q, want good-list", resources[0].Metadata.Name)
+	}
+	if len(warnings) != 5 {
+		t.Errorf("warnings = %v, want 5 (one per skipped list)", warnings)
+	}
+}
+
+func TestFirewallPoliciesResolvesZonesFiltersAndRecordsStatus(t *testing.T) {
+	t.Parallel()
+
+	const (
+		userZoneID = "user-zone-uuid"
+		sysZoneID  = "sys-zone-uuid"
+		listID     = "list-uuid"
+	)
+	zones := []unifi.FirewallZone{
+		{ID: userZoneID, Name: "Custom Zone", Metadata: unifi.NetworkMetadata{Origin: firewallZoneOriginUserDefined}},
+		{ID: sysZoneID, Name: "Internal", Metadata: unifi.NetworkMetadata{Origin: "SYSTEM_DEFINED"}},
+	}
+	lists := []unifi.TrafficMatchingList{
+		{ID: listID, Name: "Corp Addresses", Type: TrafficMatchingTypeIPv4Addresses, Items: []unifi.TrafficMatchingItem{{Type: TrafficMatchingItemIPAddress, Value: "10.0.0.1"}}},
+	}
+	policies := []unifi.FirewallPolicy{
+		{
+			ID:              "policy-uuid",
+			Metadata:        unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+			Name:            "Allow LAN to WAN",
+			Enabled:         true,
+			LoggingEnabled:  false,
+			Description:     "reach the internet",
+			Action:          unifi.FirewallPolicyAction{Type: "ALLOW", AllowReturnTraffic: boolPtr(false)},
+			IPProtocolScope: unifi.FirewallPolicyIPProtocolScope{IPVersion: "IPV4_AND_IPV6"},
+			Source: unifi.FirewallPolicyZone{
+				ZoneID: userZoneID,
+				TrafficFilter: &unifi.FirewallPolicyTrafficFilter{
+					Type: "IP_ADDRESS",
+					IPAddressFilter: &unifi.FirewallPolicyIPAddressFilter{
+						Type: "TRAFFIC_MATCHING_LIST", TrafficMatchingListID: listID, MatchOpposite: false,
+					},
+				},
+			},
+			Destination: unifi.FirewallPolicyZone{ZoneID: sysZoneID},
+		},
+		{
+			ID:              "policy-uuid-2",
+			Metadata:        unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+			Name:            "Block IoT",
+			Enabled:         true,
+			Action:          unifi.FirewallPolicyAction{Type: "BLOCK"},
+			IPProtocolScope: unifi.FirewallPolicyIPProtocolScope{IPVersion: "IPV4"},
+			Source:          unifi.FirewallPolicyZone{ZoneID: sysZoneID},
+			Destination:     unifi.FirewallPolicyZone{ZoneID: userZoneID},
+		},
+	}
+
+	resources, warnings := FirewallPolicies("default", zones, lists, policies)
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if resources[0].Kind != KindUnifiFirewallPolicy {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiFirewallPolicy)
+	}
+
+	spec, ok := resources[0].Spec.(UnifiFirewallPolicySpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiFirewallPolicySpec", resources[0].Spec)
+	}
+	if spec.SiteRef.Name != "default" || spec.Name != "Allow LAN to WAN" || spec.Action.Type != "ALLOW" {
+		t.Errorf("spec = %+v, want siteRef=default name=Allow LAN to WAN action=ALLOW", spec)
+	}
+	if spec.Action.AllowReturnTraffic == nil || *spec.Action.AllowReturnTraffic {
+		t.Errorf("action.allowReturnTraffic = %v, want explicit false", spec.Action.AllowReturnTraffic)
+	}
+	if spec.Source.ZoneRef == nil || spec.Source.ZoneRef.Name != "custom-zone" {
+		t.Errorf("source.zoneRef = %+v, want custom-zone", spec.Source.ZoneRef)
+	}
+	if spec.Source.Filter == nil || spec.Source.Filter.IPAddress == nil || spec.Source.Filter.IPAddress.ListRef.Name != "corp-addresses" {
+		t.Errorf("source.filter = %+v, want ipAddress listRef corp-addresses", spec.Source.Filter)
+	}
+	if spec.Destination.BuiltInZone == nil || spec.Destination.BuiltInZone.Name != "Internal" {
+		t.Errorf("destination.builtInZone = %+v, want Internal", spec.Destination.BuiltInZone)
+	}
+	if status, ok := resources[0].Status.(FirewallPolicyStatus); !ok || status.PolicyID != "policy-uuid" ||
+		status.SourceZoneID != userZoneID || status.DestinationZoneID != sysZoneID || status.Origin != "USER_DEFINED" {
+		t.Errorf("status = %+v, want policy and zone ids in status only", resources[0].Status)
+	}
+
+	block := resources[1].Spec.(UnifiFirewallPolicySpec)
+	if block.Action.AllowReturnTraffic != nil {
+		t.Errorf("BLOCK action.allowReturnTraffic = %v, want nil", block.Action.AllowReturnTraffic)
+	}
+	if block.Source.BuiltInZone == nil || block.Source.BuiltInZone.Name != "Internal" {
+		t.Errorf("block source.builtInZone = %+v, want Internal", block.Source.BuiltInZone)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"policy-uuid", userZoneID, sysZoneID, listID, `"zoneId"`, `"trafficMatchingListId"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains opaque identifier %s: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestFirewallPoliciesSkipsUnrepresentable(t *testing.T) {
+	t.Parallel()
+
+	zones := []unifi.FirewallZone{
+		{ID: "zone-1", Name: "Custom Zone", Metadata: unifi.NetworkMetadata{Origin: firewallZoneOriginUserDefined}},
+	}
+	policies := []unifi.FirewallPolicy{
+		{
+			ID: "inline", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Name: "Inline Filter",
+			Action:          unifi.FirewallPolicyAction{Type: "ALLOW", AllowReturnTraffic: boolPtr(false)},
+			IPProtocolScope: unifi.FirewallPolicyIPProtocolScope{IPVersion: "IPV4"},
+			Source: unifi.FirewallPolicyZone{
+				ZoneID: "zone-1",
+				TrafficFilter: &unifi.FirewallPolicyTrafficFilter{
+					Type:            "IP_ADDRESS",
+					IPAddressFilter: &unifi.FirewallPolicyIPAddressFilter{Type: "IP_ADDRESSES", MatchOpposite: false},
+				},
+			},
+			Destination: unifi.FirewallPolicyZone{ZoneID: "zone-1"},
+		},
+		{
+			ID: "unknown-zone", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Name: "Unknown Zone",
+			Action:          unifi.FirewallPolicyAction{Type: "BLOCK"},
+			IPProtocolScope: unifi.FirewallPolicyIPProtocolScope{IPVersion: "IPV4"},
+			Source:          unifi.FirewallPolicyZone{ZoneID: "not-in-list"},
+			Destination:     unifi.FirewallPolicyZone{ZoneID: "zone-1"},
+		},
+		{
+			ID: "unresolved-list", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Name: "Unresolved List",
+			Action:          unifi.FirewallPolicyAction{Type: "BLOCK"},
+			IPProtocolScope: unifi.FirewallPolicyIPProtocolScope{IPVersion: "IPV4"},
+			Source: unifi.FirewallPolicyZone{
+				ZoneID: "zone-1",
+				TrafficFilter: &unifi.FirewallPolicyTrafficFilter{
+					Type: "PORT",
+					PortFilter: &unifi.FirewallPolicyPortFilter{
+						Type: "TRAFFIC_MATCHING_LIST", TrafficMatchingListID: "missing-list", MatchOpposite: false,
+					},
+				},
+			},
+			Destination: unifi.FirewallPolicyZone{ZoneID: "zone-1"},
+		},
+		{
+			ID: "good", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Name: "Good Policy",
+			Action:          unifi.FirewallPolicyAction{Type: "REJECT"},
+			IPProtocolScope: unifi.FirewallPolicyIPProtocolScope{IPVersion: "IPV4"},
+			Source:          unifi.FirewallPolicyZone{ZoneID: "zone-1"},
+			Destination:     unifi.FirewallPolicyZone{ZoneID: "zone-1"},
+		},
+	}
+
+	resources, warnings := FirewallPolicies("default", zones, nil, policies)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the representable policy): %+v", len(resources), resources)
+	}
+	if resources[0].Metadata.Name != "good-policy" {
+		t.Errorf("name = %q, want good-policy", resources[0].Metadata.Name)
+	}
+	if len(warnings) != 3 {
+		t.Errorf("warnings = %v, want 3 (one per skipped policy)", warnings)
+	}
+}
+
+func TestAclRulesProjectsTypesAndResolvesRefs(t *testing.T) {
+	t.Parallel()
+
+	networkNames := map[string]string{"net-1": "iot"}
+	deviceTags := []unifi.DeviceTag{{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"dev-1"}}}
+	prefix := int32(48)
+	rules := []unifi.AclRule{
+		{
+			ID: "rule-uuid", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+			Type: "IPV4", Name: "Allow Guest to DNS", Enabled: true, Description: "dns",
+			Action: "ALLOW",
+			Source: unifi.AclRuleEndpoint{
+				Type:                 "IP_ADDRESSES_OR_SUBNETS",
+				IPAddressesOrSubnets: []string{"192.168.20.0/24"},
+				PortFilter:           []int32{53},
+			},
+			Destination:           unifi.AclRuleEndpoint{Type: "NETWORKS", NetworkIDs: []string{"net-1"}},
+			ProtocolFilter:        []string{"TCP", "UDP"},
+			EnforcingDeviceFilter: &unifi.AclRuleDeviceFilter{Type: "DEVICES", DeviceIDs: []string{"dev-1"}},
+		},
+		{
+			ID: "rule-uuid-2", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+			Type: "MAC", Name: "Allow Switch MAC", Enabled: true, Action: "ALLOW",
+			Source:          unifi.AclRuleEndpoint{Type: "MAC_ADDRESSES", MacAddresses: []string{"aa:bb:cc:dd:ee:ff"}, PrefixLength: &prefix},
+			Destination:     unifi.AclRuleEndpoint{Type: "MAC_ADDRESSES", MacAddresses: []string{"00:11:22:33:44:55"}},
+			NetworkIDFilter: "net-1",
+		},
+	}
+
+	resources, warnings := AclRules("default", networkNames, deviceTags, rules)
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if resources[0].Kind != KindUnifiAclRule {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiAclRule)
+	}
+
+	ipv4, ok := resources[0].Spec.(UnifiAclRuleSpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiAclRuleSpec", resources[0].Spec)
+	}
+	if ipv4.SiteRef.Name != "default" || ipv4.Name != "Allow Guest to DNS" || ipv4.Type != "IPV4" || ipv4.Action != "ALLOW" {
+		t.Errorf("ipv4 spec = %+v, want siteRef=default type=IPV4 action=ALLOW", ipv4)
+	}
+	if ipv4.Source.IPAddressesOrSubnets == nil || len(ipv4.Source.IPAddressesOrSubnets.Addresses) != 1 ||
+		ipv4.Source.IPAddressesOrSubnets.Addresses[0] != "192.168.20.0/24" ||
+		len(ipv4.Source.IPAddressesOrSubnets.Ports) != 1 || ipv4.Source.IPAddressesOrSubnets.Ports[0] != AclPort(53) {
+		t.Errorf("ipv4 source = %+v, want addresses + port 53", ipv4.Source)
+	}
+	if ipv4.Destination.Networks == nil || len(ipv4.Destination.Networks.NetworkRefs) != 1 ||
+		ipv4.Destination.Networks.NetworkRefs[0].Name != "iot" {
+		t.Errorf("ipv4 destination = %+v, want networkRef iot", ipv4.Destination)
+	}
+	if len(ipv4.ProtocolFilter) != 2 || ipv4.EnforcingDeviceTags[0].Name != "iot-switch" {
+		t.Errorf("ipv4 protocolFilter/enforcing tags = %+v %+v", ipv4.ProtocolFilter, ipv4.EnforcingDeviceTags)
+	}
+	if status, ok := resources[0].Status.(AclRuleStatus); !ok || status.RuleID != "rule-uuid" || status.Origin != "USER_DEFINED" {
+		t.Errorf("status = %+v, want rule id and origin in status only", resources[0].Status)
+	}
+
+	mac := resources[1].Spec.(UnifiAclRuleSpec)
+	if mac.Type != "MAC" || mac.NetworkRef == nil || mac.NetworkRef.Name != "iot" {
+		t.Errorf("mac spec = %+v, want networkRef iot", mac)
+	}
+	if mac.Source.MacAddresses == nil || mac.Source.MacAddresses.PrefixLength == nil || *mac.Source.MacAddresses.PrefixLength != 48 {
+		t.Errorf("mac source = %+v, want prefixLength 48", mac.Source)
+	}
+
+	raw, err := json.Marshal(ipv4)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"rule-uuid", "net-1", "dev-1", `"networkIds"`, `"networkIdFilter"`, `"deviceIds"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains opaque identifier %s: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestAclRulesSkipsUnrepresentable(t *testing.T) {
+	t.Parallel()
+
+	networkNames := map[string]string{"net-1": "iot"}
+	deviceTags := []unifi.DeviceTag{{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"dev-1"}}}
+	ip := func() unifi.AclRuleEndpoint {
+		return unifi.AclRuleEndpoint{Type: "IP_ADDRESSES_OR_SUBNETS", IPAddressesOrSubnets: []string{"0.0.0.0/0"}}
+	}
+	rules := []unifi.AclRule{
+		{ID: "unknown-net", Type: "IPV4", Name: "Unknown Net", Action: "BLOCK",
+			Source:      unifi.AclRuleEndpoint{Type: "NETWORKS", NetworkIDs: []string{"missing"}},
+			Destination: ip()},
+		{ID: "untagged", Type: "IPV4", Name: "Untagged", Action: "ALLOW",
+			Source: ip(), Destination: ip(),
+			EnforcingDeviceFilter: &unifi.AclRuleDeviceFilter{Type: "DEVICES", DeviceIDs: []string{"ghost"}}},
+		{ID: "unknown-action", Type: "IPV4", Name: "Unknown Action", Action: "DROP",
+			Source: ip(), Destination: ip()},
+		{ID: "mac-protocol", Type: "MAC", Name: "Mac Protocol", Action: "ALLOW",
+			Source:          unifi.AclRuleEndpoint{Type: "MAC_ADDRESSES", MacAddresses: []string{"aa:bb:cc:dd:ee:ff"}},
+			Destination:     unifi.AclRuleEndpoint{Type: "MAC_ADDRESSES", MacAddresses: []string{"00:11:22:33:44:55"}},
+			NetworkIDFilter: "net-1", ProtocolFilter: []string{"TCP"}},
+		{ID: "ipv4-mac-endpoint", Type: "IPV4", Name: "IPv4 Mac Endpoint", Action: "BLOCK",
+			Source:      unifi.AclRuleEndpoint{Type: "MAC_ADDRESSES", MacAddresses: []string{"aa:bb:cc:dd:ee:ff"}},
+			Destination: ip()},
+		{ID: "good", Type: "IPV4", Name: "Good Rule", Action: "BLOCK", Source: ip(), Destination: ip()},
+	}
+
+	resources, warnings := AclRules("default", networkNames, deviceTags, rules)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the representable rule): %+v", len(resources), resources)
+	}
+	if resources[0].Metadata.Name != "good-rule" {
+		t.Errorf("name = %q, want good-rule", resources[0].Metadata.Name)
+	}
+	if len(warnings) != 5 {
+		t.Errorf("warnings = %v, want 5 (one per skipped rule)", warnings)
+	}
+}
+
+func i32Ptr(v int32) *int32 { return &v }
+
+func TestDnsPoliciesProjectsVariantAndRecordsStatus(t *testing.T) {
+	t.Parallel()
+
+	policies := []unifi.DnsPolicy{
+		{
+			ID: "dns-uuid", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+			Type: "A_RECORD", Domain: "www.example.com", Enabled: true,
+			IPv4Address: "192.168.1.10", TTLSeconds: i32Ptr(14400),
+		},
+		{
+			ID: "dns-uuid-2", Metadata: unifi.NetworkMetadata{Origin: "SYSTEM_DEFINED"},
+			Type: "SRV_RECORD", Domain: "_ldap._tcp.example.com", Enabled: true,
+			Port: i32Ptr(389), Priority: i32Ptr(0), Protocol: "_tcp",
+			ServerDomain: "dc.example.com", Service: "_ldap", Weight: i32Ptr(100),
+		},
+	}
+
+	resources, warnings := DnsPolicies("default", policies)
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if resources[0].Kind != KindUnifiDnsPolicy {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiDnsPolicy)
+	}
+	if resources[0].Metadata.Name != "www-example-com-a-record" {
+		t.Errorf("name = %q, want www-example-com-a-record", resources[0].Metadata.Name)
+	}
+
+	a, ok := resources[0].Spec.(UnifiDnsPolicySpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiDnsPolicySpec", resources[0].Spec)
+	}
+	if a.SiteRef.Name != "default" || a.Type != "A_RECORD" || a.Domain != "www.example.com" {
+		t.Errorf("a spec = %+v, want siteRef=default type=A_RECORD", a)
+	}
+	if a.ARecord == nil || a.ARecord.IPv4Address != "192.168.1.10" || a.ARecord.TTLSeconds != 14400 {
+		t.Errorf("a record = %+v", a.ARecord)
+	}
+	if a.AaaaRecord != nil || a.CnameRecord != nil || a.MxRecord != nil || a.SrvRecord != nil || a.TxtRecord != nil || a.ForwardDomain != nil {
+		t.Errorf("a spec carries a foreign variant: %+v", a)
+	}
+	if status, ok := resources[0].Status.(DnsPolicyStatus); !ok || status.PolicyID != "dns-uuid" || status.Origin != "USER_DEFINED" {
+		t.Errorf("status = %+v, want policy id and origin in status only", resources[0].Status)
+	}
+
+	srv := resources[1].Spec.(UnifiDnsPolicySpec)
+	if srv.SrvRecord == nil || srv.SrvRecord.Port != 389 || srv.SrvRecord.Weight != 100 || srv.SrvRecord.Priority != 0 {
+		t.Errorf("srv record = %+v", srv.SrvRecord)
+	}
+
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"dns-uuid", `"policyID"`, `"_id"`, `"id"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains opaque identifier %s: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestDnsPoliciesSkipsUnrepresentable(t *testing.T) {
+	t.Parallel()
+
+	policies := []unifi.DnsPolicy{
+		{ID: "unknown", Type: "NAPTR_RECORD", Domain: "unknown.example.com"},
+		{ID: "foreign", Type: "A_RECORD", Domain: "mismatch.example.com", TargetDomain: "www.example.com"},
+		{ID: "missing", Type: "A_RECORD", Domain: "missing.example.com", IPv4Address: "192.168.1.20"},
+		{ID: "range", Type: "AAAA_RECORD", Domain: "range.example.com", IPv6Address: "fd00::1", TTLSeconds: i32Ptr(90000)},
+		{ID: "good", Type: "TXT_RECORD", Domain: "text.example.com", Text: "hello"},
+	}
+
+	resources, warnings := DnsPolicies("default", policies)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the representable policy): %+v", len(resources), resources)
+	}
+	if resources[0].Metadata.Name != "text-example-com-txt-record" {
+		t.Errorf("name = %q, want text-example-com-txt-record", resources[0].Metadata.Name)
+	}
+	if len(warnings) != 4 {
+		t.Errorf("warnings = %v, want 4 (one per skipped policy)", warnings)
+	}
+}
+
+func TestDnsPoliciesDisambiguatesSameDomainType(t *testing.T) {
+	t.Parallel()
+
+	policies := []unifi.DnsPolicy{
+		{ID: "a", Type: "A_RECORD", Domain: "www.example.com", IPv4Address: "192.168.1.10", TTLSeconds: i32Ptr(300)},
+		{ID: "b", Type: "A_RECORD", Domain: "www.example.com", IPv4Address: "192.168.1.11", TTLSeconds: i32Ptr(300)},
+	}
+
+	resources, warnings := DnsPolicies("default", policies)
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
+	}
+	if resources[0].Metadata.Name != "www-example-com-a-record" || resources[1].Metadata.Name != "www-example-com-a-record-2" {
+		t.Errorf("names = %q, %q, want distinct suffixed names", resources[0].Metadata.Name, resources[1].Metadata.Name)
+	}
+	if got := resources[1].Metadata.Annotations[AnnotationOriginalName]; got != "www.example.com A_RECORD" {
+		t.Errorf("annotation %s = %q, want the original domain and type", AnnotationOriginalName, got)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want 1 collision warning", warnings)
+	}
+}
+
+func TestSwitchingLagsResolvesDeviceTagsAndRecordsStatus(t *testing.T) {
+	t.Parallel()
+
+	deviceTags := []unifi.DeviceTag{
+		{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"dev-1"}},
+		{ID: "tag-2", Name: "aps", DeviceIDs: []string{"dev-2", "dev-3"}},
+	}
+	lags := []unifi.Lag{{
+		ID: "lag-uuid", Type: "LOCAL", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+		Members: []unifi.LagMember{{DeviceID: "dev-1", PortIdxs: []int32{1, 2}}},
+	}}
+
+	resources, warnings := SwitchingLags("default", deviceTags, lags)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1: %+v", len(resources), resources)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if resources[0].Kind != KindUnifiSwitchingLag {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiSwitchingLag)
+	}
+	if resources[0].Metadata.Name != "local-iot-switch-1-2" {
+		t.Errorf("name = %q, want local-iot-switch-1-2", resources[0].Metadata.Name)
+	}
+
+	spec, ok := resources[0].Spec.(UnifiSwitchingLagSpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiSwitchingLagSpec", resources[0].Spec)
+	}
+	if spec.SiteRef.Name != "default" || spec.Type != "LOCAL" || len(spec.Members) != 1 {
+		t.Fatalf("spec = %+v, want siteRef=default type=LOCAL one member", spec)
+	}
+	if spec.Members[0].DeviceTag.Name != "iot-switch" || len(spec.Members[0].PortIdxs) != 2 {
+		t.Errorf("member = %+v, want iot-switch ports [1 2]", spec.Members[0])
+	}
+
+	status, ok := resources[0].Status.(UnifiSwitchingLagStatus)
+	if !ok || status.LagID != "lag-uuid" || status.Type != "LOCAL" ||
+		len(status.Members) != 1 || status.Members[0].DeviceID != "dev-1" {
+		t.Errorf("status = %+v, want lag id, type, and observed members", resources[0].Status)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"lag-uuid", "dev-1", `"deviceId"`, `"deviceID"`, `"id"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains opaque identifier %s: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestSwitchingLagsSkipsUnrepresentable(t *testing.T) {
+	t.Parallel()
+
+	deviceTags := []unifi.DeviceTag{
+		{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"dev-1", "dev-4"}},
+		{ID: "tag-2", Name: "aps", DeviceIDs: []string{"dev-4"}},
+	}
+	lags := []unifi.Lag{
+		{ID: "unknown-type", Type: "BOGUS", Members: []unifi.LagMember{{DeviceID: "dev-1", PortIdxs: []int32{1}}}},
+		{ID: "no-members", Type: "LOCAL"},
+		{ID: "untagged", Type: "LOCAL", Members: []unifi.LagMember{{DeviceID: "ghost", PortIdxs: []int32{1}}}},
+		{ID: "ambiguous", Type: "LOCAL", Members: []unifi.LagMember{{DeviceID: "dev-4", PortIdxs: []int32{1}}}},
+		{ID: "no-ports", Type: "LOCAL", Members: []unifi.LagMember{{DeviceID: "dev-1"}}},
+		{ID: "good", Type: "LOCAL", Members: []unifi.LagMember{{DeviceID: "dev-1", PortIdxs: []int32{1}}}},
+	}
+
+	resources, warnings := SwitchingLags("default", deviceTags, lags)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the representable LAG): %+v", len(resources), resources)
+	}
+	if resources[0].Metadata.Name != "local-iot-switch-1" {
+		t.Errorf("name = %q, want local-iot-switch-1", resources[0].Metadata.Name)
+	}
+	if len(warnings) != 5 {
+		t.Errorf("warnings = %v, want 5 (one per skipped LAG)", warnings)
+	}
+}
+
+func TestSwitchingMcLagDomainsAdoptsAndFlattens(t *testing.T) {
+	t.Parallel()
+
+	domains := []unifi.McLagDomain{
+		{
+			ID: "dom-uuid", Name: "Core MC-LAG", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+			Peers: []unifi.McLagPeer{{DeviceID: "dev-2", LinkPortIdxs: []int32{7, 8}, Role: "TOP"}},
+			Lags:  []unifi.McLagLocal{{ID: "lag-1", Members: []unifi.LagMember{{DeviceID: "dev-1", PortIdxs: []int32{9}}}}},
+		},
+		{ID: "blank", Name: ""},
+	}
+
+	resources, warnings := SwitchingMcLagDomains("default", domains)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the named domain): %+v", len(resources), resources)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want 1 (the unnamed domain)", warnings)
+	}
+	if resources[0].Kind != KindUnifiSwitchingMcLagDomain {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiSwitchingMcLagDomain)
+	}
+	spec := resources[0].Spec.(UnifiSwitchingMcLagDomainSpec)
+	if spec.SiteRef.Name != "default" || spec.Name != "Core MC-LAG" {
+		t.Errorf("spec = %+v, want siteRef=default name=Core MC-LAG", spec)
+	}
+	status := resources[0].Status.(UnifiSwitchingMcLagDomainStatus)
+	if status.DomainID != "dom-uuid" || len(status.Members) != 1 || status.Members[0].DeviceID != "dev-1" ||
+		len(status.Peers) != 1 || status.Peers[0].Role != "TOP" {
+		t.Errorf("status = %+v, want domain id, flattened members, and peers", status)
+	}
+}
+
+func TestSwitchingSwitchStacksAdoptsAndRecordsMembers(t *testing.T) {
+	t.Parallel()
+
+	stacks := []unifi.SwitchStack{
+		{
+			ID: "stack-uuid", Name: "Core Stack", Metadata: unifi.NetworkMetadata{Origin: "SYSTEM_DEFINED"},
+			Members: []unifi.SwitchStackMember{{DeviceID: "dev-1"}, {DeviceID: "dev-2"}},
+		},
+		{ID: "blank", Name: ""},
+	}
+
+	resources, warnings := SwitchingSwitchStacks("default", stacks)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the named stack): %+v", len(resources), resources)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want 1 (the unnamed stack)", warnings)
+	}
+	if resources[0].Kind != KindUnifiSwitchingSwitchStack {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiSwitchingSwitchStack)
+	}
+	spec := resources[0].Spec.(UnifiSwitchingSwitchStackSpec)
+	if spec.SiteRef.Name != "default" || spec.Name != "Core Stack" {
+		t.Errorf("spec = %+v, want siteRef=default name=Core Stack", spec)
+	}
+	status := resources[0].Status.(UnifiSwitchingSwitchStackStatus)
+	if status.StackID != "stack-uuid" || len(status.Members) != 2 {
+		t.Errorf("status = %+v, want stack id and two observed members", status)
+	}
+}
+
+func TestVpnServersAdoptsAndRecordsStatus(t *testing.T) {
+	t.Parallel()
+
+	servers := []unifi.VpnServer{
+		{
+			ID: "server-uuid", Name: "WireGuard Server", Type: "WIREGUARD", Enabled: true,
+			Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+		},
+		{ID: "blank", Name: "", Type: "OPENVPN", Enabled: true},
+	}
+
+	resources, warnings := VpnServers("default", servers)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the named server): %+v", len(resources), resources)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want 1 (the unnamed server)", warnings)
+	}
+	if resources[0].Kind != KindUnifiVpnServer {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiVpnServer)
+	}
+	spec, ok := resources[0].Spec.(UnifiVpnServerSpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiVpnServerSpec", resources[0].Spec)
+	}
+	if spec.SiteRef.Name != "default" || spec.Name != "WireGuard Server" {
+		t.Errorf("spec = %+v, want siteRef=default name=WireGuard Server", spec)
+	}
+	status, ok := resources[0].Status.(VpnServerStatus)
+	if !ok || status.ServerID != "server-uuid" || status.Type != "WIREGUARD" || status.Enabled == nil || !*status.Enabled {
+		t.Errorf("status = %+v, want serverID, type, and enabled in status only", resources[0].Status)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"server-uuid", `"serverID"`, `"type"`, `"enabled"`, `"id"`, "secret", "psk"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains %s: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestVpnServersDisambiguatesNames(t *testing.T) {
+	t.Parallel()
+
+	servers := []unifi.VpnServer{
+		{ID: "a", Name: "Edge VPN", Type: "WIREGUARD", Enabled: true},
+		{ID: "b", Name: "edge-vpn", Type: "OPENVPN", Enabled: false},
+	}
+
+	resources, warnings := VpnServers("default", servers)
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
+	}
+	if resources[0].Metadata.Name != "edge-vpn" || resources[1].Metadata.Name != "edge-vpn-2" {
+		t.Errorf("names = %q, %q, want distinct suffixed names", resources[0].Metadata.Name, resources[1].Metadata.Name)
+	}
+	if got := resources[1].Metadata.Annotations[AnnotationOriginalName]; got != "edge-vpn" {
+		t.Errorf("annotation %s = %q, want the original name", AnnotationOriginalName, got)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want 1 collision warning", warnings)
+	}
+}
+
+func TestSiteToSiteTunnelsAdoptsAndRecordsStatus(t *testing.T) {
+	t.Parallel()
+
+	tunnels := []unifi.SiteToSiteTunnel{
+		{
+			ID: "tunnel-uuid", Name: "HQ to Branch", Type: "IPSEC",
+			Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"},
+		},
+		{ID: "blank", Name: "", Type: "WIREGUARD"},
+	}
+
+	resources, warnings := SiteToSiteTunnels("default", tunnels)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1 (only the named tunnel): %+v", len(resources), resources)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want 1 (the unnamed tunnel)", warnings)
+	}
+	if resources[0].Kind != KindUnifiSiteToSiteTunnel {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiSiteToSiteTunnel)
+	}
+	spec, ok := resources[0].Spec.(UnifiSiteToSiteTunnelSpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiSiteToSiteTunnelSpec", resources[0].Spec)
+	}
+	if spec.SiteRef.Name != "default" || spec.Name != "HQ to Branch" {
+		t.Errorf("spec = %+v, want siteRef=default name=HQ to Branch", spec)
+	}
+	status, ok := resources[0].Status.(SiteToSiteTunnelStatus)
+	if !ok || status.TunnelID != "tunnel-uuid" || status.Type != "IPSEC" {
+		t.Errorf("status = %+v, want tunnelID and type in status only", resources[0].Status)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"tunnel-uuid", `"tunnelID"`, `"type"`, `"id"`, "secret", "psk"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains %s: %s", forbidden, raw)
+		}
+	}
+}

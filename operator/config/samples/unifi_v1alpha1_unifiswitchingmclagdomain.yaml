@@ -1,0 +1,11 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiSwitchingMcLagDomain
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifiswitchingmclagdomain-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  name: core-mclag

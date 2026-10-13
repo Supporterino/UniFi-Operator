@@ -1,0 +1,33 @@
+{
+  "count": 2,
+  "data": [
+    {
+      "id": "d1e2f3a4-b5c6-4d7e-8f90-1a2b3c4d5e6f",
+      "name": "Core MC-LAG",
+      "peers": [
+        { "deviceId": "ee1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "linkPortIdxs": [7, 8], "role": "TOP" },
+        { "deviceId": "ff1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "linkPortIdxs": [7, 8], "role": "BOTTOM" }
+      ],
+      "lags": [
+        {
+          "id": "e2f3a4b5-c6d7-4e8f-9012-2b3c4d5e6f70",
+          "members": [
+            { "deviceId": "aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "portIdxs": [9] }
+          ],
+          "metadata": { "origin": "USER_DEFINED" }
+        }
+      ],
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "f3a4b5c6-d7e8-4f90-9123-3c4d5e6f7081",
+      "name": "",
+      "peers": [],
+      "lags": [],
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 2
+}

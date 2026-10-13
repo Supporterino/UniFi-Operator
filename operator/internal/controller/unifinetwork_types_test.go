@@ -98,7 +98,7 @@ var _ = Describe("UnifiNetwork CRD validation", func() {
 					HostIPAddress:    testSwitchHostIP,
 					PrefixLength:     24,
 				},
-				DeviceTag: unifiv1alpha1.DeviceTagSelector{Name: "core-switch"},
+				DeviceTag: unifiv1alpha1.DeviceTagSelector{Name: testEnforcingDeviceTag},
 			},
 		})
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -296,7 +296,7 @@ var _ = Describe("UnifiNetwork CRD validation", func() {
 						LeaseTimeSeconds: 3600,
 					},
 				},
-				DeviceTag: unifiv1alpha1.DeviceTagSelector{Name: "core-switch"},
+				DeviceTag: unifiv1alpha1.DeviceTagSelector{Name: testEnforcingDeviceTag},
 			},
 		})
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())

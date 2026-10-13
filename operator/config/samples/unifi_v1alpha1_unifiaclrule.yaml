@@ -1,0 +1,31 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiAclRule
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifiaclrule-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  name: block-guest-to-nas
+  type: IPV4
+  action: BLOCK
+  description: Block guest traffic from reaching the NAS subnet
+  enabled: true
+  protocolFilter:
+  - TCP
+  source:
+    type: IP_ADDRESSES_OR_SUBNETS
+    ipAddressesOrSubnets:
+      addresses:
+      - 192.168.10.0/24
+  destination:
+    type: IP_ADDRESSES_OR_SUBNETS
+    ipAddressesOrSubnets:
+      addresses:
+      - 192.168.50.10
+      ports:
+      - 445
+  enforcingDeviceTags:
+  - name: rack-switch

@@ -131,6 +131,22 @@ the same site claims the same network, the controller marks every claimant `Read
 uniqueness is checked the same way, keyed on `(siteRef, spec.name)`, because an upstream zone is
 identified by name.
 
+### Ordered collections: one authoritative ordering object
+
+Ordered collections — a firewall's policies per source/destination zone pair, and the site's ACL
+rules — are ordered by a dedicated ordering CR, never by a per-object priority field. The norm:
+
+- **One authoritative ordering object per scope.** `UnifiFirewallPolicyOrdering` is authoritative
+  for one zone pair; `UnifiAclRuleOrdering` is authoritative for the site-global rule list. CRD
+  markers cannot express this uniqueness, so the controller detects duplicates at runtime and sets
+  `Ready=False` on every claimant, applying no order until a single object remains — the same
+  claimant pattern as firewall-zone membership above.
+- **System-defined objects are anchored.** A system-defined policy is never reordered; the ordering
+  object only positions user objects before or after the system-defined block.
+- **Absent user objects are drift, not a reorder trigger.** A user object present upstream for the
+  scope but absent from the ordering object is reported in `status`, never silently reordered.
+- **Ordering references objects by Kubernetes identity**, like every other reference.
+
 ### Credential and opaque-ID references
 
 Two upstream shapes are always replaced by a reference rather than copied into `spec`:

@@ -1,0 +1,91 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiSwitchingLag
+metadata:
+  name: local-iot-switch-1-2
+spec:
+  members:
+  - deviceTag:
+      name: iot-switch
+    portIdxs:
+    - 1
+    - 2
+  siteRef:
+    name: default
+  type: LOCAL
+status:
+  lagID: 1f2a3b4c-5d6e-4f70-8192-a3b4c5d6e7f8
+  members:
+  - deviceID: aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+    portIdxs:
+    - 1
+    - 2
+  type: LOCAL
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiSwitchingLag
+metadata:
+  name: multi-chassis-iot-switch-3-aps-4
+spec:
+  members:
+  - deviceTag:
+      name: iot-switch
+    portIdxs:
+    - 3
+  - deviceTag:
+      name: aps
+    portIdxs:
+    - 4
+  siteRef:
+    name: default
+  type: MULTI_CHASSIS
+status:
+  lagID: 2a3b4c5d-6e7f-4081-92a3-b4c5d6e7f809
+  members:
+  - deviceID: aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+    portIdxs:
+    - 3
+  - deviceID: ee1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+    portIdxs:
+    - 4
+  type: MULTI_CHASSIS
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiSwitchingMcLagDomain
+metadata:
+  name: core-mc-lag
+spec:
+  name: Core MC-LAG
+  siteRef:
+    name: default
+status:
+  domainID: d1e2f3a4-b5c6-4d7e-8f90-1a2b3c4d5e6f
+  members:
+  - deviceID: aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+    portIdxs:
+    - 9
+  peers:
+  - deviceID: ee1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+    linkPortIdxs:
+    - 7
+    - 8
+    role: TOP
+  - deviceID: ff1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+    linkPortIdxs:
+    - 7
+    - 8
+    role: BOTTOM
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiSwitchingSwitchStack
+metadata:
+  name: core-stack
+spec:
+  name: Core Stack
+  siteRef:
+    name: default
+status:
+  members:
+  - deviceID: aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+  - deviceID: ee1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+  stackID: a4b5c6d7-e8f9-4091-a2b3-c4d5e6f70819

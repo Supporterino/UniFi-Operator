@@ -5,4 +5,16 @@ resources:
 - unifi_v1alpha1_unifinetwork.yaml
 - unifi_v1alpha1_unififirewallzone.yaml
 - unifi_v1alpha1_unifiwifibroadcast.yaml
+- unifi_v1alpha1_unifiradiusprofile.yaml
+- unifi_v1alpha1_unifitrafficmatchinglist.yaml
+- unifi_v1alpha1_unififirewallpolicy.yaml
+- unifi_v1alpha1_unififirewallpolicyordering.yaml
+- unifi_v1alpha1_unifiaclrule.yaml
+- unifi_v1alpha1_unifiaclruleordering.yaml
+- unifi_v1alpha1_unifidnspolicy.yaml
+- unifi_v1alpha1_unifiswitchinglag.yaml
+- unifi_v1alpha1_unifiswitchingmclagdomain.yaml
+- unifi_v1alpha1_unifiswitchingswitchstack.yaml
+- unifi_v1alpha1_unifivpnserver.yaml
+- unifi_v1alpha1_unifisitetositetunnel.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

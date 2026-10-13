@@ -1,0 +1,38 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiVpnServer
+metadata:
+  name: wireguard-server
+spec:
+  name: WireGuard Server
+  siteRef:
+    name: default
+status:
+  enabled: true
+  serverID: a1b2c3d4-e5f6-4071-8293-a4b5c6d7e8f9
+  type: WIREGUARD
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiVpnServer
+metadata:
+  name: legacy-l2tp
+spec:
+  name: Legacy L2TP
+  siteRef:
+    name: default
+status:
+  enabled: false
+  serverID: b2c3d4e5-f607-4182-93a4-b5c6d7e8f901
+  type: L2TP
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiSiteToSiteTunnel
+metadata:
+  name: hq-to-branch
+spec:
+  name: HQ to Branch
+  siteRef:
+    name: default
+status:
+  tunnelID: d4e5f607-1829-43a4-b5c6-d7e8f9012345
+  type: IPSEC

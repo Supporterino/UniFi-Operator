@@ -7,37 +7,38 @@ servers and site-to-site tunnels on the Integration v1 API.
 
 ## Requirements
 
-### Requirement: VPN server type is validated
+### Requirement: VPN resources are adopted by name and reference their site
 
-`UnifiVpnServer.spec.type` SHALL be one of the server types the upstream API supports (for
-example `WIREGUARD`, `OPENVPN`, `L2TP`, `PPTP`, or `UID`), and variant-specific fields MUST only
-be accepted for the matching value.
+`UnifiVpnServer` and `UnifiSiteToSiteTunnel` SHALL reference their parent `UnifiSite` through
+`spec.siteRef` (name only, same namespace) and SHALL name the existing upstream object to adopt
+through `spec.name`. Neither MUST contain a UniFi `_id`/UUID or any opaque identifier; resolved
+upstream UUIDs and the observed `type`/`enabled` belong in `status` only.
 
-#### Scenario: Mismatched variant rejected
-- **WHEN** a server sets fields for the wrong `type`
-- **THEN** the API server rejects the object
+#### Scenario: Tunnel adopted by name
+- **WHEN** a tunnel sets `spec.siteRef` and `spec.name` naming an existing upstream tunnel
+- **THEN** the controller records the resolved upstream UUID in `status` and reports `Ready=True`
 
-### Requirement: VPN secrets are referenced, never inline
+#### Scenario: Server adopted by name
+- **WHEN** a VPN server sets `spec.siteRef` and `spec.name` naming an existing upstream server
+- **THEN** the controller records the resolved upstream UUID and its observed `type` in `status`
 
-Pre-shared keys and other VPN credentials SHALL be expressed through references to Kubernetes
-`Secret` objects. Secrets MUST NOT appear inline in `spec`, in `status`, in events, or in logs.
+#### Scenario: No opaque identifier in spec
+- **WHEN** the generated CRD schemas for the VPN kinds are inspected
+- **THEN** none contains a field representing an opaque upstream identifier
 
-#### Scenario: Pre-shared key from Secret
-- **WHEN** a tunnel references a `Secret` for its pre-shared key
-- **THEN** the operator reads the key at reconcile time and never records it in status
+### Requirement: VPN adoption authors no credentials and never leaks secrets
 
-#### Scenario: Secret not logged
-- **WHEN** the operator applies VPN configuration
+Because the frozen surface exposes VPN resources read-only, the operator SHALL author no pre-shared
+key or credential on the CR. No secret material MUST appear in `spec`, in `status`, in events, or in
+logs.
+
+#### Scenario: No credential field in spec
+- **WHEN** the generated CRD schemas for the VPN kinds are inspected
+- **THEN** none contains a pre-shared-key or credential field
+
+#### Scenario: Secret material not logged
+- **WHEN** the operator adopts VPN configuration
 - **THEN** no secret material appears in logs or events
-
-### Requirement: VPN resources reference their site and peers by identity
-
-VPN Custom Resources SHALL reference their parent `UnifiSite`, and site-to-site tunnels SHALL
-reference their peer endpoints declaratively rather than by opaque identifier.
-
-#### Scenario: Tunnel applied
-- **WHEN** a site-to-site tunnel defines its local and remote endpoints
-- **THEN** the operator creates the tunnel upstream and reports `Ready=True`
 
 ### Requirement: VPN status and cleanup are observable
 

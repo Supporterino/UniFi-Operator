@@ -23,10 +23,22 @@ rules:
 - apiGroups:
   - unifi.supporterino.de
   resources:
+  - unifiaclruleorderings/status
+  - unifiaclrules/status
   - unificontrollers/status
+  - unifidnspolicies/status
+  - unififirewallpolicies/status
+  - unififirewallpolicyorderings/status
   - unififirewallzones/status
   - unifinetworks/status
+  - unifiradiusprofiles/status
   - unifisites/status
+  - unifisitetositetunnels/status
+  - unifiswitchinglags/status
+  - unifiswitchingmclagdomains/status
+  - unifiswitchingswitchstacks/status
+  - unifitrafficmatchinglists/status
+  - unifivpnservers/status
   - unifiwifibroadcasts/status
   verbs:
   - get
@@ -35,8 +47,20 @@ rules:
 - apiGroups:
   - unifi.supporterino.de
   resources:
+  - unifiaclruleorderings
+  - unifiaclrules
+  - unifidnspolicies
+  - unififirewallpolicies
+  - unififirewallpolicyorderings
   - unififirewallzones
   - unifinetworks
+  - unifiradiusprofiles
+  - unifisitetositetunnels
+  - unifiswitchinglags
+  - unifiswitchingmclagdomains
+  - unifiswitchingswitchstacks
+  - unifitrafficmatchinglists
+  - unifivpnservers
   - unifiwifibroadcasts
   verbs:
   - delete

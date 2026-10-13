@@ -107,6 +107,7 @@ type UnifiWifiBroadcastReconciler struct {
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifinetworks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifisites,verbs=get;list;watch
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unificontrollers,verbs=get;list;watch
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiradiusprofiles,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile resolves the broadcast's site and controller (and, for a SPECIFIC
@@ -114,7 +115,8 @@ type UnifiWifiBroadcastReconciler struct {
 // console, and reports the result in status. It is idempotent: re-running it on
 // an unchanged object performs no writes. It fails closed (Ready=False, no upstream mutation) on an unresolved
 // network or site, a version below the WiFi minimum, a security configuration
-// that references an unimplemented UnifiRadiusProfile, a device tag that does
+// that references a UnifiRadiusProfile that is missing or has not resolved an
+// upstream profile UUID, a device tag that does
 // not resolve to exactly one device, or an unreadable passphrase Secret, and it
 // adds/removes its finalizer symmetrically around the upstream broadcast's
 // lifecycle.
@@ -349,10 +351,15 @@ func (r *UnifiWifiBroadcastReconciler) reconcileUpstream(
 		return r.updateStatus(ctx, broadcast, false, reasonVersionUnsupported, err.Error(), nil, &networkID, &siteID, nil)
 	}
 
-	// UnifiRadiusProfile has no Go type yet, so any security configuration that
-	// references one fails closed before any upstream call (design D4).
-	if reason, message := unsupportedSecurityReason(broadcast.Spec.SecurityConfiguration); reason != "" {
-		return r.updateStatus(ctx, broadcast, false, reason, message, nil, &networkID, &siteID, nil)
+	// A security configuration that references a UnifiRadiusProfile resolves it
+	// to the profile's recorded upstream UUID before any upstream call; a
+	// missing or not-yet-resolved profile fails closed (design D4).
+	radiusProfileIDs, stop, err := r.resolveRadiusProfileIDs(ctx, broadcast, network)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if stop != nil {
+		return *stop, nil
 	}
 
 	apiClient, err := resolver.Resolve(ctx, broadcast.Namespace, site.Spec.ControllerRef)
@@ -382,7 +389,7 @@ func (r *UnifiWifiBroadcastReconciler) reconcileUpstream(
 
 	reader := readerOrCached(r.APIReader, r.Client)
 	security, err := convertSecurityConfiguration(
-		broadcast.Spec.SecurityConfiguration, networkIDsByRef,
+		broadcast.Spec.SecurityConfiguration, networkIDsByRef, radiusProfileIDs,
 		func(selector *corev1.SecretKeySelector) (string, error) {
 			return resolveAPIKey(ctx, reader, broadcast.Namespace, selector)
 		},
@@ -754,45 +761,89 @@ func (r *UnifiWifiBroadcastReconciler) updateStatus(
 	return ctrl.Result{}, nil
 }
 
-// unsupportedSecurityReason reports the fail-closed reason for a security
-// configuration the operator cannot provision yet. Any configuration that
-// references a UnifiRadiusProfile fails closed, because that kind has no Go type
-// and the enterprise variants always carry such a reference (design D4).
-func unsupportedSecurityReason(spec unifiv1alpha1.WifiSecurityConfiguration) (reason, message string) {
-	if securityUsesRadiusProfile(spec) {
-		return reasonRadiusProfileUnsupported,
-			"security configuration references a UnifiRadiusProfile, which is not implemented yet; no upstream broadcast was modified"
+// resolveRadiusProfileIDs resolves every UnifiRadiusProfile referenced by the
+// security configuration to the upstream profile UUID recorded in its status. A
+// reference that does not resolve to an existing, same-site profile with a
+// resolved UUID fails closed and is retried, so a late-created profile or one
+// that has not yet adopted an upstream profile self-heals. The returned stop
+// result is non-nil when the reconcile must finish without writing.
+func (r *UnifiWifiBroadcastReconciler) resolveRadiusProfileIDs(
+	ctx context.Context,
+	broadcast *unifiv1alpha1.UnifiWifiBroadcast,
+	network *unifiv1alpha1.UnifiNetwork,
+) (map[string]string, *ctrl.Result, error) {
+	refs := referencedRadiusProfileRefs(broadcast.Spec.SecurityConfiguration)
+	if len(refs) == 0 {
+		return nil, nil, nil
 	}
-	return "", ""
+	ownSite := broadcastOwnSiteName(broadcast, network)
+	ids := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		profile := &unifiv1alpha1.UnifiRadiusProfile{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: broadcast.Namespace, Name: ref.Name}, profile); err != nil {
+			if apierrors.IsNotFound(err) {
+				result, err := r.requeueStatus(ctx, broadcast, reasonRadiusProfileRefNotFound,
+					fmt.Sprintf("UnifiRadiusProfile %q not found", ref.Name))
+				return nil, &result, err
+			}
+			return nil, nil, fmt.Errorf("get UnifiRadiusProfile %q: %w", ref.Name, err)
+		}
+		if !profile.DeletionTimestamp.IsZero() {
+			result, err := r.requeueStatus(ctx, broadcast, reasonRadiusProfileRefNotFound,
+				fmt.Sprintf("UnifiRadiusProfile %q is being deleted", profile.Name))
+			return nil, &result, err
+		}
+		// A RADIUS profile is site-scoped, so a reference to a profile adopted
+		// on another site cannot be used for this broadcast (design D4).
+		if profile.Spec.SiteRef.Name != ownSite {
+			result, err := r.updateStatus(ctx, broadcast, false, reasonCrossSiteReference,
+				fmt.Sprintf("UnifiRadiusProfile %q belongs to UnifiSite %q, not %q; no upstream broadcast was modified",
+					ref.Name, profile.Spec.SiteRef.Name, ownSite), nil, nil, nil, nil)
+			return nil, &result, err
+		}
+		if profile.Status.RadiusProfileID == "" {
+			result, err := r.requeueStatus(ctx, broadcast, reasonDependencyNotReady,
+				fmt.Sprintf("UnifiRadiusProfile %q has not resolved an upstream profile UUID yet", profile.Name))
+			return nil, &result, err
+		}
+		ids[ref.Name] = profile.Status.RadiusProfileID
+	}
+	return ids, nil, nil
 }
 
-// securityUsesRadiusProfile reports whether the selected security variant
-// carries a RADIUS configuration. The enterprise variants require one; the
-// personal and open variants carry one only when explicitly authored.
-func securityUsesRadiusProfile(spec unifiv1alpha1.WifiSecurityConfiguration) bool {
+// referencedRadiusProfileRefs returns the UnifiRadiusProfile reference the
+// selected security variant carries. The enterprise variants require a RADIUS
+// configuration; the personal and open variants carry one only when explicitly
+// authored. CEL guarantees at most one variant is present.
+func referencedRadiusProfileRefs(spec unifiv1alpha1.WifiSecurityConfiguration) []unifiv1alpha1.CoreRef {
 	switch {
-	case spec.Open != nil:
-		return spec.Open.RadiusConfiguration != nil
-	case spec.WPA2Personal != nil:
-		return spec.WPA2Personal.RadiusConfiguration != nil
-	case spec.WPA2WPA3Personal != nil:
-		return spec.WPA2WPA3Personal.RadiusConfiguration != nil
-	case spec.WPA3Personal != nil:
-		return spec.WPA3Personal.RadiusConfiguration != nil
-	case spec.WPA2Enterprise != nil, spec.WPA2WPA3Enterprise != nil, spec.WPA3Enterprise != nil:
-		return true
-	default:
-		return false
+	case spec.Open != nil && spec.Open.RadiusConfiguration != nil:
+		return []unifiv1alpha1.CoreRef{spec.Open.RadiusConfiguration.RadiusProfileRef}
+	case spec.WPA2Personal != nil && spec.WPA2Personal.RadiusConfiguration != nil:
+		return []unifiv1alpha1.CoreRef{spec.WPA2Personal.RadiusConfiguration.RadiusProfileRef}
+	case spec.WPA2WPA3Personal != nil && spec.WPA2WPA3Personal.RadiusConfiguration != nil:
+		return []unifiv1alpha1.CoreRef{spec.WPA2WPA3Personal.RadiusConfiguration.RadiusProfileRef}
+	case spec.WPA3Personal != nil && spec.WPA3Personal.RadiusConfiguration != nil:
+		return []unifiv1alpha1.CoreRef{spec.WPA3Personal.RadiusConfiguration.RadiusProfileRef}
+	case spec.WPA2Enterprise != nil:
+		return []unifiv1alpha1.CoreRef{spec.WPA2Enterprise.RadiusConfiguration.RadiusProfileRef}
+	case spec.WPA2WPA3Enterprise != nil:
+		return []unifiv1alpha1.CoreRef{spec.WPA2WPA3Enterprise.RadiusConfiguration.RadiusProfileRef}
+	case spec.WPA3Enterprise != nil:
+		return []unifiv1alpha1.CoreRef{spec.WPA3Enterprise.RadiusConfiguration.RadiusProfileRef}
 	}
+	return nil
 }
 
 // convertSecurityConfiguration maps the declarative security variant onto the
 // upstream security body, resolving every passphrase Secret through
-// resolvePassphrase. The caller has already failed closed on any variant that
-// references a UnifiRadiusProfile.
+// resolvePassphrase and every RADIUS profile reference through radiusProfileIDs
+// (name -> resolved upstream profile UUID). The caller has already resolved and
+// failed closed on any referenced UnifiRadiusProfile.
 func convertSecurityConfiguration(
 	spec unifiv1alpha1.WifiSecurityConfiguration,
 	networkIDsByRef map[string]string,
+	radiusProfileIDs map[string]string,
 	resolvePassphrase func(*corev1.SecretKeySelector) (string, error),
 ) (*unifi.WifiSecurityConfiguration, error) {
 	out := &unifi.WifiSecurityConfiguration{Type: spec.Type}
@@ -801,6 +852,7 @@ func convertSecurityConfiguration(
 		if spec.Open.Encryption != nil {
 			out.Encryption = *spec.Open.Encryption
 		}
+		out.RadiusConfiguration = convertNonEnterpriseRadius(spec.Open.RadiusConfiguration, radiusProfileIDs)
 	case spec.WPA2Personal != nil:
 		v := spec.WPA2Personal
 		passphrase, err := resolveOptionalPassphrase(v.Passphrase, resolvePassphrase)
@@ -818,6 +870,7 @@ func convertSecurityConfiguration(
 		}
 		out.FastRoamingEnabled = v.FastRoamingEnabled
 		out.GroupRekeyIntervalSeconds = v.GroupRekeyIntervalSeconds
+		out.RadiusConfiguration = convertNonEnterpriseRadius(v.RadiusConfiguration, radiusProfileIDs)
 	case spec.WPA2WPA3Personal != nil:
 		v := spec.WPA2WPA3Personal
 		passphrase, err := resolvePassphrase(&v.Passphrase)
@@ -834,6 +887,7 @@ func convertSecurityConfiguration(
 		out.Wpa3FastRoamingEnabled = &wpa3FastRoaming
 		out.FastRoamingEnabled = v.FastRoamingEnabled
 		out.GroupRekeyIntervalSeconds = v.GroupRekeyIntervalSeconds
+		out.RadiusConfiguration = convertNonEnterpriseRadius(v.RadiusConfiguration, radiusProfileIDs)
 	case spec.WPA3Personal != nil:
 		v := spec.WPA3Personal
 		passphrase, err := resolvePassphrase(&v.Passphrase)
@@ -847,10 +901,82 @@ func convertSecurityConfiguration(
 		}
 		out.FastRoamingEnabled = v.FastRoamingEnabled
 		out.GroupRekeyIntervalSeconds = v.GroupRekeyIntervalSeconds
+		out.RadiusConfiguration = convertNonEnterpriseRadius(v.RadiusConfiguration, radiusProfileIDs)
+	case spec.WPA2Enterprise != nil:
+		v := spec.WPA2Enterprise
+		coa := v.CoaEnabled
+		out.CoaEnabled = &coa
+		if v.PmfMode != nil {
+			out.PmfMode = *v.PmfMode
+		}
+		out.FastRoamingEnabled = v.FastRoamingEnabled
+		out.GroupRekeyIntervalSeconds = v.GroupRekeyIntervalSeconds
+		out.RadiusConfiguration = convertEnterpriseRadius(v.RadiusConfiguration, radiusProfileIDs)
+	case spec.WPA2WPA3Enterprise != nil:
+		v := spec.WPA2WPA3Enterprise
+		coa := v.CoaEnabled
+		out.CoaEnabled = &coa
+		wpa3FastRoaming := v.Wpa3FastRoamingEnabled
+		out.Wpa3FastRoamingEnabled = &wpa3FastRoaming
+		out.PmfMode = v.PmfMode
+		out.FastRoamingEnabled = v.FastRoamingEnabled
+		out.GroupRekeyIntervalSeconds = v.GroupRekeyIntervalSeconds
+		out.RadiusConfiguration = convertEnterpriseRadius(v.RadiusConfiguration, radiusProfileIDs)
+	case spec.WPA3Enterprise != nil:
+		v := spec.WPA3Enterprise
+		coa := v.CoaEnabled
+		out.CoaEnabled = &coa
+		out.SecurityMode = v.SecurityMode
+		out.FastRoamingEnabled = v.FastRoamingEnabled
+		out.GroupRekeyIntervalSeconds = v.GroupRekeyIntervalSeconds
+		out.RadiusConfiguration = convertEnterpriseRadius(v.RadiusConfiguration, radiusProfileIDs)
 	default:
 		return nil, &unifi.InvalidSpecError{Field: "securityConfiguration", Reason: "unsupported security variant"}
 	}
 	return out, nil
+}
+
+// convertEnterpriseRadius maps the enterprise variant's RADIUS configuration
+// onto the upstream shape, resolving the referenced profile name to its upstream
+// UUID. The MAC-authentication configuration is optional for this variant.
+func convertEnterpriseRadius(
+	cfg unifiv1alpha1.WifiEnterpriseRadiusConfiguration,
+	radiusProfileIDs map[string]string,
+) *unifi.WifiRadiusConfiguration {
+	out := &unifi.WifiRadiusConfiguration{
+		ProfileID: radiusProfileIDs[cfg.RadiusProfileRef.Name],
+		NasID:     convertRadiusNasID(cfg.NasID),
+	}
+	if cfg.MACAuthenticationConfiguration != nil {
+		out.MACAuthenticationConfiguration = &unifi.WifiRadiusMacAuthenticationConfiguration{
+			MacAddressFormat: cfg.MACAuthenticationConfiguration.MacAddressFormat,
+		}
+	}
+	return out
+}
+
+// convertNonEnterpriseRadius maps the non-enterprise variant's optional RADIUS
+// configuration onto the upstream shape. An unset configuration stays nil. The
+// MAC-authentication configuration is required for this variant.
+func convertNonEnterpriseRadius(
+	cfg *unifiv1alpha1.WifiNonEnterpriseRadiusConfiguration,
+	radiusProfileIDs map[string]string,
+) *unifi.WifiRadiusConfiguration {
+	if cfg == nil {
+		return nil
+	}
+	return &unifi.WifiRadiusConfiguration{
+		ProfileID: radiusProfileIDs[cfg.RadiusProfileRef.Name],
+		NasID:     convertRadiusNasID(cfg.NasID),
+		MACAuthenticationConfiguration: &unifi.WifiRadiusMacAuthenticationConfiguration{
+			MacAddressFormat: cfg.MACAuthenticationConfiguration.MacAddressFormat,
+		},
+	}
+}
+
+// convertRadiusNasID maps the RADIUS NAS-Identifier configuration.
+func convertRadiusNasID(in unifiv1alpha1.WifiRadiusNasID) unifi.WifiRadiusNasID {
+	return unifi.WifiRadiusNasID{Type: in.Type, Source: in.Source, Value: in.Value}
 }
 
 // resolveOptionalPassphrase resolves a passphrase Secret reference, treating an
@@ -1527,10 +1653,10 @@ func floatSlicesMatch(a, b []float64) bool {
 // SetupWithManager sets up the controller with the Manager. Status-only writes
 // do not change the object's generation, so the predicate drops the resulting
 // no-op reconcile while still handling spec changes and the first deletion. The
-// controller watches its UnifiNetwork, UnifiSite, and UnifiController
-// dependencies so a status-only change there (a late-provisioned network, a
-// late-adopted site, or a detected application version) retriggers
-// reconciliation.
+// controller watches its UnifiNetwork, UnifiSite, UnifiController, and
+// UnifiRadiusProfile dependencies so a status-only change there (a
+// late-provisioned network, a late-adopted site, a detected application version,
+// or a profile that resolves its upstream UUID) retriggers reconciliation.
 func (r *UnifiWifiBroadcastReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unifiv1alpha1.UnifiWifiBroadcast{}, builder.WithPredicates(wifiBroadcastPredicate())).
@@ -1539,6 +1665,9 @@ func (r *UnifiWifiBroadcastReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			builder.WithPredicates(networkDependencyPredicate())).
 		Watches(&unifiv1alpha1.UnifiSite{}, handler.EnqueueRequestsFromMapFunc(r.broadcastsInNamespace)).
 		Watches(&unifiv1alpha1.UnifiController{}, handler.EnqueueRequestsFromMapFunc(r.broadcastsInNamespace)).
+		Watches(&unifiv1alpha1.UnifiRadiusProfile{},
+			handler.EnqueueRequestsFromMapFunc(r.broadcastsForRadiusProfile),
+			builder.WithPredicates(radiusProfileDependencyPredicate())).
 		Named("unifiwifibroadcast").
 		Complete(r)
 }
@@ -1567,6 +1696,45 @@ func (r *UnifiWifiBroadcastReconciler) broadcastsForNetwork(ctx context.Context,
 		})
 	}
 	return requests
+}
+
+// broadcastsForRadiusProfile enqueues the UnifiWifiBroadcasts whose security
+// configuration references the changed UnifiRadiusProfile via
+// radiusProfileRef. They must re-reconcile when the profile resolves its
+// upstream UUID (a status-only change), is renamed, or is deleted, so an
+// enterprise broadcast provisions rather than staying fail-closed.
+func (r *UnifiWifiBroadcastReconciler) broadcastsForRadiusProfile(ctx context.Context, obj client.Object) []reconcile.Request {
+	profile, ok := obj.(*unifiv1alpha1.UnifiRadiusProfile)
+	if !ok {
+		return nil
+	}
+	var broadcasts unifiv1alpha1.UnifiWifiBroadcastList
+	if err := r.List(ctx, &broadcasts, client.InNamespace(profile.Namespace)); err != nil {
+		logf.FromContext(ctx).Error(err, "list wifi broadcasts for radius profile watch", "namespace", profile.Namespace)
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, len(broadcasts.Items))
+	for i := range broadcasts.Items {
+		item := &broadcasts.Items[i]
+		if !referencesRadiusProfile(item.Spec.SecurityConfiguration, profile.Name) {
+			continue
+		}
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: item.Namespace, Name: item.Name},
+		})
+	}
+	return requests
+}
+
+// referencesRadiusProfile reports whether the selected security variant's RADIUS
+// configuration references the named UnifiRadiusProfile.
+func referencesRadiusProfile(spec unifiv1alpha1.WifiSecurityConfiguration, name string) bool {
+	for _, ref := range referencedRadiusProfileRefs(spec) {
+		if ref.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // broadcastsInNamespace enqueues every UnifiWifiBroadcast in the changed
@@ -1603,6 +1771,36 @@ func wifiBroadcastPredicate() predicate.Predicate {
 				}
 				return e.ObjectOld.GetDeletionTimestamp().IsZero() &&
 					!e.ObjectNew.GetDeletionTimestamp().IsZero()
+			},
+		},
+	)
+}
+
+// radiusProfileDependencyPredicate gates the UnifiRadiusProfile watch. The
+// broadcast resolves an enterprise reference through the profile's
+// status.radiusProfileID, so it must react when that UUID is first resolved, the
+// profile is renamed, or it is deleted. Other status-only updates (conditions,
+// summary) are dropped: the profile controller rewrites its status on every
+// reconcile, and reacting to that churn would bounce reconciles between the two
+// controllers. Generation changes (spec edits, and the create event) and the
+// first deletion are also handled.
+func radiusProfileDependencyPredicate() predicate.Predicate {
+	return predicate.Or(
+		predicate.GenerationChangedPredicate{},
+		predicate.Funcs{
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				oldProfile, ok := e.ObjectOld.(*unifiv1alpha1.UnifiRadiusProfile)
+				if !ok {
+					return false
+				}
+				newProfile, ok := e.ObjectNew.(*unifiv1alpha1.UnifiRadiusProfile)
+				if !ok {
+					return false
+				}
+				if oldProfile.GetDeletionTimestamp().IsZero() && !newProfile.GetDeletionTimestamp().IsZero() {
+					return true
+				}
+				return oldProfile.Status.RadiusProfileID != newProfile.Status.RadiusProfileID
 			},
 		},
 	)

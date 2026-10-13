@@ -1,0 +1,62 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiTrafficMatchingList
+metadata:
+  name: corp-addresses
+spec:
+  items:
+  - address:
+      value: 10.0.0.1
+    type: IP_ADDRESS
+  - addressRange:
+      start: 10.0.0.10
+      stop: 10.0.0.20
+    type: IP_ADDRESS_RANGE
+  - address:
+      value: 10.0.0.0/24
+    type: SUBNET
+  name: Corp Addresses
+  siteRef:
+    name: default
+  type: IPV4_ADDRESSES
+status:
+  listID: 7c1e2f3a-4b5c-4d6e-8f90-1a2b3c4d5e6f
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiTrafficMatchingList
+metadata:
+  name: corp-ipv6
+spec:
+  items:
+  - address:
+      value: 2001:db8::1
+    type: IP_ADDRESS
+  - address:
+      value: 2001:db8::/64
+    type: SUBNET
+  name: Corp IPv6
+  siteRef:
+    name: default
+  type: IPV6_ADDRESSES
+status:
+  listID: 8d2f3a4b-5c6d-4e7f-9012-2b3c4d5e6f70
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiTrafficMatchingList
+metadata:
+  name: web-ports
+spec:
+  items:
+  - port:
+      value: 443
+    type: PORT_NUMBER
+  - portRange:
+      start: 8000
+      stop: 8080
+    type: PORT_NUMBER_RANGE
+  name: Web Ports
+  siteRef:
+    name: default
+  type: PORTS
+status:
+  listID: 9e3a4b5c-6d7e-4f80-9123-3c4d5e6f7081

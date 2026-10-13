@@ -1,0 +1,16 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiDnsPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifidnspolicy-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  type: A_RECORD
+  domain: nas.home.arpa
+  enabled: true
+  aRecord:
+    ipv4Address: 192.168.1.10
+    ttlSeconds: 14400

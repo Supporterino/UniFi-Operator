@@ -1,0 +1,20 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiTrafficMatchingList
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifitrafficmatchinglist-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  name: corp-subnets
+  type: IPV4_ADDRESSES
+  items:
+  - type: SUBNET
+    address:
+      value: 10.0.0.0/8
+  - type: IP_ADDRESS_RANGE
+    addressRange:
+      start: 192.168.1.10
+      stop: 192.168.1.20

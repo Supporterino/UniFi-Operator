@@ -20,6 +20,7 @@ const (
 
 	testNetworkName        = "lan"
 	testHostIPAddress      = "10.0.0.1"
+	testIPv4Address        = "192.168.1.10"
 	testMissingCredentials = "Missing credentials"
 )
 

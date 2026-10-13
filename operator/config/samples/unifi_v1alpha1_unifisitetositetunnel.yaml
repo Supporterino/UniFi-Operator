@@ -1,0 +1,11 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiSiteToSiteTunnel
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifisitetositetunnel-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  name: branch-office

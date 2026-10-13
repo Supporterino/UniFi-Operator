@@ -305,14 +305,14 @@ func TestUnifiNetworkReconcileFailsClosed(t *testing.T) {
 		wantRequeue bool
 	}{
 		{
-			name:        "site missing",
+			name:        testNameSiteMissing,
 			network:     newGatewayNetwork(),
 			controller:  readyController(testAppVersion),
 			wantReason:  reasonSiteRefNotFound,
 			wantRequeue: true,
 		},
 		{
-			name:        "site being deleted",
+			name:        testNameSiteBeingDeleted,
 			network:     newGatewayNetwork(),
 			site:        deletingSite,
 			controller:  readyController(testAppVersion),
@@ -320,7 +320,7 @@ func TestUnifiNetworkReconcileFailsClosed(t *testing.T) {
 			wantRequeue: true,
 		},
 		{
-			name:        "site not adopted",
+			name:        testNameSiteNotAdopted,
 			network:     newGatewayNetwork(),
 			site:        notAdoptedSite,
 			controller:  readyController(testAppVersion),
@@ -328,28 +328,28 @@ func TestUnifiNetworkReconcileFailsClosed(t *testing.T) {
 			wantRequeue: true,
 		},
 		{
-			name:        "controller missing",
+			name:        testNameControllerMissing,
 			network:     newGatewayNetwork(),
 			site:        ownedSite(),
 			wantReason:  reasonControllerNotFound,
 			wantRequeue: true,
 		},
 		{
-			name:       "application version below minimum",
+			name:       testNameVersionBelowMinimum,
 			network:    newGatewayNetwork(),
 			site:       ownedSite(),
 			controller: readyController("10.0.161"),
 			wantReason: reasonVersionUnsupported,
 		},
 		{
-			name:       "version unparseable",
+			name:       testNameVersionUnparseable,
 			network:    newGatewayNetwork(),
 			site:       ownedSite(),
 			controller: readyController(testUnparseableVersion),
 			wantReason: reasonVersionUnsupported,
 		},
 		{
-			name:        "application version not reported",
+			name:        testNameVersionNotReported,
 			network:     newGatewayNetwork(),
 			site:        ownedSite(),
 			controller:  newUnifiController(nil),

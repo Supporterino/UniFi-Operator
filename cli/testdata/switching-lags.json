@@ -1,0 +1,34 @@
+{
+  "count": 3,
+  "data": [
+    {
+      "id": "1f2a3b4c-5d6e-4f70-8192-a3b4c5d6e7f8",
+      "type": "LOCAL",
+      "members": [
+        { "deviceId": "aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "portIdxs": [1, 2] }
+      ],
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "2a3b4c5d-6e7f-4081-92a3-b4c5d6e7f809",
+      "type": "MULTI_CHASSIS",
+      "members": [
+        { "deviceId": "aa1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "portIdxs": [3] },
+        { "deviceId": "ee1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "portIdxs": [4] }
+      ],
+      "mcLagDomainId": "d1e2f3a4-b5c6-4d7e-8f90-1a2b3c4d5e6f",
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "3b4c5d6e-7f80-4192-a3b4-c5d6e7f8091a",
+      "type": "LOCAL",
+      "members": [
+        { "deviceId": "00000000-0000-4000-8000-0000000000ff", "portIdxs": [5] }
+      ],
+      "metadata": { "origin": "USER_DEFINED" }
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 3
+}

@@ -277,7 +277,7 @@ func (r *UnifiNetworkReconciler) reconcileUpstream(
 	switch {
 	case existing == nil:
 		result, err = apiClient.CreateNetwork(ctx, site.Status.SiteID, request)
-		action = "created"
+		action = broadcastActionCreated
 	case networkMatchesRequest(*existing, request):
 		// The upstream object already matches the desired state; skip the PUT so
 		// re-reconciling an unchanged object performs no write.
@@ -287,7 +287,7 @@ func (r *UnifiNetworkReconciler) reconcileUpstream(
 		return r.updateStatus(ctx, network, true, reasonReconciled, summary, &networkID, &zoneID)
 	default:
 		result, err = apiClient.UpdateNetwork(ctx, site.Status.SiteID, existing.ID, request)
-		action = "updated"
+		action = broadcastActionUpdated
 	}
 	if err != nil {
 		return r.handleUpstreamError(ctx, network, err)
@@ -678,7 +678,7 @@ func resolveExistingNetwork(
 func systemObjectMessage(existing unifi.Network) string {
 	origin := existing.Metadata.Origin
 	if origin == "" {
-		origin = "unknown"
+		origin = broadcastOriginUnknown
 	}
 	return fmt.Sprintf("upstream network %q has metadata.origin %s, not %s; refusing to overwrite a system-managed object",
 		existing.Name, origin, networkOriginUserDefined)

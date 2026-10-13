@@ -345,14 +345,14 @@ func TestUnifiFirewallZoneReconcileFailsClosed(t *testing.T) {
 		wantRequeue bool
 	}{
 		{
-			name:        "site missing",
+			name:        testNameSiteMissing,
 			zone:        newFirewallZone(),
 			controller:  readyController(testAppVersion),
 			wantReason:  reasonSiteRefNotFound,
 			wantRequeue: true,
 		},
 		{
-			name:        "site being deleted",
+			name:        testNameSiteBeingDeleted,
 			zone:        newFirewallZone(),
 			site:        deletingSite,
 			controller:  readyController(testAppVersion),
@@ -360,7 +360,7 @@ func TestUnifiFirewallZoneReconcileFailsClosed(t *testing.T) {
 			wantRequeue: true,
 		},
 		{
-			name:        "site not adopted",
+			name:        testNameSiteNotAdopted,
 			zone:        newFirewallZone(),
 			site:        notAdoptedSite,
 			controller:  readyController(testAppVersion),
@@ -368,28 +368,28 @@ func TestUnifiFirewallZoneReconcileFailsClosed(t *testing.T) {
 			wantRequeue: true,
 		},
 		{
-			name:        "controller missing",
+			name:        testNameControllerMissing,
 			zone:        newFirewallZone(),
 			site:        ownedSite(),
 			wantReason:  reasonControllerNotFound,
 			wantRequeue: true,
 		},
 		{
-			name:       "application version below minimum",
+			name:       testNameVersionBelowMinimum,
 			zone:       newFirewallZone(),
 			site:       ownedSite(),
 			controller: readyController("10.1.83"),
 			wantReason: reasonVersionUnsupported,
 		},
 		{
-			name:       "version unparseable",
+			name:       testNameVersionUnparseable,
 			zone:       newFirewallZone(),
 			site:       ownedSite(),
 			controller: readyController(testUnparseableVersion),
 			wantReason: reasonVersionUnsupported,
 		},
 		{
-			name:        "application version not reported",
+			name:        testNameVersionNotReported,
 			zone:        newFirewallZone(),
 			site:        ownedSite(),
 			controller:  newUnifiController(nil),
@@ -935,7 +935,7 @@ func TestUnifiNetworkWatchFirewallZoneEnqueuesReferencedNetworks(t *testing.T) {
 	changed := &unifiv1alpha1.UnifiFirewallZone{
 		ObjectMeta: metav1.ObjectMeta{Name: "zone", Namespace: testNamespace},
 		Spec: unifiv1alpha1.UnifiFirewallZoneSpec{
-			NetworkRefs: []unifiv1alpha1.CoreRef{{Name: testNetworkResourceName}, {Name: "missing"}},
+			NetworkRefs: []unifiv1alpha1.CoreRef{{Name: testNetworkResourceName}, {Name: testMissingName}},
 		},
 	}
 	requests := reconciler.networksForZone(context.Background(), changed)
@@ -963,7 +963,7 @@ func TestUnifiFirewallZoneChangeEnqueuesSitePeers(t *testing.T) {
 	t.Parallel()
 
 	peer := newFirewallZone()
-	peer.Name = "peer"
+	peer.Name = testPeerName
 	otherSite := newFirewallZone()
 	otherSite.Name = "other-site-zone"
 	otherSite.Spec.SiteRef.Name = testOtherSite
@@ -982,7 +982,7 @@ func TestUnifiFirewallZoneChangeEnqueuesSitePeers(t *testing.T) {
 	}
 	names := []string{requests[0].Name, requests[1].Name}
 	slices.Sort(names)
-	if !slices.Equal(names, []string{"peer", testFirewallZoneResourceName}) {
+	if !slices.Equal(names, []string{testPeerName, testFirewallZoneResourceName}) {
 		t.Errorf("requests = %v, want the changed zone and its same-site peer", requests)
 	}
 }
@@ -1019,7 +1019,7 @@ func TestUnifiFirewallZoneWatchNetworkEnqueuesReferencingZones(t *testing.T) {
 	t.Parallel()
 
 	referencing := newZoneWithMembers()
-	referencing.Name = "referencing"
+	referencing.Name = testReferencingName
 	nonMember := newZoneWithMembers()
 	nonMember.Name = "non-member"
 	nonMember.Spec.NetworkRefs = []unifiv1alpha1.CoreRef{{Name: "other-network"}}
@@ -1034,7 +1034,7 @@ func TestUnifiFirewallZoneWatchNetworkEnqueuesReferencingZones(t *testing.T) {
 	if len(requests) != 1 {
 		t.Fatalf("requests = %d (%v), want 1 (only the zone referencing the network)", len(requests), requests)
 	}
-	if requests[0].Name != "referencing" || requests[0].Namespace != testNamespace {
+	if requests[0].Name != testReferencingName || requests[0].Namespace != testNamespace {
 		t.Errorf("request = %v, want %s/referencing", requests[0].NamespacedName, testNamespace)
 	}
 }

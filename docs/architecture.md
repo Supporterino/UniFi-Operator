@@ -116,9 +116,9 @@ Raw upstream identifiers are replaced by references rather than exposed in `spec
 - **Enterprise security** (`WPA2`/`WPA3` enterprise variants) references its RADIUS profile
   through `spec.securityConfiguration.<variant>.radiusConfiguration.radiusProfileRef` (for example
   `spec.securityConfiguration.wpa2Enterprise.radiusConfiguration.radiusProfileRef`) to a
-  `UnifiRadiusProfile`, never the opaque profile UUID. Because `UnifiRadiusProfile` has no Go type
-  yet, an enterprise broadcast fails closed (`Ready=False`) with no upstream mutation until that
-  kind lands.
+  `UnifiRadiusProfile`, never the opaque profile UUID. The controller resolves the referenced
+  profile and provisions the enterprise configuration; an unresolvable profile fails closed
+  (`Ready=False`) with no upstream mutation.
 
 ### Ownership tree
 
@@ -136,11 +136,13 @@ Ownership is a tree rooted at the `UnifiSite`:
 
 The drain is recursive and uses one shared helper (`drainOwnedChildren`): a parent lists exactly
 the child kinds it owns, initiates their deletion, and keeps its finalizer until none remain. A
-`UnifiSite` drains its `UnifiNetwork`, `UnifiFirewallZone`, and `UnifiWifiBroadcast` children; a
-`UnifiNetwork` drains the `SPECIFIC`-bound `UnifiWifiBroadcast` children it owns; the site
-finalizer is removed last so each child's reference chain stays resolvable while its own finalizer
-deletes upstream state. The unwind is `UnifiSite` → `UnifiNetwork` → `UnifiWifiBroadcast` for a
-`SPECIFIC` broadcast, and `UnifiSite` → `UnifiWifiBroadcast` for a `NATIVE` one.
+`UnifiSite` drains every site-scoped child kind it owns — networks, firewall zones, the `NATIVE`
+WiFi broadcasts, and the site-scoped firewall policy/ordering, ACL, DNS, traffic-matching,
+switching, VPN, and RADIUS kinds; a `UnifiNetwork` drains the `SPECIFIC`-bound `UnifiWifiBroadcast`
+children it owns; the site finalizer is removed last so each child's reference chain stays
+resolvable while its own finalizer deletes upstream state. The unwind is `UnifiSite` →
+`UnifiNetwork` → `UnifiWifiBroadcast` for a `SPECIFIC` broadcast, and `UnifiSite` →
+`UnifiWifiBroadcast` for a `NATIVE` one.
 
 See [CRD conventions](crd-conventions.md#ownership-follows-the-strongest-reference) for the
 ownership rules in full.
@@ -161,13 +163,17 @@ The endpoint → operator method → CLI map is [UniFi API contract](unifi-api.m
 
 ### Implemented vs designed kinds
 
-The implemented kinds are `UnifiController`, `UnifiSite`, `UnifiNetwork`,
-`UnifiFirewallZone`, and `UnifiWifiBroadcast` — API types, generated CRD manifests, the
-Integration v1 client, and reconcilers. The remaining declarative kinds (firewall
-policies/ordering, ACL rules/ordering, DNS policies, traffic matching lists, switching kinds, VPN,
-and RADIUS profiles) are **designed as contracts only**: they have no Go types or CRD manifests
-yet and are implemented by later changes. Treat those designs as intent, not as a shipped
-surface.
+Every declarative kind in the contract is implemented — API types, generated CRD manifests, the
+Integration v1 client, and reconcilers back all seventeen. The five foundations
+(`UnifiController`, `UnifiSite`, `UnifiNetwork`, `UnifiFirewallZone`, `UnifiWifiBroadcast`) are
+joined by the twelve kinds this surface adds. Of those twelve, six are **writable** and carry the
+full create/update/delete slice with an upstream-electing finalizer: `UnifiTrafficMatchingList`,
+`UnifiFirewallPolicy`, `UnifiFirewallPolicyOrdering`, `UnifiAclRule`, `UnifiAclRuleOrdering`, and
+`UnifiDnsPolicy`. The other six are **read-only adoption kinds** — the frozen v10.4.57 surface
+exposes them `GET`-only, so they adopt an existing upstream object rather than writing one, carry
+no upstream-electing finalizer, and report the adopted configuration in `status`:
+`UnifiRadiusProfile`, `UnifiSwitchingLag`, `UnifiSwitchingMcLagDomain`,
+`UnifiSwitchingSwitchStack`, `UnifiVpnServer`, and `UnifiSiteToSiteTunnel`.
 
 Device tags are not a kind at all: the upstream surface is read-only, so **no `UnifiDeviceTag`
 Custom Resource is generated**. Consumers select devices through the name-based device-tag

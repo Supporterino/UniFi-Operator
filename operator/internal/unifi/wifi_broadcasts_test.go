@@ -263,7 +263,7 @@ func TestUpdateWifiBroadcast(t *testing.T) {
 	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		if _, ok := decodeBody(t, r)["metadata"]; ok {
+		if _, ok := decodeBody(t, r)[testJSONFieldMetadata]; ok {
 			t.Errorf("request must not carry metadata")
 		}
 		_, _ = io.WriteString(w, `{"id":"`+testBroadcastID+`","metadata":{"origin":"`+testOriginUserDefined+`"}}`)

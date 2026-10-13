@@ -1,0 +1,12 @@
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiAclRuleOrdering
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: unifiaclruleordering-sample
+spec:
+  siteRef:
+    name: unifisite-sample
+  orderedAclRules:
+  - name: unifiaclrule-sample

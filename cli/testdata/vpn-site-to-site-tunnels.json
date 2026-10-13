@@ -1,0 +1,20 @@
+{
+  "count": 2,
+  "data": [
+    {
+      "id": "d4e5f607-1829-43a4-b5c6-d7e8f9012345",
+      "name": "HQ to Branch",
+      "type": "IPSEC",
+      "metadata": { "origin": "USER_DEFINED" }
+    },
+    {
+      "id": "e5f60718-293a-44b5-c6d7-e8f901234567",
+      "name": "",
+      "type": "WIREGUARD",
+      "metadata": { "origin": "DERIVED" }
+    }
+  ],
+  "limit": 200,
+  "offset": 0,
+  "totalCount": 2
+}

@@ -737,7 +737,7 @@ func TestWifiBroadcastsProjectsStandardAndDropsUpstreamIDs(t *testing.T) {
 	t.Parallel()
 
 	tags := []unifi.DeviceTag{{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"dev-1"}}}
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
 	}
@@ -811,7 +811,7 @@ func TestWifiBroadcastsPresharedKeysPlaceholder(t *testing.T) {
 		}},
 	}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 || len(warnings) != 1 {
 		t.Fatalf("got %d resources, %d warnings; want 1 and 1", len(resources), len(warnings))
 	}
@@ -844,7 +844,7 @@ func TestWifiBroadcastsAnnotatesUnrepresentedSettings(t *testing.T) {
 	broadcast.BroadcastingDeviceFilter = nil
 	broadcast.MloEnabled = json.RawMessage(`true`)
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -888,7 +888,7 @@ func TestWifiBroadcastsAnnotatesUnrepresentedRadiusConfiguration(t *testing.T) {
 		},
 	}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -915,7 +915,7 @@ func TestWifiBroadcastsWPA2PersonalAlwaysPlaceholder(t *testing.T) {
 	// The console omitted the passphrase; the emitter must still emit the placeholder.
 	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{Type: WifiSecurityWPA2Personal}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -946,7 +946,7 @@ func TestWifiBroadcastsIotOptimized(t *testing.T) {
 		SecurityConfiguration: &unifi.WifiSecurityConfiguration{Type: WifiSecurityWPA2Personal, Passphrase: "secret"},
 	}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
 	}
@@ -959,10 +959,81 @@ func TestWifiBroadcastsIotOptimized(t *testing.T) {
 	}
 }
 
+func TestWifiBroadcastsEmitsNativeBinding(t *testing.T) {
+	t.Parallel()
+
+	broadcast := wifiStandardBroadcast()
+	broadcast.BroadcastingDeviceFilter = nil
+	// OPEN security carries no passphrase, so a faithful NATIVE projection emits no warning.
+	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{Type: WifiSecurityOpen}
+	broadcast.Network = &unifi.WifiNetworkReference{Type: "NATIVE"}
+
+	resources, warnings := WifiBroadcasts(nil, "default", nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, %d warnings; want 1 emitted NATIVE broadcast", len(resources), len(warnings))
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for a NATIVE-bound broadcast", warnings)
+	}
+
+	resource := resources[0]
+	spec := resource.Spec.(UnifiWifiBroadcastSpec)
+	if spec.NativeNetwork == nil || !*spec.NativeNetwork {
+		t.Errorf("nativeNetwork = %v, want pointer to true", spec.NativeNetwork)
+	}
+	if spec.SiteRef == nil || spec.SiteRef.Name != "default" {
+		t.Errorf("siteRef = %+v, want the emitted site name default", spec.SiteRef)
+	}
+	if spec.NetworkRef != nil {
+		t.Errorf("networkRef = %+v, want nil for a NATIVE binding", spec.NetworkRef)
+	}
+	if _, ok := resource.Metadata.Annotations[AnnotationUnrepresentedWifiSettings]; ok {
+		t.Errorf("annotations = %v, want no unrepresented-settings annotation", resource.Metadata.Annotations)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"net-1", "upstream-broadcast-id", `"networkId"`, `"networkRef"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec leaks %q: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestWifiBroadcastsProjectsBandSteering(t *testing.T) {
+	t.Parallel()
+
+	broadcast := wifiStandardBroadcast()
+	broadcast.BroadcastingDeviceFilter = nil
+	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{Type: WifiSecurityOpen}
+	bandSteering := true
+	broadcast.BandSteeringEnabled = &bandSteering
+
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1", len(resources))
+	}
+
+	spec := resources[0].Spec.(UnifiWifiBroadcastSpec)
+	if spec.BandSteeringEnabled == nil || !*spec.BandSteeringEnabled {
+		t.Errorf("bandSteeringEnabled = %v, want pointer to true in the common field", spec.BandSteeringEnabled)
+	}
+	if annotation, ok := resources[0].Metadata.Annotations[AnnotationUnrepresentedWifiSettings]; ok {
+		t.Errorf("annotation %s = %q, want none naming band steering", AnnotationUnrepresentedWifiSettings, annotation)
+	}
+	for _, warning := range warnings {
+		if strings.Contains(warning, "bandSteeringEnabled") {
+			t.Errorf("warnings = %v, want none naming bandSteeringEnabled", warnings)
+		}
+	}
+}
+
 func TestWifiBroadcastsSkipsUnresolvedNetwork(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := WifiBroadcasts(nil, nil, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	resources, warnings := WifiBroadcasts(nil, "default", nil, []unifi.WifiBroadcast{wifiStandardBroadcast()})
 	if len(resources) != 0 {
 		t.Fatalf("got %d resources, want 0", len(resources))
 	}
@@ -987,7 +1058,7 @@ func TestWifiBroadcastsEmitsEnterpriseWithPlaceholder(t *testing.T) {
 		},
 	}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (enterprise must be emitted, not dropped)", len(resources))
 	}
@@ -1027,7 +1098,7 @@ func TestWifiBroadcastsAmbiguousDeviceTagAnnotated(t *testing.T) {
 	t.Parallel()
 
 	tags := []unifi.DeviceTag{{ID: "tag-1", Name: "aps", DeviceIDs: []string{"dev-1", "dev-2"}}}
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -1049,7 +1120,7 @@ func TestWifiBroadcastsDevicesFilterAnnotated(t *testing.T) {
 	broadcast := wifiStandardBroadcast()
 	broadcast.BroadcastingDeviceFilter = &unifi.WifiBroadcastingDeviceFilter{Type: "DEVICES", DeviceIDs: []string{"dev-uuid"}}
 
-	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{broadcast})
+	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -1077,7 +1148,7 @@ func TestWifiBroadcastsDisambiguatesNames(t *testing.T) {
 	second := wifiStandardBroadcast()
 	second.ID = "id-2"
 
-	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, nil, []unifi.WifiBroadcast{first, second})
+	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{first, second})
 	if len(resources) != 2 {
 		t.Fatalf("got %d resources, want 2", len(resources))
 	}

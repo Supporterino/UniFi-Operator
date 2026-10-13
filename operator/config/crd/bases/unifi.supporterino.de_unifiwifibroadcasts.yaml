@@ -56,6 +56,12 @@ spec:
           spec:
             description: spec defines the desired state of UnifiWifiBroadcast
             properties:
+              bandSteeringEnabled:
+                description: |-
+                  BandSteeringEnabled enables band steering. It is a common field usable by
+                  both the STANDARD and IOT_OPTIMIZED variants. Omit to use the site
+                  default.
+                type: boolean
               basicDataRateKbpsByFrequencyGHz:
                 description: |-
                   BasicDataRateKbpsByFrequencyGHz sets the minimum basic data rates per
@@ -423,12 +429,24 @@ spec:
                 description: Name is the human-readable broadcast (SSID) name.
                 minLength: 1
                 type: string
+              nativeNetwork:
+                description: |-
+                  NativeNetwork selects the upstream NATIVE network binding, which carries
+                  no network identifier. It is optional: exactly one of networkRef or
+                  nativeNetwork must be set. A NATIVE broadcast resolves its site from
+                  siteRef and has no UnifiNetwork ownerReference. The binding is immutable:
+                  switching to the SPECIFIC variant (networkRef) is not allowed; it is
+                  delete-and-recreate.
+                type: boolean
               networkRef:
                 description: |-
-                  NetworkRef references the UnifiNetwork that owns this broadcast. The
+                  NetworkRef references the UnifiNetwork that owns this broadcast. It is
+                  optional: exactly one of networkRef or nativeNetwork must be set. The
                   reference resolves in the same namespace and determines both the
-                  ownerReference and the upstream network. It is immutable: re-pointing a
-                  broadcast to another network is delete-and-recreate.
+                  ownerReference and the upstream network. The binding is immutable:
+                  neither re-pointing a broadcast to another network, removing the binding,
+                  nor switching to the NATIVE variant (nativeNetwork) is allowed; each is
+                  delete-and-recreate, so the controller ownerReference never changes.
                 properties:
                   name:
                     description: |-
@@ -1356,6 +1374,26 @@ spec:
                 - message: wpa3Enterprise fields require type WPA3_ENTERPRISE
                   rule: 'self.type == ''WPA3_ENTERPRISE'' ? has(self.wpa3Enterprise)
                     : !has(self.wpa3Enterprise)'
+              siteRef:
+                description: |-
+                  SiteRef references the UnifiSite that owns this broadcast. It is required
+                  for a NATIVE broadcast (nativeNetwork: true) and forbidden for a SPECIFIC
+                  broadcast (networkRef set), which resolves its site transitively through
+                  the referenced network. The site is immutable: re-pointing a NATIVE
+                  broadcast's siteRef is not allowed; it is delete-and-recreate.
+                properties:
+                  name:
+                    description: |-
+                      Name is the name of the referenced object in the referencing object's
+                      namespace.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: siteRef is immutable
+                  rule: self == oldSelf
               standard:
                 description: |-
                   Standard holds the STANDARD variant fields. It is required for type
@@ -1367,10 +1405,6 @@ spec:
                     type: boolean
                   arpProxyEnabled:
                     description: ArpProxyEnabled enables ARP proxying for this broadcast.
-                    type: boolean
-                  bandSteeringEnabled:
-                    description: BandSteeringEnabled enables band steering. Omit to
-                      use the site default.
                     type: boolean
                   broadcastingFrequenciesGHz:
                     description: |-
@@ -1505,7 +1539,6 @@ spec:
             - hideName
             - multicastToUnicastConversionEnabled
             - name
-            - networkRef
             - securityConfiguration
             - type
             - uapsdEnabled
@@ -1515,6 +1548,12 @@ spec:
               rule: 'self.type == ''STANDARD'' ? has(self.standard) : !has(self.standard)'
             - message: iotOptimized fields require type IOT_OPTIMIZED
               rule: 'self.type == ''IOT_OPTIMIZED'' ? has(self.iotOptimized) : !has(self.iotOptimized)'
+            - message: exactly one of networkRef or nativeNetwork must be set
+              rule: has(self.networkRef) != (has(self.nativeNetwork) && self.nativeNetwork)
+            - message: siteRef must be set if and only if nativeNetwork is true
+              rule: has(self.siteRef) == (has(self.nativeNetwork) && self.nativeNetwork)
+            - message: 'networkRef is immutable: the network binding cannot be changed'
+              rule: has(self.networkRef) == has(oldSelf.networkRef)
           status:
             description: status defines the observed state of UnifiWifiBroadcast
             properties:

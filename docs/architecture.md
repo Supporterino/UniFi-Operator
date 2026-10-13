@@ -58,7 +58,7 @@ foundation is:
 | `UnifiSite` | Adopts an existing upstream site by name (`spec.internalReference`) and points at its controller (`spec.controllerRef`). It is the ownership-root anchor and never creates or deletes upstream sites. |
 | `UnifiNetwork` | A network on Integration v1, discriminated by `spec.management` (`GATEWAY`/`SWITCH`/`UNMANAGED`); it points at its site through `spec.siteRef`. A `SWITCH` network binds its managing device through a name-based `spec.switch.deviceTag` selector, never a raw device UUID. |
 | `UnifiFirewallZone` | A firewall zone on the site; it points at its site through `spec.siteRef` and declares member networks through `spec.networkRefs`. It is the single writer of upstream zone network membership. |
-| `UnifiWifiBroadcast` | A WiFi broadcast (SSID) on Integration v1, discriminated by `spec.type` (`STANDARD`/`IOT_OPTIMIZED`); it references its owning `UnifiNetwork` through `spec.networkRef` and resolves the site transitively. Personal passphrases are `Secret` references and enterprise security references a `UnifiRadiusProfile`. |
+| `UnifiWifiBroadcast` | A WiFi broadcast (SSID) on Integration v1, discriminated by `spec.type` (`STANDARD`/`IOT_OPTIMIZED`); its upstream `network` reference is either `SPECIFIC` (a `UnifiNetwork` through `spec.networkRef`, resolving the site transitively) or `NATIVE` (`spec.nativeNetwork: true` plus a broadcast-level `spec.siteRef`). Personal passphrases are `Secret` references and enterprise security references a `UnifiRadiusProfile`. |
 
 References are name-only and resolve in the same namespace:
 
@@ -66,7 +66,8 @@ References are name-only and resolve in the same namespace:
 UnifiNetwork.spec.siteRef ──▶ UnifiSite.spec.controllerRef ──▶ UnifiController
 UnifiFirewallZone.spec.siteRef ──▶ UnifiSite
 UnifiFirewallZone.spec.networkRefs ──▶ UnifiNetwork
-UnifiWifiBroadcast.spec.networkRef ──▶ UnifiNetwork ──▶ UnifiSite ──▶ UnifiController
+UnifiWifiBroadcast.spec.networkRef ──▶ UnifiNetwork ──▶ UnifiSite ──▶ UnifiController   (SPECIFIC)
+UnifiWifiBroadcast.spec.siteRef ──▶ UnifiSite                                          (NATIVE)
 ```
 
 The full reference and ownership contract — including the rationale for name-only,
@@ -92,11 +93,19 @@ the resolved zone in `UnifiNetwork.status.zoneID`.
 
 ### WiFi broadcast references and fail-closed dependencies
 
-`UnifiWifiBroadcast` references its owning `UnifiNetwork` through `spec.networkRef` (name-only,
-same namespace) and resolves the site **transitively** — `networkRef` → `UnifiNetwork.spec.siteRef`
-→ `UnifiSite.spec.controllerRef` — so the broadcast carries no `siteRef` of its own. It is owned
-by the network, not the site. Raw upstream identifiers are replaced by references rather than
-exposed in `spec`:
+`UnifiWifiBroadcast` expresses the upstream `network` reference — the `SPECIFIC`/`NATIVE` union —
+as a name-only, same-namespace binding that decides how the site is resolved:
+
+- A **`SPECIFIC`** broadcast references its `UnifiNetwork` through `spec.networkRef` and resolves
+  the site **transitively** — `networkRef` → `UnifiNetwork.spec.siteRef` → `UnifiSite.spec.controllerRef`
+  — so it carries no `siteRef` of its own and is owned by the network, not the site.
+- A **`NATIVE`** broadcast sets `spec.nativeNetwork: true` and resolves the site **directly** from a
+  broadcast-level `spec.siteRef` (no transitive network); it sets no `networkRef` and, since that
+  site reference is its strongest, is owned by that `UnifiSite`. For either variant, teardown also
+  keys off the site and broadcast IDs recorded in `status`, so a broken live chain cannot strand
+  upstream state.
+
+Raw upstream identifiers are replaced by references rather than exposed in `spec`:
 
 - **Device scope** uses `spec.deviceTags`, name-based `DeviceTagSelector` entries resolved against
   the read-only device-tags list; the raw `DEVICES` (`deviceIds`) filter is not exposed. An
@@ -116,17 +125,22 @@ exposed in `spec`:
 Ownership is a tree rooted at the `UnifiSite`:
 
 - The site owns every child whose **strongest** reference is `spec.siteRef`.
-- A child with a stronger parent reference is owned by that parent instead — for example a WiFi
+- A child with a stronger parent reference is owned by that parent instead — a `SPECIFIC` WiFi
   broadcast references (and is owned by) its network, not the site.
+- A `NATIVE` WiFi broadcast names the site in `spec.siteRef`, which is its strongest reference, so
+  it is owned by that `UnifiSite` like any other site-referencing child. For both broadcast
+  variants, teardown also uses the site and broadcast IDs recorded in `status`, so a broken live
+  reference chain cannot strand upstream state.
 - The site carries a **finalizer that drains its owned children before the site is removed**, so
   a child finalizer can still resolve `spec.siteRef` to reach the controller.
 
 The drain is recursive and uses one shared helper (`drainOwnedChildren`): a parent lists exactly
 the child kinds it owns, initiates their deletion, and keeps its finalizer until none remain. A
-`UnifiSite` drains its `UnifiNetwork` and `UnifiFirewallZone` children; a `UnifiNetwork` drains
-the `UnifiWifiBroadcast` children it owns; the site finalizer is removed last so each child's
-reference chain stays resolvable while its own finalizer deletes upstream state. The unwind is
-`UnifiSite` → `UnifiNetwork` → `UnifiWifiBroadcast`.
+`UnifiSite` drains its `UnifiNetwork`, `UnifiFirewallZone`, and `UnifiWifiBroadcast` children; a
+`UnifiNetwork` drains the `SPECIFIC`-bound `UnifiWifiBroadcast` children it owns; the site
+finalizer is removed last so each child's reference chain stays resolvable while its own finalizer
+deletes upstream state. The unwind is `UnifiSite` → `UnifiNetwork` → `UnifiWifiBroadcast` for a
+`SPECIFIC` broadcast, and `UnifiSite` → `UnifiWifiBroadcast` for a `NATIVE` one.
 
 See [CRD conventions](crd-conventions.md#ownership-follows-the-strongest-reference) for the
 ownership rules in full.

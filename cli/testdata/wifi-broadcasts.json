@@ -1,5 +1,5 @@
 {
-  "count": 3,
+  "count": 4,
   "data": [
     {
       "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
@@ -33,9 +33,19 @@
       "network": { "type": "SPECIFIC", "networkId": "77b2c3d4-e5f6-4a7b-9c8d-9e0f1a2b3c4d" },
       "securityConfiguration": { "type": "WPA2_ENTERPRISE" },
       "broadcastingFrequenciesGHz": [2.4, 5]
+    },
+    {
+      "id": "f4a5b6c7-d8e9-4f0a-1b2c-3d4e5f607182",
+      "name": "Native",
+      "enabled": true,
+      "type": "STANDARD",
+      "metadata": { "origin": "USER_DEFINED", "configurable": true },
+      "network": { "type": "NATIVE" },
+      "securityConfiguration": { "type": "WPA2_PERSONAL" },
+      "broadcastingFrequenciesGHz": [2.4, 5]
     }
   ],
   "limit": 200,
   "offset": 0,
-  "totalCount": 3
+  "totalCount": 4
 }

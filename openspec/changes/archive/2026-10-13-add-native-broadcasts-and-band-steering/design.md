@@ -73,13 +73,22 @@ keep the existing transitive resolution unchanged.
 
 ### D3: Ownership and teardown for `NATIVE`
 
-`ensureOwnership` sets the ownerReference only for a `SPECIFIC` broadcast (its parent
-`UnifiNetwork`). A `NATIVE` broadcast has no parent network, so it gets no ownerReference; teardown
-relies on the existing finalizer plus `status.siteID`/`status.wifiBroadcastID` (the reconciler
-already deletes from `status` when the live reference chain is broken, see `resolveCleanupClient`).
+`ensureOwnership` sets a controller ownerReference to the immediate parent for both variants: a
+`SPECIFIC` broadcast is owned by its `UnifiNetwork` (as today), and a `NATIVE` broadcast — whose
+strongest reference is the broadcast-level `spec.siteRef` — is owned by its `UnifiSite`. The
+`UnifiSite` drain is extended to include `UnifiWifiBroadcast`, so a `NATIVE` broadcast is deleted
+before the site is removed and its `resolveCleanupClient` still resolves a live site. Teardown
+continues to use the finalizer plus `status.siteID`/`status.wifiBroadcastID`.
 
-- **Rationale:** reuses the established status-recorded teardown path; avoids an ownerReference to
-  the site, which would couple broadcast lifecycle to site deletion semantics that do not own it.
+- **Rationale:** a `NATIVE` broadcast with **no** ownerReference leaves no ordering guarantee — the
+  site could be deleted first, after which neither the status-first path (it lists live `UnifiSite`
+  objects) nor the `spec.siteRef` fallback can resolve a console and the finalizer wedges, leaking
+  the upstream broadcast (found in review). Site ownership matches the documented "the site owns
+  its strongest-reference children" rule and makes the site's drain the ordering guarantee, while
+  teardown still keys off `status` so a broken live chain does not strand upstream state.
+- **Alternatives:** (a) record the controller reference in `status` and resolve the console without
+  a live site — rejected as extra contract surface for the same outcome; (b) no ownerReference and
+  document a mandatory deletion order — rejected as a user-visible leak with no mechanical guard.
 
 ### D4: Promote `bandSteeringEnabled` to a common field (**BREAKING**)
 
@@ -115,6 +124,11 @@ from `UnrepresentedSettings` (so it is no longer annotated).
 
 `docs/unifi-api.md`: replace the "only the SPECIFIC binding is exposed" paragraph with the modeled
 `NATIVE` binding (broadcast-level `siteRef`), and note band steering is a common field.
+`docs/architecture.md` and `docs/crd-conventions.md`: update the broadcast reference/ownership
+narrative — a `NATIVE` broadcast resolves its site directly from broadcast-level `spec.siteRef`
+(no transitive network) and is owned by that `UnifiSite` (its strongest reference), so the general
+"the site owns its strongest-reference children" rule holds as written; a `SPECIFIC` broadcast
+remains owned by its `UnifiNetwork`. The site drain now also covers `UnifiWifiBroadcast`.
 
 ## Risks / Trade-offs
 
@@ -124,8 +138,10 @@ from `UnrepresentedSettings` (so it is no longer annotated).
   if it is variant-specific after all, follow up with per-variant modeling.
 - **Breaking field move rejects existing objects that set `standard.bandSteeringEnabled`** →
   documented **BREAKING**; migration moves the value to `spec.bandSteeringEnabled`.
-- **A `NATIVE` broadcast has no ownerReference** → teardown uses `status.siteID`; the existing
-  "deletion survives a broken reference" path already covers it, and a controller test pins it.
+- **A `NATIVE` broadcast is owned by its `UnifiSite`** → the site's drain deletes it before the
+  site is removed, so teardown always runs with a resolvable site; a controller test pins the
+  ownerReference and the drain. (An earlier no-ownerReference design left a deletion-order wedge —
+  see D3.)
 - **`siteRef` becomes required for `NATIVE`** → CEL rejects a `NATIVE` broadcast without it, so a
   malformed object fails at the API server rather than mid-reconcile.
 

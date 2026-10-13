@@ -77,30 +77,37 @@ upstream site by name (`spec.internalReference`) and records the upstream UUID i
 Ownership is a tree rooted at the site, and each object is owned by the CR its **strongest**
 reference points to:
 
-- A child whose strongest reference is `spec.siteRef` is owned by its `UnifiSite`.
-- A child with a stronger parent reference is owned by that parent instead. `UnifiWifiBroadcast`
-  references its `UnifiNetwork`, so it is owned by the network, not the site.
+- A child whose strongest reference is `spec.siteRef` is owned by its `UnifiSite` — including a
+  `NATIVE`-bound `UnifiWifiBroadcast`, whose strongest reference is the broadcast-level
+  `spec.siteRef`.
+- A child with a stronger parent reference is owned by that parent instead. A `SPECIFIC`-bound
+  `UnifiWifiBroadcast` references its `UnifiNetwork`, so it is owned by the network, not the site;
+  the network, not the site, drains it.
 - Each reconciler sets its own `ownerReference` to its **immediate parent** with
   `controllerutil.SetControllerReference`; a parent reconciler never reaches into child kinds.
 
 The `UnifiSite` carries a **finalizer that drains owned children before removal**. A child's
 finalizer needs `spec.siteRef` to reach its controller and delete upstream state, so the site
 must stay resolvable until every owned child has finished. The site reconciler initiates
-deletion of its direct `ownerReference` children (garbage collection only starts after an owner
-is actually gone), removes the finalizer only once no owned children remain, and never deletes
-the upstream site.
+deletion of its direct `ownerReference` children — `UnifiNetwork`, `UnifiFirewallZone`, and the
+`NATIVE`-bound `UnifiWifiBroadcast` objects it owns — removes the finalizer only once no owned
+children remain (garbage collection only starts after an owner is actually gone), and never
+deletes the upstream site.
 
 #### A non-site parent drains its own children
 
 The drain generalizes down the ownership tree: a parent that is not the site drains **its own**
-direct children before removing its finalizer. `UnifiNetwork` owns its `UnifiWifiBroadcast` objects
-(the broadcast's strongest reference is `spec.networkRef`), so `UnifiNetwork.reconcileDelete`
-initiates deletion of those broadcasts and holds its finalizer until none remain; the site, in
-turn, drains the network. A deletion therefore unwinds `UnifiSite` → `UnifiNetwork` →
-`UnifiWifiBroadcast`, each finalizer removed in order, keeping the reference chain resolvable until
-each child has cleaned up its own upstream state. Relying on Kubernetes garbage collection instead
-would deadlock: GC only starts after the owner is gone, which is exactly what the finalizer exists
-to prevent.
+direct children before removing its finalizer. `UnifiNetwork` owns its `SPECIFIC`-bound
+`UnifiWifiBroadcast` objects (a `SPECIFIC` broadcast's strongest reference is `spec.networkRef`),
+so `UnifiNetwork.reconcileDelete` initiates deletion of those broadcasts and holds its finalizer
+until none remain; the site, in turn, drains the network. A deletion therefore unwinds `UnifiSite`
+→ `UnifiNetwork` → `UnifiWifiBroadcast`, each finalizer removed in order, keeping the reference
+chain resolvable until each child has cleaned up its own upstream state. A `NATIVE`-bound broadcast
+is outside the network's subtree — it is owned by the site itself, so the site drain removes it
+before the site is gone. Either way, a broadcast's own finalizer deletes upstream state from the
+site and broadcast IDs recorded in `status`, so a broken live chain cannot strand it. Relying on
+Kubernetes garbage collection instead would deadlock: GC only starts after the owner is gone, which
+is exactly what the finalizer exists to prevent.
 
 ### One writer per fact: membership ownership
 

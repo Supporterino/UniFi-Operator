@@ -136,7 +136,7 @@ func TestGetWifiBroadcastUnrepresentedSettings(t *testing.T) {
 				"basicDataRateKbpsByFrequencyGHz":{"2.4":2000,"5":6000},
 				"bandSteeringEnabled":false,
 				"mloEnabled":true}`,
-			want: []string{"basicDataRateKbpsByFrequencyGHz", "bandSteeringEnabled", "mloEnabled"},
+			want: []string{"basicDataRateKbpsByFrequencyGHz", "mloEnabled"},
 		},
 		{
 			name: "personal radius configuration present",

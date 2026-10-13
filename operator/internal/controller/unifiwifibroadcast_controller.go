@@ -52,8 +52,14 @@ const (
 	wifiBroadcastDependencyRequeueAfter = 30 * time.Second
 
 	// wifiBroadcastNetworkReferenceSpecific is the upstream network-reference
-	// variant the operator authors. The NATIVE variant is never authored.
+	// variant the operator authors for a broadcast bound to a UnifiNetwork. It
+	// carries the resolved network UUID.
 	wifiBroadcastNetworkReferenceSpecific = "SPECIFIC"
+
+	// wifiBroadcastNetworkReferenceNative is the identifier-free upstream
+	// network-reference variant the operator authors for a broadcast bound to
+	// the console's native network (spec.nativeNetwork). It carries no networkId.
+	wifiBroadcastNetworkReferenceNative = "NATIVE"
 
 	// wifiBroadcastDeviceFilterDeviceTags is the upstream broadcasting-device
 	// filter variant the operator authors. The raw DEVICES variant is never
@@ -72,12 +78,15 @@ const (
 	broadcastOriginUnknown = "unknown"
 )
 
-// UnifiWifiBroadcastReconciler reconciles a UnifiWifiBroadcast object. It
-// resolves the broadcast's UnifiNetwork, then the network's UnifiSite, connects
-// through the site's controller, and creates, updates, or deletes the matching
-// upstream broadcast. The broadcast is owned by its network, not the site
-// (design D2/D4). The upstream broadcast UUID and the resolved network and site
-// UUIDs are recorded in status only; spec never carries a UniFi internal
+// UnifiWifiBroadcastReconciler reconciles a UnifiWifiBroadcast object. A
+// SPECIFIC-bound broadcast resolves its UnifiNetwork, then the network's
+// UnifiSite, connects through the site's controller, and creates, updates, or
+// deletes the matching upstream broadcast; it is owned by its network (design
+// D2/D4). A NATIVE-bound broadcast has no network: it resolves its site directly
+// from spec.siteRef and is owned by that UnifiSite, its strongest reference
+// (design D3), so the site drains the broadcast before it is removed and
+// teardown resolves a live site. The upstream broadcast UUID and the resolved
+// site UUID are recorded in status only; spec never carries a UniFi internal
 // identifier.
 type UnifiWifiBroadcastReconciler struct {
 	client.Client
@@ -100,10 +109,10 @@ type UnifiWifiBroadcastReconciler struct {
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unificontrollers,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
-// Reconcile resolves the broadcast's network, site, and controller transitively,
-// applies the declarative broadcast to the console, and reports the result in
-// status. It is idempotent: re-running it on an unchanged object performs no
-// writes. It fails closed (Ready=False, no upstream mutation) on an unresolved
+// Reconcile resolves the broadcast's site and controller (and, for a SPECIFIC
+// binding, its network transitively), applies the declarative broadcast to the
+// console, and reports the result in status. It is idempotent: re-running it on
+// an unchanged object performs no writes. It fails closed (Ready=False, no upstream mutation) on an unresolved
 // network or site, a version below the WiFi minimum, a security configuration
 // that references an unimplemented UnifiRadiusProfile, a device tag that does
 // not resolve to exactly one device, or an unreadable passphrase Secret, and it
@@ -127,33 +136,58 @@ func (r *UnifiWifiBroadcastReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return *stop, nil
 	}
 
-	if err := r.ensureOwnership(ctx, broadcast, network); err != nil {
+	stop, err = r.ensureOwnership(ctx, broadcast, network, site)
+	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if stop != nil {
+		return *stop, nil
 	}
 
 	return r.reconcileUpstream(ctx, broadcast, network, site)
 }
 
-// resolveDependencies resolves spec.networkRef to a same-namespace UnifiNetwork
-// that has recorded its upstream network UUID, then the network's spec.siteRef
-// to a UnifiSite that has adopted an upstream site (the broadcast carries no
-// siteRef of its own, design D2). An absent or deleting network, an
-// unprovisioned network, an absent or deleting site, or a not-yet-adopted site
-// fails closed: a non-nil result means the reconcile has finished and the
-// caller must stop, while a nil result means the returned objects are usable.
+// resolveDependencies resolves a broadcast's network (when it is bound to one)
+// and the UnifiSite that adopted an upstream site. A SPECIFIC broadcast resolves
+// spec.networkRef to a same-namespace UnifiNetwork that has recorded its
+// upstream network UUID, then the network's spec.siteRef to a UnifiSite (the
+// broadcast carries no siteRef of its own, design D2). A NATIVE broadcast has no
+// network: it resolves its UnifiSite directly from spec.siteRef and returns a
+// nil network (design D2/D3). An absent or deleting network/site, an
+// unprovisioned network, or a not-yet-adopted site fails closed: a non-nil
+// result means the reconcile has finished and the caller must stop, while a nil
+// result means the returned objects are usable.
 func (r *UnifiWifiBroadcastReconciler) resolveDependencies(
 	ctx context.Context,
 	broadcast *unifiv1alpha1.UnifiWifiBroadcast,
 ) (*unifiv1alpha1.UnifiNetwork, *unifiv1alpha1.UnifiSite, *ctrl.Result, error) {
+	if isNativeBroadcast(broadcast.Spec) {
+		siteRef := coreRefValue(broadcast.Spec.SiteRef)
+		site, stop, err := r.resolveSite(ctx, broadcast, siteRef)
+		if err != nil || stop != nil {
+			return nil, nil, stop, err
+		}
+		return nil, site, nil, nil
+	}
+
+	networkRef := broadcast.Spec.NetworkRef
+	if networkRef == nil {
+		// CEL rejects a broadcast with neither binding at the API server; fail
+		// closed defensively rather than dereferencing a nil reference.
+		result, err := r.updateStatus(ctx, broadcast, false, reasonInvalidSpec,
+			"spec.networkRef is required for a SPECIFIC broadcast", nil, nil, nil, nil)
+		return nil, nil, &result, err
+	}
+
 	network := &unifiv1alpha1.UnifiNetwork{}
-	networkKey := types.NamespacedName{Namespace: broadcast.Namespace, Name: broadcast.Spec.NetworkRef.Name}
+	networkKey := types.NamespacedName{Namespace: broadcast.Namespace, Name: networkRef.Name}
 	if err := r.Get(ctx, networkKey, network); err != nil {
 		if apierrors.IsNotFound(err) {
 			result, err := r.requeueStatus(ctx, broadcast, reasonNetworkRefNotFound,
-				fmt.Sprintf("UnifiNetwork %q not found", broadcast.Spec.NetworkRef.Name))
+				fmt.Sprintf("UnifiNetwork %q not found", networkRef.Name))
 			return nil, nil, &result, err
 		}
-		return nil, nil, nil, fmt.Errorf("get UnifiNetwork %q: %w", broadcast.Spec.NetworkRef.Name, err)
+		return nil, nil, nil, fmt.Errorf("get UnifiNetwork %q: %w", networkRef.Name, err)
 	}
 	if !network.DeletionTimestamp.IsZero() {
 		result, err := r.requeueStatus(ctx, broadcast, reasonNetworkRefNotFound,
@@ -166,42 +200,105 @@ func (r *UnifiWifiBroadcastReconciler) resolveDependencies(
 		return nil, nil, &result, err
 	}
 
-	site := &unifiv1alpha1.UnifiSite{}
-	siteKey := types.NamespacedName{Namespace: broadcast.Namespace, Name: network.Spec.SiteRef.Name}
-	if err := r.Get(ctx, siteKey, site); err != nil {
-		if apierrors.IsNotFound(err) {
-			result, err := r.requeueStatus(ctx, broadcast, reasonSiteRefNotFound,
-				fmt.Sprintf("UnifiSite %q not found", network.Spec.SiteRef.Name))
-			return nil, nil, &result, err
-		}
-		return nil, nil, nil, fmt.Errorf("get UnifiSite %q: %w", network.Spec.SiteRef.Name, err)
-	}
-	if !site.DeletionTimestamp.IsZero() {
-		result, err := r.requeueStatus(ctx, broadcast, reasonSiteRefNotFound,
-			fmt.Sprintf("UnifiSite %q is being deleted", site.Name))
-		return nil, nil, &result, err
-	}
-	if site.Status.SiteID == "" {
-		result, err := r.requeueStatus(ctx, broadcast, reasonSiteNotAdopted,
-			fmt.Sprintf("UnifiSite %q has not adopted an upstream site yet (status.siteID is empty)", site.Name))
-		return nil, nil, &result, err
+	site, stop, err := r.resolveSite(ctx, broadcast, network.Spec.SiteRef)
+	if err != nil || stop != nil {
+		return nil, nil, stop, err
 	}
 	return network, site, nil, nil
 }
 
-// ensureOwnership sets the controller ownerReference to the immediate parent
-// UnifiNetwork (not the site, design D2) and adds the broadcast finalizer, in a
-// single update when either is missing. The network's drain finalizer relies on
-// the ownerReference.
+// resolveSite resolves a UnifiSite reference for a broadcast and fails closed
+// with the same not-found / deleting / not-adopted handling used by the
+// transitive network resolution, so both bindings share one site-resolution
+// path.
+func (r *UnifiWifiBroadcastReconciler) resolveSite(
+	ctx context.Context,
+	broadcast *unifiv1alpha1.UnifiWifiBroadcast,
+	siteRef unifiv1alpha1.CoreRef,
+) (*unifiv1alpha1.UnifiSite, *ctrl.Result, error) {
+	site := &unifiv1alpha1.UnifiSite{}
+	siteKey := types.NamespacedName{Namespace: broadcast.Namespace, Name: siteRef.Name}
+	if err := r.Get(ctx, siteKey, site); err != nil {
+		if apierrors.IsNotFound(err) {
+			result, err := r.requeueStatus(ctx, broadcast, reasonSiteRefNotFound,
+				fmt.Sprintf("UnifiSite %q not found", siteRef.Name))
+			return nil, &result, err
+		}
+		return nil, nil, fmt.Errorf("get UnifiSite %q: %w", siteRef.Name, err)
+	}
+	if !site.DeletionTimestamp.IsZero() {
+		result, err := r.requeueStatus(ctx, broadcast, reasonSiteRefNotFound,
+			fmt.Sprintf("UnifiSite %q is being deleted", site.Name))
+		return nil, &result, err
+	}
+	if site.Status.SiteID == "" {
+		result, err := r.requeueStatus(ctx, broadcast, reasonSiteNotAdopted,
+			fmt.Sprintf("UnifiSite %q has not adopted an upstream site yet (status.siteID is empty)", site.Name))
+		return nil, &result, err
+	}
+	return site, nil, nil
+}
+
+// isNativeBroadcast reports whether the broadcast selects the identifier-free
+// upstream NATIVE network binding. The bool pointer is required (CEL enforces
+// the binding), so a nil value is treated as absent.
+func isNativeBroadcast(spec unifiv1alpha1.UnifiWifiBroadcastSpec) bool {
+	return spec.NativeNetwork != nil && *spec.NativeNetwork
+}
+
+// coreRefValue dereferences an optional CoreRef, yielding the zero value for a
+// nil reference so callers can build a lookup key without a nil dereference.
+func coreRefValue(ref *unifiv1alpha1.CoreRef) unifiv1alpha1.CoreRef {
+	if ref == nil {
+		return unifiv1alpha1.CoreRef{}
+	}
+	return *ref
+}
+
+// ensureOwnership sets the controller ownerReference to the broadcast's
+// immediate parent — its UnifiNetwork for a SPECIFIC binding, its UnifiSite for
+// a NATIVE binding (the broadcast's strongest reference, design D3) — and adds
+// the broadcast finalizer, in a single update when either is missing. The
+// parent's drain finalizer relies on the ownerReference so the parent is not
+// removed before the broadcast's teardown has run with a resolvable site.
+//
+// The binding is immutable (CEL), so the parent never legitimately changes. As
+// a defensive guard against an object that still carries a foreign controller
+// owner (for example one converted before the rule was enforced), it fails
+// closed with a terminal Ready=False status instead of calling
+// SetControllerReference, which would return AlreadyOwnedError and make
+// Reconcile loop forever without ever writing status. A non-nil result means
+// the reconcile has finished and the caller must stop; a nil result means
+// ownership is settled and the caller proceeds.
 func (r *UnifiWifiBroadcastReconciler) ensureOwnership(
 	ctx context.Context,
 	broadcast *unifiv1alpha1.UnifiWifiBroadcast,
 	network *unifiv1alpha1.UnifiNetwork,
-) error {
+	site *unifiv1alpha1.UnifiSite,
+) (*ctrl.Result, error) {
+	var (
+		parent     client.Object
+		parentName string
+	)
+	switch {
+	case network != nil:
+		parent = network
+		parentName = fmt.Sprintf("UnifiNetwork %q", network.Name)
+	case site != nil:
+		parent = site
+		parentName = fmt.Sprintf("UnifiSite %q", site.Name)
+	}
+
 	changed := false
-	if !metav1.IsControlledBy(broadcast, network) {
-		if err := controllerutil.SetControllerReference(network, broadcast, r.Scheme); err != nil {
-			return fmt.Errorf("set owner reference to UnifiNetwork %q: %w", network.Name, err)
+	if parent != nil && !metav1.IsControlledBy(broadcast, parent) {
+		if existing := metav1.GetControllerOf(broadcast); existing != nil {
+			result, err := r.updateStatus(ctx, broadcast, false, reasonInvalidSpec,
+				fmt.Sprintf("broadcast is already controlled by %s %q, not %s; the network binding is immutable, so its owner cannot be changed (delete and recreate to change it)",
+					existing.Kind, existing.Name, parentName), nil, nil, nil, nil)
+			return &result, err
+		}
+		if err := controllerutil.SetControllerReference(parent, broadcast, r.Scheme); err != nil {
+			return nil, fmt.Errorf("set owner reference to %s: %w", parentName, err)
 		}
 		changed = true
 	}
@@ -210,12 +307,12 @@ func (r *UnifiWifiBroadcastReconciler) ensureOwnership(
 		changed = true
 	}
 	if !changed {
-		return nil
+		return nil, nil
 	}
 	if err := r.Update(ctx, broadcast); err != nil {
-		return fmt.Errorf("update metadata: %w", err)
+		return nil, fmt.Errorf("update metadata: %w", err)
 	}
-	return nil
+	return nil, nil
 }
 
 // reconcileUpstream resolves the console through the site's controller, gates
@@ -229,7 +326,10 @@ func (r *UnifiWifiBroadcastReconciler) reconcileUpstream(
 	network *unifiv1alpha1.UnifiNetwork,
 	site *unifiv1alpha1.UnifiSite,
 ) (ctrl.Result, error) {
-	networkID := network.Status.NetworkID
+	var networkID string
+	if network != nil {
+		networkID = network.Status.NetworkID
+	}
 	siteID := site.Status.SiteID
 
 	resolver := NewConnectionResolver(r.Client, r.APIReader, r.NewClient)
@@ -422,8 +522,9 @@ func (r *UnifiWifiBroadcastReconciler) deleteUpstream(ctx context.Context, broad
 // delete a broadcast. Design D2 mandates the status-first order: it prefers the
 // site whose status.siteID matches the broadcast's recorded status.siteID, so
 // teardown does not depend on the live reference chain. Only when no
-// status.siteID is recorded (or no site matches it) does it fall back to the live
-// chain (spec.networkRef -> UnifiNetwork -> spec.siteRef -> UnifiSite), which
+// status.siteID is recorded (or no site matches it) does it fall back to the
+// broadcast's own binding (a SPECIFIC broadcast via spec.networkRef ->
+// UnifiNetwork -> spec.siteRef; a NATIVE broadcast via spec.siteRef), which
 // tolerates an object that is being deleted so the recursive site -> network ->
 // broadcast drain keeps working. When neither resolves it returns an error so
 // the finalizer blocks rather than silently orphaning upstream state.
@@ -450,10 +551,22 @@ func (r *UnifiWifiBroadcastReconciler) resolveCleanupClient(
 		}
 	}
 
-	network := &unifiv1alpha1.UnifiNetwork{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: broadcast.Spec.NetworkRef.Name}, network); err == nil {
+	// Live fallback: the status-first pass above matched no namespaced site.
+	// Resolve the site name from the broadcast's own binding (a SPECIFIC
+	// broadcast transitively through its UnifiNetwork, a NATIVE broadcast from
+	// spec.siteRef directly), tolerating an object that is being deleted.
+	siteName := ""
+	if isNativeBroadcast(broadcast.Spec) {
+		siteName = coreRefValue(broadcast.Spec.SiteRef).Name
+	} else if broadcast.Spec.NetworkRef != nil {
+		network := &unifiv1alpha1.UnifiNetwork{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: broadcast.Spec.NetworkRef.Name}, network); err == nil {
+			siteName = network.Spec.SiteRef.Name
+		}
+	}
+	if siteName != "" {
 		site := &unifiv1alpha1.UnifiSite{}
-		if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: network.Spec.SiteRef.Name}, site); err == nil {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: siteName}, site); err == nil {
 			// Use the live site's own status.siteID. The status-first pass above
 			// already failed to match a site, so a non-empty recorded status.siteID
 			// here is stale: pairing it with the live controller would clean up on
@@ -480,11 +593,12 @@ func (r *UnifiWifiBroadcastReconciler) resolveCleanupClient(
 // spec (preshared-key networks and mDNS bridging networks) to its upstream
 // network UUID. A reference that does not resolve to a provisioned network
 // fails closed and is retried. A reference to a network on a different site than
-// the broadcast's own network (broadcast's spec.networkRef) fails closed
-// terminally with CrossSiteReference, so a foreign-site network UUID is never
-// written into the broadcast body (mirrors the firewall-zone controller's
-// cross-site guard). The returned stop result is non-nil when the reconcile
-// must finish without a write.
+// the broadcast's own site (the referenced network's spec.siteRef for a SPECIFIC
+// broadcast, spec.siteRef for a NATIVE broadcast) fails closed terminally with
+// CrossSiteReference, so a foreign-site network UUID is never written into the
+// broadcast body (mirrors the firewall-zone controller's cross-site guard). The
+// returned stop result is non-nil when the reconcile must finish without a
+// write.
 func (r *UnifiWifiBroadcastReconciler) resolveReferencedNetworkIDs(
 	ctx context.Context,
 	broadcast *unifiv1alpha1.UnifiWifiBroadcast,
@@ -495,6 +609,7 @@ func (r *UnifiWifiBroadcastReconciler) resolveReferencedNetworkIDs(
 	if len(names) == 0 {
 		return nil, nil, nil
 	}
+	ownSite := broadcastOwnSiteName(broadcast, network)
 	ids := make(map[string]string, len(names))
 	for _, name := range names {
 		referenced := &unifiv1alpha1.UnifiNetwork{}
@@ -506,10 +621,10 @@ func (r *UnifiWifiBroadcastReconciler) resolveReferencedNetworkIDs(
 			}
 			return nil, nil, fmt.Errorf("get referenced UnifiNetwork %q: %w", name, err)
 		}
-		if referenced.Spec.SiteRef.Name != network.Spec.SiteRef.Name {
+		if referenced.Spec.SiteRef.Name != ownSite {
 			result, err := r.updateStatus(ctx, broadcast, false, reasonCrossSiteReference,
 				fmt.Sprintf("referenced UnifiNetwork %q belongs to UnifiSite %q, not %q; no upstream broadcast was modified",
-					name, referenced.Spec.SiteRef.Name, network.Spec.SiteRef.Name), nil, &networkID, &siteID, nil)
+					name, referenced.Spec.SiteRef.Name, ownSite), nil, &networkID, &siteID, nil)
 			return nil, &result, err
 		}
 		if referenced.Status.NetworkID == "" {
@@ -520,6 +635,24 @@ func (r *UnifiWifiBroadcastReconciler) resolveReferencedNetworkIDs(
 		ids[name] = referenced.Status.NetworkID
 	}
 	return ids, nil, nil
+}
+
+// broadcastOwnSiteName returns the name of the UnifiSite the broadcast's own
+// binding resolves to, used by the cross-site guard for referenced networks. A
+// SPECIFIC broadcast resolves through its network's siteRef; a NATIVE broadcast
+// uses its own spec.siteRef. An unresolved binding yields the empty string, so a
+// referenced network on any named site is treated as cross-site.
+func broadcastOwnSiteName(
+	broadcast *unifiv1alpha1.UnifiWifiBroadcast,
+	network *unifiv1alpha1.UnifiNetwork,
+) string {
+	if isNativeBroadcast(broadcast.Spec) {
+		return coreRefValue(broadcast.Spec.SiteRef).Name
+	}
+	if network != nil {
+		return network.Spec.SiteRef.Name
+	}
+	return ""
 }
 
 // handleUpstreamError classifies a failed broadcast write. Certificate, auth,
@@ -778,7 +911,8 @@ func buildWifiBroadcastRequest(
 		UapsdEnabled:                        spec.UapsdEnabled,
 		Channel2gLockedTo6:                  boolValue(spec.Channel2gLockedTo6),
 		DtimPeriod2gLockedTo3:               boolValue(spec.DtimPeriod2gLockedTo3),
-		Network:                             &unifi.WifiNetworkReference{Type: wifiBroadcastNetworkReferenceSpecific, NetworkID: networkID},
+		Network:                             wifiBroadcastNetworkReference(spec, networkID),
+		BandSteeringEnabled:                 spec.BandSteeringEnabled,
 		SecurityConfiguration:               security,
 		BroadcastingDeviceFilter:            deviceTagFilter(spec.DeviceTags, tagIDs),
 		BasicDataRateKbpsByFrequencyGHz:     convertBasicDataRates(spec.BasicDataRateKbpsByFrequencyGHz),
@@ -799,7 +933,6 @@ func buildWifiBroadcastRequest(
 		request.ArpProxyEnabled = &arpProxyEnabled
 		request.BssTransitionEnabled = &bssTransitionEnabled
 		request.BroadcastingFrequenciesGHz = frequencies
-		request.BandSteeringEnabled = spec.Standard.BandSteeringEnabled
 		request.MloEnabled = spec.Standard.MloEnabled
 		request.DNSAssistanceConfiguration = convertDNS(spec.Standard.DNSAssistanceConfiguration)
 		request.DtimPeriodByFrequencyGHzOverride = convertDtim(spec.Standard.DtimPeriodByFrequencyGHzOverride)
@@ -807,6 +940,17 @@ func buildWifiBroadcastRequest(
 		request.HotspotConfiguration = convertHotspot(spec.Standard.HotspotConfiguration)
 	}
 	return request, nil
+}
+
+// wifiBroadcastNetworkReference builds the upstream network reference for the
+// broadcast's binding: the identifier-free NATIVE variant when spec.nativeNetwork
+// is true, otherwise the SPECIFIC variant carrying the resolved network UUID.
+// The NATIVE variant serializes to {"type":"NATIVE"} (NetworkID is omitempty).
+func wifiBroadcastNetworkReference(spec unifiv1alpha1.UnifiWifiBroadcastSpec, networkID string) *unifi.WifiNetworkReference {
+	if isNativeBroadcast(spec) {
+		return &unifi.WifiNetworkReference{Type: wifiBroadcastNetworkReferenceNative}
+	}
+	return &unifi.WifiNetworkReference{Type: wifiBroadcastNetworkReferenceSpecific, NetworkID: networkID}
 }
 
 // mapBroadcastingFrequencies maps the CR's exact string frequency enum onto the
@@ -1415,7 +1559,7 @@ func (r *UnifiWifiBroadcastReconciler) broadcastsForNetwork(ctx context.Context,
 	requests := make([]reconcile.Request, 0, len(broadcasts.Items))
 	for i := range broadcasts.Items {
 		item := &broadcasts.Items[i]
-		if item.Spec.NetworkRef.Name != network.Name {
+		if item.Spec.NetworkRef == nil || item.Spec.NetworkRef.Name != network.Name {
 			continue
 		}
 		requests = append(requests, reconcile.Request{

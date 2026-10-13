@@ -142,10 +142,23 @@ controller reads each passphrase at reconcile time and never records it in `stat
 [Security](security.md) and [CRD conventions](crd-conventions.md).
 
 A broadcast carries a `network` reference — the upstream `Wifi network reference` union — whose
-`type` discriminator is `SPECIFIC` (carrying the target network UUID) or `NATIVE`. The CRD exposes
-only the `SPECIFIC` binding, so a broadcast bound to the `NATIVE` variant cannot be represented
-losslessly: `snapshot wifi` skips it with a warning naming the broadcast and the unresolved
-network rather than dropping it silently or emitting a partial resource.
+`type` discriminator is `SPECIFIC` (carrying the target network UUID) or `NATIVE`. The CRD models
+both variants. A `SPECIFIC` broadcast references its `UnifiNetwork` by name in `spec.networkRef` and
+resolves its site transitively through the network's `spec.siteRef`. A `NATIVE` broadcast — the
+upstream `{"type": "NATIVE"}` reference, which carries no network UUID — sets
+`spec.nativeNetwork: true` and resolves its site from a broadcast-level `spec.siteRef` naming a
+`UnifiSite`; it sets no `networkRef` and gets no `UnifiNetwork` ownerReference — its `UnifiSite`
+owns it instead — and its teardown uses the site and broadcast IDs recorded in `status`.
+`spec.networkRef` and `spec.nativeNetwork` are mutually exclusive (exactly one is set):
+`spec.siteRef` is required for `NATIVE` and forbidden for `SPECIFIC`, enforced by CEL. No upstream
+network UUID ever appears in `spec`.
+
+Band steering is a **common** broadcast field, not a `STANDARD`-only one: the console returns
+`bandSteeringEnabled` at the top level, and the CRD models it as the top-level
+`spec.bandSteeringEnabled`, usable by both the `STANDARD` and `IOT_OPTIMIZED` variants. `snapshot
+wifi` emits a `NATIVE`-bound broadcast as `nativeNetwork: true` with a `siteRef` to the emitted
+`UnifiSite` (no warning), and projects `bandSteeringEnabled` into `spec.bandSteeringEnabled` rather
+than annotating it as an unrepresented setting.
 
 > The rows above are the consumed surface for the implemented kinds (`UnifiController`,
 > `UnifiSite`, `UnifiNetwork`, `UnifiFirewallZone`, `UnifiWifiBroadcast`) plus the read-only

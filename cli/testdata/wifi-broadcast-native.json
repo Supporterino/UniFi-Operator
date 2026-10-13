@@ -1,0 +1,23 @@
+{
+  "id": "f4a5b6c7-d8e9-4f0a-1b2c-3d4e5f607182",
+  "name": "Native",
+  "enabled": true,
+  "hideName": false,
+  "clientIsolationEnabled": false,
+  "multicastToUnicastConversionEnabled": true,
+  "uapsdEnabled": false,
+  "channel2gLockedTo6": false,
+  "dtimPeriod2gLockedTo3": false,
+  "type": "STANDARD",
+  "metadata": { "origin": "USER_DEFINED", "configurable": true },
+  "network": { "type": "NATIVE" },
+  "securityConfiguration": {
+    "type": "WPA2_PERSONAL",
+    "passphrase": "nativepass",
+    "pmfMode": "OPTIONAL"
+  },
+  "advertiseDeviceName": false,
+  "arpProxyEnabled": false,
+  "bssTransitionEnabled": true,
+  "broadcastingFrequenciesGHz": [2.4, 5]
+}

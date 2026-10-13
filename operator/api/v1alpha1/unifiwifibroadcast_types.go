@@ -29,21 +29,46 @@ const UnifiWifiBroadcastFinalizer = "unifi.supporterino.de/wifi-broadcast-finali
 
 // +kubebuilder:validation:XValidation:rule="self.type == 'STANDARD' ? has(self.standard) : !has(self.standard)",message="standard fields require type STANDARD"
 // +kubebuilder:validation:XValidation:rule="self.type == 'IOT_OPTIMIZED' ? has(self.iotOptimized) : !has(self.iotOptimized)",message="iotOptimized fields require type IOT_OPTIMIZED"
+// +kubebuilder:validation:XValidation:rule="has(self.networkRef) != (has(self.nativeNetwork) && self.nativeNetwork)",message="exactly one of networkRef or nativeNetwork must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.siteRef) == (has(self.nativeNetwork) && self.nativeNetwork)",message="siteRef must be set if and only if nativeNetwork is true"
+// +kubebuilder:validation:XValidation:rule="has(self.networkRef) == has(oldSelf.networkRef)",message="networkRef is immutable: the network binding cannot be changed"
 
 // UnifiWifiBroadcastSpec defines the desired state of UnifiWifiBroadcast. It
 // mirrors the discriminated `Wifi broadcast create or update` union of the
 // UniFi Integration v1 API (spec v10.4.57). Raw upstream identifiers are
-// replaced by Kubernetes references: the network UUID by networkRef, the
-// device-tag filter by deviceTags, and every passphrase by a Secret reference.
-// The upstream NATIVE network variant and the raw DEVICES broadcast filter are
-// deliberately not exposed.
+// replaced by Kubernetes references: the network UUID by networkRef (or the
+// identifier-free NATIVE binding by nativeNetwork), the device-tag filter by
+// deviceTags, and every passphrase by a Secret reference. The raw DEVICES
+// broadcast filter is deliberately not exposed.
 type UnifiWifiBroadcastSpec struct {
-	// NetworkRef references the UnifiNetwork that owns this broadcast. The
+	// NetworkRef references the UnifiNetwork that owns this broadcast. It is
+	// optional: exactly one of networkRef or nativeNetwork must be set. The
 	// reference resolves in the same namespace and determines both the
-	// ownerReference and the upstream network. It is immutable: re-pointing a
-	// broadcast to another network is delete-and-recreate.
+	// ownerReference and the upstream network. The binding is immutable:
+	// neither re-pointing a broadcast to another network, removing the binding,
+	// nor switching to the NATIVE variant (nativeNetwork) is allowed; each is
+	// delete-and-recreate, so the controller ownerReference never changes.
+	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="networkRef is immutable"
-	NetworkRef CoreRef `json:"networkRef"`
+	NetworkRef *CoreRef `json:"networkRef,omitempty"`
+
+	// NativeNetwork selects the upstream NATIVE network binding, which carries
+	// no network identifier. It is optional: exactly one of networkRef or
+	// nativeNetwork must be set. A NATIVE broadcast resolves its site from
+	// siteRef and has no UnifiNetwork ownerReference. The binding is immutable:
+	// switching to the SPECIFIC variant (networkRef) is not allowed; it is
+	// delete-and-recreate.
+	// +optional
+	NativeNetwork *bool `json:"nativeNetwork,omitempty"`
+
+	// SiteRef references the UnifiSite that owns this broadcast. It is required
+	// for a NATIVE broadcast (nativeNetwork: true) and forbidden for a SPECIFIC
+	// broadcast (networkRef set), which resolves its site transitively through
+	// the referenced network. The site is immutable: re-pointing a NATIVE
+	// broadcast's siteRef is not allowed; it is delete-and-recreate.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="siteRef is immutable"
+	SiteRef *CoreRef `json:"siteRef,omitempty"`
 
 	// Type is the broadcast union discriminator (STANDARD or IOT_OPTIMIZED).
 	// +kubebuilder:validation:Enum=STANDARD;IOT_OPTIMIZED
@@ -69,6 +94,12 @@ type UnifiWifiBroadcastSpec struct {
 
 	// UapsdEnabled enables Unscheduled Automatic Power Save Delivery.
 	UapsdEnabled bool `json:"uapsdEnabled"`
+
+	// BandSteeringEnabled enables band steering. It is a common field usable by
+	// both the STANDARD and IOT_OPTIMIZED variants. Omit to use the site
+	// default.
+	// +optional
+	BandSteeringEnabled *bool `json:"bandSteeringEnabled,omitempty"`
 
 	// Channel2gLockedTo6 locks the 2.4 GHz radio channel to 6 on all
 	// broadcasting devices.
@@ -141,10 +172,6 @@ type StandardWifiOptions struct {
 	// broadcast is enabled on.
 	// +kubebuilder:validation:MinItems=1
 	BroadcastingFrequenciesGHz []WifiBroadcastingFrequencyGHz `json:"broadcastingFrequenciesGHz"`
-
-	// BandSteeringEnabled enables band steering. Omit to use the site default.
-	// +optional
-	BandSteeringEnabled *bool `json:"bandSteeringEnabled,omitempty"`
 
 	// MloEnabled enables Multi-Link Operation. Omit to use the site default.
 	// +optional

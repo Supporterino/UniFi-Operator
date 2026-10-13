@@ -390,10 +390,14 @@ type WifiBroadcastStatus struct {
 
 // UnifiWifiBroadcastSpec is the desired state emitted for a UniFi WiFi broadcast. It
 // mirrors the operator's UnifiWifiBroadcastSpec so emitted resources validate against the
-// CRD. It carries no upstream id or network UUID: the upstream network is referenced by
-// the emitted UnifiNetwork name and the broadcast id is recorded in status only.
+// CRD. It carries no upstream id or network UUID: a SPECIFIC broadcast references the
+// emitted UnifiNetwork by name (spec.networkRef), a NATIVE broadcast sets
+// spec.nativeNetwork plus a spec.siteRef naming the emitted UnifiSite, and the broadcast
+// id is recorded in status only.
 type UnifiWifiBroadcastSpec struct {
-	NetworkRef                          CoreRef                   `json:"networkRef"`
+	NetworkRef                          *CoreRef                  `json:"networkRef,omitempty"`
+	NativeNetwork                       *bool                     `json:"nativeNetwork,omitempty"`
+	SiteRef                             *CoreRef                  `json:"siteRef,omitempty"`
 	Type                                string                    `json:"type"`
 	Name                                string                    `json:"name"`
 	Enabled                             *bool                     `json:"enabled,omitempty"`
@@ -401,6 +405,7 @@ type UnifiWifiBroadcastSpec struct {
 	ClientIsolationEnabled              bool                      `json:"clientIsolationEnabled"`
 	MulticastToUnicastConversionEnabled bool                      `json:"multicastToUnicastConversionEnabled"`
 	UapsdEnabled                        bool                      `json:"uapsdEnabled"`
+	BandSteeringEnabled                 *bool                     `json:"bandSteeringEnabled,omitempty"`
 	Channel2gLockedTo6                  *bool                     `json:"channel2gLockedTo6,omitempty"`
 	DtimPeriod2gLockedTo3               *bool                     `json:"dtimPeriod2gLockedTo3,omitempty"`
 	SecurityConfiguration               WifiSecurityConfiguration `json:"securityConfiguration"`
@@ -803,20 +808,23 @@ func firewallZoneNetworkRefs(zone unifi.FirewallZone, networkNames map[string]st
 }
 
 // WifiBroadcasts projects each upstream WiFi broadcast into a UnifiWifiBroadcast.
-// networkNames is the upstream-network-id -> emitted-name map returned by Networks; each
-// broadcast's spec.networkRef is resolved through it so the reference names a UnifiNetwork
-// resource this snapshot emitted. deviceTags is the site's read-only device-tag list, used
-// to reverse-map a DEVICE_TAGS scope to tag names. A broadcast whose network cannot be
-// resolved, whose type/variant is unrepresentable, or whose personal passphrase is not
-// recoverable is emitted with a placeholder (passphrase) or skipped with a warning rather
-// than silently dropped. The upstream broadcast id is recorded in status only.
-func WifiBroadcasts(networkNames map[string]string, deviceTags []unifi.DeviceTag, broadcasts []unifi.WifiBroadcast) ([]emit.Resource, []string) {
+// networkNames is the upstream-network-id -> emitted-name map returned by Networks; a
+// SPECIFIC broadcast's spec.networkRef is resolved through it so the reference names a
+// UnifiNetwork resource this snapshot emitted. siteName is the emitted UnifiSite name for
+// the snapshot's site, used as spec.siteRef for a NATIVE-bound broadcast (which carries no
+// network and resolves its site directly). deviceTags is the site's read-only device-tag
+// list, used to reverse-map a DEVICE_TAGS scope to tag names. A broadcast whose SPECIFIC
+// network cannot be resolved, whose type/variant is unrepresentable, or whose personal
+// passphrase is not recoverable is emitted with a placeholder (passphrase) or skipped with
+// a warning rather than silently dropped. The upstream broadcast id is recorded in status
+// only.
+func WifiBroadcasts(networkNames map[string]string, siteName string, deviceTags []unifi.DeviceTag, broadcasts []unifi.WifiBroadcast) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(broadcasts))
 	var warnings []string
 	alloc := newNameAllocator()
 
 	for _, broadcast := range broadcasts {
-		spec, annotations, broadcastWarnings, ok := buildWifiBroadcastSpec(networkNames, deviceTags, broadcast)
+		spec, annotations, broadcastWarnings, ok := buildWifiBroadcastSpec(networkNames, siteName, deviceTags, broadcast)
 		if !ok {
 			warnings = append(warnings, broadcastWarnings...)
 			continue
@@ -850,9 +858,22 @@ func WifiBroadcasts(networkNames map[string]string, deviceTags []unifi.DeviceTag
 // buildWifiBroadcastSpec maps one upstream broadcast detail into a spec valid against the
 // CRD. It returns ok=false (with a warning and no resource) when a required field is
 // missing or cannot be represented faithfully, so the CLI never emits an invalid CR.
-func buildWifiBroadcastSpec(networkNames map[string]string, deviceTags []unifi.DeviceTag, broadcast unifi.WifiBroadcast) (UnifiWifiBroadcastSpec, map[string]string, []string, bool) {
-	networkName, ok := broadcastNetworkName(networkNames, broadcast.Network)
-	if !ok {
+func buildWifiBroadcastSpec(networkNames map[string]string, siteName string, deviceTags []unifi.DeviceTag, broadcast unifi.WifiBroadcast) (UnifiWifiBroadcastSpec, map[string]string, []string, bool) {
+	var networkRef *CoreRef
+	var nativeNetwork *bool
+	var siteRef *CoreRef
+	switch kind, networkName := broadcastNetworkName(networkNames, broadcast.Network); kind {
+	case wifiBindingSpecific:
+		networkRef = &CoreRef{Name: networkName}
+	case wifiBindingNative:
+		if siteName == "" {
+			return UnifiWifiBroadcastSpec{}, nil, []string{fmt.Sprintf(
+				"wifi broadcast %q: upstream site could not be resolved to an emitted UnifiSite; skipping", broadcast.Name)}, false
+		}
+		native := true
+		nativeNetwork = &native
+		siteRef = &CoreRef{Name: siteName}
+	default:
 		return UnifiWifiBroadcastSpec{}, nil, []string{fmt.Sprintf(
 			"wifi broadcast %q: upstream network could not be resolved to an emitted UnifiNetwork; skipping", broadcast.Name)}, false
 	}
@@ -867,7 +888,9 @@ func buildWifiBroadcastSpec(networkNames map[string]string, deviceTags []unifi.D
 	channel2g := broadcast.Channel2gLockedTo6
 	dtim2g := broadcast.DtimPeriod2gLockedTo3
 	spec := UnifiWifiBroadcastSpec{
-		NetworkRef:                          CoreRef{Name: networkName},
+		NetworkRef:                          networkRef,
+		NativeNetwork:                       nativeNetwork,
+		SiteRef:                             siteRef,
 		Type:                                broadcast.Type,
 		Name:                                broadcast.Name,
 		Enabled:                             &enabled,
@@ -875,6 +898,7 @@ func buildWifiBroadcastSpec(networkNames map[string]string, deviceTags []unifi.D
 		ClientIsolationEnabled:              broadcast.ClientIsolationEnabled,
 		MulticastToUnicastConversionEnabled: broadcast.MulticastToUnicastConversionEnabled,
 		UapsdEnabled:                        broadcast.UapsdEnabled,
+		BandSteeringEnabled:                 broadcast.BandSteeringEnabled,
 		Channel2gLockedTo6:                  &channel2g,
 		DtimPeriod2gLockedTo3:               &dtim2g,
 		SecurityConfiguration:               security,
@@ -933,15 +957,45 @@ func buildWifiBroadcastSpec(networkNames map[string]string, deviceTags []unifi.D
 	return spec, annotations, warnings, true
 }
 
+// wifiNetworkBindingKind discriminates a broadcast's resolved upstream network
+// reference. The SPECIFIC variant maps to an emitted UnifiNetwork name; the NATIVE
+// variant carries no network identifier and is resolved to a site instead.
+type wifiNetworkBindingKind int
+
+const (
+	// wifiBindingNone is an absent or unrepresentable reference that maps to no
+	// emitted resource.
+	wifiBindingNone wifiNetworkBindingKind = iota
+	// wifiBindingSpecific is a reference to a UnifiNetwork by upstream UUID.
+	wifiBindingSpecific
+	// wifiBindingNative is the upstream NATIVE variant, which carries no network
+	// identifier.
+	wifiBindingNative
+)
+
 // broadcastNetworkName resolves the upstream network reference to an emitted UnifiNetwork
-// name. Only the SPECIFIC variant maps to a name; the NATIVE variant and an unknown
-// network id cannot be represented.
-func broadcastNetworkName(networkNames map[string]string, ref *unifi.WifiNetworkReference) (string, bool) {
-	if ref == nil || ref.Type != "SPECIFIC" || ref.NetworkID == "" {
-		return "", false
+// name. It returns the binding kind so the caller can distinguish a SPECIFIC reference
+// (mapped to a name), a NATIVE reference (no network; resolved to a site), and an
+// unresolvable reference. Only a SPECIFIC binding yields a name.
+func broadcastNetworkName(networkNames map[string]string, ref *unifi.WifiNetworkReference) (wifiNetworkBindingKind, string) {
+	if ref == nil {
+		return wifiBindingNone, ""
 	}
-	name, ok := networkNames[ref.NetworkID]
-	return name, ok
+	switch ref.Type {
+	case "NATIVE":
+		return wifiBindingNative, ""
+	case "SPECIFIC":
+		if ref.NetworkID == "" {
+			return wifiBindingNone, ""
+		}
+		name, ok := networkNames[ref.NetworkID]
+		if !ok {
+			return wifiBindingNone, ""
+		}
+		return wifiBindingSpecific, name
+	default:
+		return wifiBindingNone, ""
+	}
 }
 
 // standardWifiOptions maps the observed STANDARD variant. It returns ok=false when a
@@ -1177,8 +1231,8 @@ func wifiPresharedKeys(in []unifi.WifiPresharedKey, networkNames map[string]stri
 	out := make([]WifiPresharedKey, 0, len(in))
 	for _, key := range in {
 		ref := key.Network
-		name, ok := broadcastNetworkName(networkNames, &ref)
-		if !ok {
+		kind, name := broadcastNetworkName(networkNames, &ref)
+		if kind != wifiBindingSpecific {
 			return nil, errors.New("a preshared-key network could not be resolved to an emitted UnifiNetwork")
 		}
 		out = append(out, WifiPresharedKey{Network: CoreRef{Name: name}, Passphrase: placeholder})

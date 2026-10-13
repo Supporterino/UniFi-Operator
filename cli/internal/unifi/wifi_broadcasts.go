@@ -8,9 +8,10 @@ import (
 )
 
 // WifiNetworkReference is the upstream `Wifi network reference` union. The
-// operator writes the SPECIFIC variant carrying the resolved network UUID;
-// NATIVE is never authored. NetworkID is an opaque upstream UUID and must never
-// reach an emitted Custom Resource's spec.
+// SPECIFIC variant carries the resolved network UUID; the NATIVE variant carries
+// no network identifier and is modeled as a boolean binding without a UUID.
+// NetworkID is an opaque upstream UUID and must never reach an emitted Custom
+// Resource's spec.
 type WifiNetworkReference struct {
 	// Type is the network-reference discriminator (NATIVE or SPECIFIC).
 	Type string `json:"type"`
@@ -166,6 +167,9 @@ type WifiBroadcast struct {
 	SecurityConfiguration *WifiSecurityConfiguration `json:"securityConfiguration,omitempty"`
 	// BroadcastingDeviceFilter scopes the broadcast to a device set.
 	BroadcastingDeviceFilter *WifiBroadcastingDeviceFilter `json:"broadcastingDeviceFilter,omitempty"`
+	// BandSteeringEnabled enables band steering. It is a top-level common field
+	// usable by both broadcast variants.
+	BandSteeringEnabled *bool `json:"bandSteeringEnabled,omitempty"`
 
 	// The following fields are only returned for type STANDARD.
 	AdvertiseDeviceName        *bool     `json:"advertiseDeviceName,omitempty"`
@@ -185,7 +189,6 @@ type WifiBroadcast struct {
 	DtimPeriodByFrequencyGHzOverride json.RawMessage `json:"dtimPeriodByFrequencyGHzOverride,omitempty"`
 	HandoffSuggestionsConfiguration  json.RawMessage `json:"handoffSuggestionsConfiguration,omitempty"`
 	HotspotConfiguration             json.RawMessage `json:"hotspotConfiguration,omitempty"`
-	BandSteeringEnabled              json.RawMessage `json:"bandSteeringEnabled,omitempty"`
 	MloEnabled                       json.RawMessage `json:"mloEnabled,omitempty"`
 }
 
@@ -207,7 +210,6 @@ func (b WifiBroadcast) UnrepresentedSettings() []string {
 		{"dtimPeriodByFrequencyGHzOverride", b.DtimPeriodByFrequencyGHzOverride},
 		{"handoffSuggestionsConfiguration", b.HandoffSuggestionsConfiguration},
 		{"hotspotConfiguration", b.HotspotConfiguration},
-		{"bandSteeringEnabled", b.BandSteeringEnabled},
 		{"mloEnabled", b.MloEnabled},
 	}
 	var names []string

@@ -6,13 +6,16 @@ import (
 )
 
 // WifiNetworkReference is the upstream `Wifi network reference` union. The
-// operator writes the SPECIFIC variant carrying the resolved network UUID;
-// NATIVE is never authored. NetworkID is an opaque upstream UUID and stays out
-// of a Custom Resource's spec.
+// operator authors the SPECIFIC variant carrying the resolved network UUID for a
+// broadcast bound to a UnifiNetwork, and the identifier-free NATIVE variant for
+// a broadcast bound to the console's native network. NetworkID is an opaque
+// upstream UUID and stays out of a Custom Resource's spec; a NATIVE reference
+// carries none.
 type WifiNetworkReference struct {
 	// Type is the network-reference discriminator (NATIVE or SPECIFIC).
 	Type string `json:"type"`
-	// NetworkID is the upstream network UUID. It is set for type SPECIFIC.
+	// NetworkID is the upstream network UUID. It is set for type SPECIFIC and
+	// omitted for type NATIVE.
 	NetworkID string `json:"networkId,omitempty"`
 }
 
@@ -268,6 +271,9 @@ type WifiBroadcastRequest struct {
 	Network *WifiNetworkReference `json:"network,omitempty"`
 	// SecurityConfiguration is the broadcast security variant.
 	SecurityConfiguration *WifiSecurityConfiguration `json:"securityConfiguration,omitempty"`
+	// BandSteeringEnabled enables band steering. It is a common field sent for
+	// every variant (STANDARD and IOT_OPTIMIZED).
+	BandSteeringEnabled *bool `json:"bandSteeringEnabled,omitempty"`
 	// BroadcastingDeviceFilter scopes the broadcast to a device set
 	// (DEVICE_TAGS variant). Omitting it broadcasts on all AP-capable devices.
 	BroadcastingDeviceFilter *WifiBroadcastingDeviceFilter `json:"broadcastingDeviceFilter,omitempty"`
@@ -293,8 +299,6 @@ type WifiBroadcastRequest struct {
 	BssTransitionEnabled *bool `json:"bssTransitionEnabled,omitempty"`
 	// BroadcastingFrequenciesGHz lists the frequency bands (2.4, 5, 6) in GHz.
 	BroadcastingFrequenciesGHz []float64 `json:"broadcastingFrequenciesGHz,omitempty"`
-	// BandSteeringEnabled enables band steering.
-	BandSteeringEnabled *bool `json:"bandSteeringEnabled,omitempty"`
 	// MloEnabled enables Multi-Link Operation.
 	MloEnabled *bool `json:"mloEnabled,omitempty"`
 	// DNSAssistanceConfiguration configures DNS assistance.

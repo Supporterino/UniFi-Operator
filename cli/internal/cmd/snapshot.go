@@ -153,7 +153,7 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 				return err
 			}
 			warnings = append(warnings, broadcastWarnings...)
-			broadcastResources, projectWarnings := snapshot.WifiBroadcasts(networkNames, broadcastTags, broadcasts)
+			broadcastResources, projectWarnings := snapshot.WifiBroadcasts(networkNames, siteName, broadcastTags, broadcasts)
 			resources = append(resources, broadcastResources...)
 			warnings = append(warnings, projectWarnings...)
 		}

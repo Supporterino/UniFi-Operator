@@ -419,6 +419,106 @@ func TestUnifiSiteFinalizerDrainsFirewallZones(t *testing.T) {
 	}
 }
 
+func TestUnifiSiteFinalizerDrainsWifiBroadcasts(t *testing.T) {
+	t.Parallel()
+
+	site := &unifiv1alpha1.UnifiSite{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       testSiteResourceName,
+			Namespace:  testNamespace,
+			UID:        testSiteUID,
+			Finalizers: []string{unifiv1alpha1.UnifiSiteFinalizer},
+		},
+		Spec: unifiv1alpha1.UnifiSiteSpec{
+			ControllerRef:     unifiv1alpha1.CoreRef{Name: testControllerName},
+			InternalReference: testInternalReference,
+		},
+	}
+	// A NATIVE broadcast is owned by its site (its strongest reference).
+	nativeBroadcast := newNativeWifiBroadcast()
+	nativeBroadcast.Finalizers = []string{unifiv1alpha1.UnifiWifiBroadcastFinalizer}
+	nativeBroadcast.OwnerReferences = []metav1.OwnerReference{controlledBy("UnifiSite", site)}
+
+	// A SPECIFIC broadcast is owned by its UnifiNetwork, not the site, so the
+	// site drain must leave it alone.
+	specificBroadcast := newWifiBroadcast()
+	specificBroadcast.Name = "specific-broadcast"
+	specificBroadcast.UID = types.UID("specific-broadcast-uid")
+	specificBroadcast.OwnerReferences = []metav1.OwnerReference{controlledBy("UnifiNetwork", ownedNetwork())}
+
+	stub := &stubUnifiClient{}
+	factory := &recordingFactory{client: stub}
+	fakeClient, _ := newFakeClient(t,
+		[]client.Object{&unifiv1alpha1.UnifiSite{}, &unifiv1alpha1.UnifiWifiBroadcast{}},
+		site, nativeBroadcast, specificBroadcast)
+	reconciler := &UnifiSiteReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+
+	if err := fakeClient.Delete(context.Background(), site); err != nil {
+		t.Fatalf("delete site: %v", err)
+	}
+
+	result, err := reconciler.Reconcile(context.Background(), controllerRequest(testSiteResourceName))
+	if err != nil {
+		t.Fatalf("Reconcile error = %v, want nil", err)
+	}
+	if result.RequeueAfter != childDrainRequeueAfter {
+		t.Errorf("RequeueAfter = %v, want %v", result.RequeueAfter, childDrainRequeueAfter)
+	}
+
+	child := &unifiv1alpha1.UnifiWifiBroadcast{}
+	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: nativeBroadcast.Name, Namespace: testNamespace}, child); err != nil {
+		t.Fatalf("get broadcast: %v", err)
+	}
+	if child.DeletionTimestamp.IsZero() {
+		t.Errorf("site-owned broadcast deletion was not initiated")
+	}
+	gotSite := &unifiv1alpha1.UnifiSite{}
+	if err := fakeClient.Get(context.Background(), controllerRequest(testSiteResourceName).NamespacedName, gotSite); err != nil {
+		t.Fatalf("get site: %v", err)
+	}
+	if !controllerutil.ContainsFinalizer(gotSite, unifiv1alpha1.UnifiSiteFinalizer) {
+		t.Errorf("site finalizer was removed before the broadcast finished")
+	}
+	if len(stub.called()) != 0 {
+		t.Errorf("upstream calls = %v, want none during drain", stub.called())
+	}
+
+	// A broadcast owned by a network is untouched by the site drain.
+	untouched := &unifiv1alpha1.UnifiWifiBroadcast{}
+	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: specificBroadcast.Name, Namespace: testNamespace}, untouched); err != nil {
+		t.Fatalf("get network-owned broadcast: %v", err)
+	}
+	if !untouched.DeletionTimestamp.IsZero() {
+		t.Errorf("network-owned broadcast deletion was initiated by the site drain")
+	}
+
+	// Finish the site-owned broadcast: clear its finalizer and delete it.
+	child.Finalizers = nil
+	if err := fakeClient.Update(context.Background(), child); err != nil {
+		t.Fatalf("clear broadcast finalizer: %v", err)
+	}
+	if err := fakeClient.Delete(context.Background(), child); err != nil && !apierrors.IsNotFound(err) {
+		t.Fatalf("delete broadcast: %v", err)
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testSiteResourceName)); err != nil {
+		t.Fatalf("second Reconcile error = %v, want nil", err)
+	}
+	gotSite = &unifiv1alpha1.UnifiSite{}
+	err = fakeClient.Get(context.Background(), controllerRequest(testSiteResourceName).NamespacedName, gotSite)
+	if err != nil && !apierrors.IsNotFound(err) {
+		t.Fatalf("get site after drain: %v", err)
+	}
+	// Once the finalizer is removed the API server (and the fake) deletes the
+	// object; if it is still present it must no longer carry the finalizer.
+	if err == nil && controllerutil.ContainsFinalizer(gotSite, unifiv1alpha1.UnifiSiteFinalizer) {
+		t.Errorf("site finalizer was not removed after broadcasts drained")
+	}
+	if len(stub.called()) != 0 {
+		t.Errorf("upstream calls = %v, want none (upstream site left intact)", stub.called())
+	}
+}
+
 // ensure the site status carries a summary so kubectl output stays useful.
 func TestUnifiSiteStatusSummary(t *testing.T) {
 	t.Parallel()

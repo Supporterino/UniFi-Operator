@@ -71,6 +71,7 @@ type UnifiSiteReconciler struct {
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unificontrollers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifinetworks,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unififirewallzones,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifiwifibroadcasts,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 // Reconcile adopts the upstream site named by spec.internalReference, records
@@ -163,7 +164,14 @@ func (r *UnifiSiteReconciler) reconcileDelete(
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	remaining := networksRemaining + zonesRemaining
+	// A NATIVE-bound broadcast is owned by its site (its strongest reference,
+	// design D3), so the site drains it before removal; a SPECIFIC-bound
+	// broadcast is owned by its UnifiNetwork and is drained by the network.
+	broadcastsRemaining, err := drainOwnedChildren(ctx, r.Client, site, &unifiv1alpha1.UnifiWifiBroadcastList{})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	remaining := networksRemaining + zonesRemaining + broadcastsRemaining
 
 	if remaining > 0 {
 		// Garbage collection only starts after the owner is actually gone, so a
@@ -274,13 +282,14 @@ func (r *UnifiSiteReconciler) updateStatus(
 }
 
 // SetupWithManager sets up the controller with the Manager. It watches the site
-// for generation changes and deletion, and owns UnifiNetwork and UnifiFirewallZone
-// children so their deletion progresses the drain.
+// for generation changes and deletion, and owns UnifiNetwork, UnifiFirewallZone,
+// and UnifiWifiBroadcast children so their deletion progresses the drain.
 func (r *UnifiSiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unifiv1alpha1.UnifiSite{}, builder.WithPredicates(sitePredicate())).
 		Owns(&unifiv1alpha1.UnifiNetwork{}).
 		Owns(&unifiv1alpha1.UnifiFirewallZone{}).
+		Owns(&unifiv1alpha1.UnifiWifiBroadcast{}).
 		Named("unifisite").
 		Complete(r)
 }

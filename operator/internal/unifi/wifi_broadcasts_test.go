@@ -16,6 +16,7 @@ const (
 	testBroadcastTypeIot      = "IOT_OPTIMIZED"
 	testWifiSecurityPersonal  = "WPA2_PERSONAL"
 	testWifiNetworkSpecific   = "SPECIFIC"
+	testWifiNetworkNative     = "NATIVE"
 	testWifiDeviceFilterTags  = "DEVICE_TAGS"
 	testWifiActionAllow       = "ALLOW"
 )
@@ -211,6 +212,47 @@ func TestCreateWifiBroadcast(t *testing.T) {
 	}
 	if broadcast.ID != testBroadcastID {
 		t.Errorf("broadcast ID = %q, want %q", broadcast.ID, testBroadcastID)
+	}
+}
+
+func TestWifiBroadcastNativeNetworkReferenceRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	var body map[string]any
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body = decodeBody(t, r)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"id":"`+testBroadcastID+`","name":"`+testBroadcastName+`","type":"`+testBroadcastTypeStandard+`",
+			"metadata":{"origin":"`+testOriginUserDefined+`"},"network":{"type":"`+testWifiNetworkNative+`"}}`)
+	}))
+
+	broadcast, err := client.CreateWifiBroadcast(context.Background(), testSiteID, WifiBroadcastRequest{
+		Type:    testBroadcastTypeStandard,
+		Name:    testBroadcastName,
+		Network: &WifiNetworkReference{Type: testWifiNetworkNative},
+	})
+	if err != nil {
+		t.Fatalf("CreateWifiBroadcast: %v", err)
+	}
+
+	// The written NATIVE reference carries no networkId.
+	sentNetwork, ok := body["network"].(map[string]any)
+	if !ok {
+		t.Fatalf("network = %v, want an object", body["network"])
+	}
+	if sentNetwork["type"] != testWifiNetworkNative {
+		t.Errorf("network.type = %v, want %q", sentNetwork["type"], testWifiNetworkNative)
+	}
+	if _, ok := sentNetwork["networkId"]; ok {
+		t.Errorf("networkId = %v, want it omitted for a NATIVE reference", sentNetwork["networkId"])
+	}
+
+	// The decoded NATIVE reference has the NATIVE type and no network ID.
+	if broadcast.Network == nil || broadcast.Network.Type != testWifiNetworkNative {
+		t.Fatalf("decoded network = %+v, want NATIVE", broadcast.Network)
+	}
+	if broadcast.Network.NetworkID != "" {
+		t.Errorf("decoded networkId = %q, want empty for NATIVE", broadcast.Network.NetworkID)
 	}
 }
 

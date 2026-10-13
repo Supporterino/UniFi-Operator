@@ -35,6 +35,7 @@ const (
 	fixtureBroadcastIDOne   = "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f"
 	fixtureBroadcastIDTwo   = "d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f60"
 	fixtureBroadcastIDThree = "e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6071"
+	fixtureBroadcastIDFour  = "f4a5b6c7-d8e9-4f0a-1b2c-3d4e5f607182"
 )
 
 const (
@@ -81,6 +82,7 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 		fixtureBroadcastIDOne:   readFixture(t, "wifi-broadcast-corp.json"),
 		fixtureBroadcastIDTwo:   readFixture(t, "wifi-broadcast-iot.json"),
 		fixtureBroadcastIDThree: readFixture(t, "wifi-broadcast-guest.json"),
+		fixtureBroadcastIDFour:  readFixture(t, "wifi-broadcast-native.json"),
 	}
 	emptyPage := []byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
 
@@ -255,8 +257,8 @@ func TestSnapshotWifiRecordsIDInStatusOnly(t *testing.T) {
 	out, _ := runSnapshot(t, "wifi", "--controller", srv.URL)
 
 	docs := parseEmittedCRs(t, out)
-	if len(docs) != 3 {
-		t.Fatalf("got %d wifi broadcasts, want 3", len(docs))
+	if len(docs) != 4 {
+		t.Fatalf("got %d wifi broadcasts, want 4", len(docs))
 	}
 	for _, doc := range docs {
 		if doc.Kind != "UnifiWifiBroadcast" {
@@ -270,7 +272,7 @@ func TestSnapshotWifiRecordsIDInStatusOnly(t *testing.T) {
 			t.Fatalf("marshal spec: %v", err)
 		}
 		for _, forbidden := range []string{
-			fixtureBroadcastIDOne, fixtureBroadcastIDTwo, fixtureBroadcastIDThree,
+			fixtureBroadcastIDOne, fixtureBroadcastIDTwo, fixtureBroadcastIDThree, fixtureBroadcastIDFour,
 			fixtureNetworkIDOne, fixtureNetworkIDTwo, fixtureNetworkIDThree,
 			`"networkId"`, `"_id"`, "9e7d6c5b-4a3f-4210-9d8e-7c6b5a493827",
 		} {
@@ -336,8 +338,8 @@ func TestSnapshotSpecHasNoOpaqueID(t *testing.T) {
 	}
 
 	docs := parseEmittedCRs(t, out)
-	if len(docs) != 9 {
-		t.Fatalf("got %d emitted CRs, want 9 (controller + 2 sites + 3 networks + 3 wifi broadcasts)", len(docs))
+	if len(docs) != 10 {
+		t.Fatalf("got %d emitted CRs, want 10 (controller + 2 sites + 3 networks + 4 wifi broadcasts)", len(docs))
 	}
 	for _, doc := range docs {
 		if doc.APIVersion != "unifi.supporterino.de/v1alpha1" {
@@ -491,8 +493,8 @@ func TestSnapshotWritesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read output dir: %v", err)
 	}
-	if len(entries) != 9 {
-		t.Fatalf("got %d files, want 9 (controller + 2 sites + 3 networks + 3 wifi broadcasts)", len(entries))
+	if len(entries) != 10 {
+		t.Fatalf("got %d files, want 10 (controller + 2 sites + 3 networks + 4 wifi broadcasts)", len(entries))
 	}
 	for _, entry := range entries {
 		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))

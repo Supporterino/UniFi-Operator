@@ -10,7 +10,10 @@ union) without an opaque upstream identifier. A `SPECIFIC` broadcast SHALL refer
 `spec.siteRef`; it MUST NOT set `spec.siteRef`. A `NATIVE` broadcast SHALL set
 `spec.nativeNetwork: true` and resolve its site from `spec.siteRef`, and MUST NOT set
 `spec.networkRef`. Exactly one of `spec.networkRef`/`spec.nativeNetwork` MUST be set.
-`spec.networkRef` SHALL be immutable: once set, a change MUST be rejected by the API server.
+`spec.networkRef` SHALL be immutable: once set, a change MUST be rejected by the API server. The
+binding SHALL be immutable in both directions: switching an existing object between the `SPECIFIC`
+and `NATIVE` variants (setting or clearing `spec.networkRef`) and re-pointing a `NATIVE` broadcast's
+`spec.siteRef` MUST be rejected by the API server.
 
 #### Scenario: Network resolved
 - **WHEN** a broadcast references a network by name
@@ -31,10 +34,11 @@ union) without an opaque upstream identifier. A `SPECIFIC` broadcast SHALL refer
   the site from `spec.siteRef`, and the generated CRD schema contains no field representing a raw
   network UUID
 
-#### Scenario: Native broadcast is not owned by a network
+#### Scenario: Native broadcast is owned by its site
 - **WHEN** a broadcast sets `spec.nativeNetwork: true`
-- **THEN** the operator sets no `UnifiNetwork` ownerReference and deletion uses the site recorded
-  in `status`
+- **THEN** the operator sets no `UnifiNetwork` ownerReference, sets a `UnifiSite` ownerReference
+  (its strongest reference) so the site drains the broadcast before it is removed, and deletion
+  uses the site recorded in `status`
 
 #### Scenario: Native network variant not exposed
 - **WHEN** the generated CRD schema for `UnifiWifiBroadcast.spec` is inspected
@@ -47,6 +51,11 @@ union) without an opaque upstream identifier. A `SPECIFIC` broadcast SHALL refer
 
 #### Scenario: Repointing the network is rejected
 - **WHEN** an existing broadcast changes `spec.networkRef` to a different `UnifiNetwork`
+- **THEN** the API server rejects the update
+
+#### Scenario: Switching the network binding is rejected
+- **WHEN** an existing broadcast switches between binding variants (sets or clears
+  `spec.networkRef`, or re-points a `NATIVE` broadcast's `spec.siteRef`)
 - **THEN** the API server rejects the update
 
 ### Requirement: Broadcast type is validated

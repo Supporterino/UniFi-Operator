@@ -40,19 +40,21 @@ import (
 )
 
 const (
-	testBroadcastResourceName = "wifi-broadcast"
-	testBroadcastUpstreamName = "corp"
-	testUpstreamBroadcastID   = "broadcast-uuid-1"
-	testBroadcastDeviceTag    = "ap-tag"
-	testBroadcastDeviceTagID  = "aa11bb22-cc33-4d44-8e55-ff66aa77bb88"
-	testBroadcastDeviceID     = "dd11bb22-cc33-4d44-8e55-ff66aa77bb88"
-	testOtherNetworkName      = "other-net"
-	testPassphraseSecretName  = "wifi-passphrase"
-	testPassphraseKey         = "passphrase"
-	testBroadcastPassphrase   = "sup3r-s3cret-passphrase"
-	testWifiSecurityOpen      = "OPEN"
-	testNasIDUserDefined      = "USER_DEFINED"
-	testNasIDValue            = "nas"
+	testBroadcastResourceName  = "wifi-broadcast"
+	testBroadcastUpstreamName  = "corp"
+	testUpstreamBroadcastID    = "broadcast-uuid-1"
+	testBroadcastDeviceTag     = "ap-tag"
+	testBroadcastDeviceTagID   = "aa11bb22-cc33-4d44-8e55-ff66aa77bb88"
+	testBroadcastDeviceID      = "dd11bb22-cc33-4d44-8e55-ff66aa77bb88"
+	testOtherNetworkName       = "other-net"
+	testOtherNetworkUpstream   = "other-network"
+	testOtherNetworkUpstreamID = "other-network-id"
+	testPassphraseSecretName   = "wifi-passphrase"
+	testPassphraseKey          = "passphrase"
+	testBroadcastPassphrase    = "sup3r-s3cret-passphrase"
+	testWifiSecurityOpen       = "OPEN"
+	testNasIDUserDefined       = "USER_DEFINED"
+	testNasIDValue             = "nas"
 )
 
 // ownedNetwork returns the parent UnifiNetwork fixture with an upstream network
@@ -72,12 +74,12 @@ func newWifiBroadcast() *unifiv1alpha1.UnifiWifiBroadcast {
 			UID:       types.UID("broadcast-uid"),
 		},
 		Spec: unifiv1alpha1.UnifiWifiBroadcastSpec{
-			NetworkRef:                          unifiv1alpha1.CoreRef{Name: testNetworkResourceName},
+			NetworkRef:                          &unifiv1alpha1.CoreRef{Name: testNetworkResourceName},
 			Type:                                "STANDARD",
 			Name:                                testBroadcastUpstreamName,
 			MulticastToUnicastConversionEnabled: true,
 			SecurityConfiguration: unifiv1alpha1.WifiSecurityConfiguration{
-				Type: "OPEN",
+				Type: testWifiSecurityOpen,
 				Open: &unifiv1alpha1.WifiOpenSecurityConfiguration{},
 			},
 			Standard: &unifiv1alpha1.StandardWifiOptions{
@@ -95,7 +97,40 @@ func matchingBroadcast(t *testing.T) unifi.WifiBroadcast {
 	request, err := buildWifiBroadcastRequest(
 		broadcast,
 		testUpstreamNetworkID,
-		&unifi.WifiSecurityConfiguration{Type: "OPEN"},
+		&unifi.WifiSecurityConfiguration{Type: testWifiSecurityOpen},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("buildWifiBroadcastRequest: %v", err)
+	}
+	return unifi.WifiBroadcast{
+		ID:                   testUpstreamBroadcastID,
+		Metadata:             unifi.NetworkMetadata{Origin: wifiBroadcastOriginUserDefined},
+		WifiBroadcastRequest: request,
+	}
+}
+
+// newNativeWifiBroadcast returns a minimal STANDARD UnifiWifiBroadcast bound to
+// the identifier-free NATIVE network variant, resolving its site from siteRef.
+func newNativeWifiBroadcast() *unifiv1alpha1.UnifiWifiBroadcast {
+	broadcast := newWifiBroadcast()
+	broadcast.Spec.NetworkRef = nil
+	broadcast.Spec.NativeNetwork = boolPtr(true)
+	broadcast.Spec.SiteRef = &unifiv1alpha1.CoreRef{Name: testSiteResourceName}
+	return broadcast
+}
+
+// matchingNativeBroadcast returns the upstream detail that equals what
+// newNativeWifiBroadcast desires, as the console would report it: a NATIVE
+// network reference carrying no networkId.
+func matchingNativeBroadcast(t *testing.T) unifi.WifiBroadcast {
+	t.Helper()
+	broadcast := newNativeWifiBroadcast()
+	request, err := buildWifiBroadcastRequest(
+		broadcast,
+		"",
+		&unifi.WifiSecurityConfiguration{Type: testWifiSecurityOpen},
 		nil,
 		nil,
 	)
@@ -245,6 +280,384 @@ func TestUnifiWifiBroadcastReconcileCreatesUpstream(t *testing.T) {
 	}
 	if *metadataWrites != 1 {
 		t.Errorf("metadata writes = %d, want 1 (ownerReference + finalizer)", *metadataWrites)
+	}
+}
+
+func TestUnifiWifiBroadcastReconcileNativeCreatesUpstream(t *testing.T) {
+	t.Parallel()
+
+	broadcast := newNativeWifiBroadcast()
+
+	stub := &stubUnifiClient{
+		createdBroadcast: unifi.WifiBroadcast{ID: testUpstreamBroadcastID, WifiBroadcastRequest: unifi.WifiBroadcastRequest{Name: testBroadcastUpstreamName}},
+	}
+	factory := &recordingFactory{client: stub}
+	fakeClient, statusWrites, metadataWrites := newBroadcastFakeClient(t,
+		broadcast, ownedSite(), readyController(testAppVersion), apiKeySecret())
+
+	reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+	result, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName))
+	if err != nil {
+		t.Fatalf("Reconcile error = %v, want nil", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0", result.RequeueAfter)
+	}
+
+	if len(stub.broadcastCreateRequests) != 1 {
+		t.Fatalf("create requests = %d, want 1", len(stub.broadcastCreateRequests))
+	}
+	network := stub.broadcastCreateRequests[0].Network
+	if network == nil || network.Type != wifiBroadcastNetworkReferenceNative {
+		t.Fatalf("create request network = %+v, want NATIVE", network)
+	}
+	if network.NetworkID != "" {
+		t.Errorf("create request networkId = %q, want empty for a NATIVE reference", network.NetworkID)
+	}
+
+	got := getWifiBroadcast(t, fakeClient)
+	cond := requireReady(t, got.Status.Conditions)
+	if cond.Status != metav1.ConditionTrue || cond.Reason != reasonReconciled {
+		t.Errorf("Ready = %s/%s, want True/%s", cond.Status, cond.Reason, reasonReconciled)
+	}
+	if got.Status.SiteID != testUpstreamSiteID {
+		t.Errorf("siteID = %q, want %q (resolved from spec.siteRef)", got.Status.SiteID, testUpstreamSiteID)
+	}
+	if got.Status.NetworkID != "" {
+		t.Errorf("networkID = %q, want empty for a NATIVE broadcast", got.Status.NetworkID)
+	}
+	if !metav1.IsControlledBy(got, ownedSite()) {
+		t.Errorf("broadcast is not owned by its UnifiSite")
+	}
+	if !controllerutil.ContainsFinalizer(got, unifiv1alpha1.UnifiWifiBroadcastFinalizer) {
+		t.Errorf("broadcast finalizer was not added")
+	}
+	if *statusWrites != 1 {
+		t.Errorf("status writes = %d, want 1", *statusWrites)
+	}
+	if *metadataWrites != 1 {
+		t.Errorf("metadata writes = %d, want 1 (ownerReference + finalizer)", *metadataWrites)
+	}
+}
+
+func TestUnifiWifiBroadcastReconcileForeignOwnerFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	broadcast := newWifiBroadcast()
+	// A foreign controller owner whose UID differs from the desired parent
+	// UnifiNetwork: an object converted before the binding was made immutable
+	// could still carry it. SetControllerReference would return
+	// AlreadyOwnedError, so the reconciler must fail closed instead.
+	broadcast.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion:         unifiv1alpha1.GroupVersion.String(),
+		Kind:               "UnifiNetwork",
+		Name:               "stale-owner",
+		UID:                types.UID("stale-owner-uid"),
+		Controller:         boolPtr(true),
+		BlockOwnerDeletion: boolPtr(true),
+	}}
+
+	stub := &stubUnifiClient{}
+	factory := &recordingFactory{client: stub}
+	fakeClient, statusWrites, metadataWrites := newBroadcastFakeClient(t,
+		broadcast, ownedNetwork(), ownedSite(), readyController(testAppVersion), apiKeySecret())
+
+	reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+	result, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName))
+	if err != nil {
+		t.Fatalf("Reconcile error = %v, want nil (fail closed, no AlreadyOwnedError loop)", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0", result.RequeueAfter)
+	}
+
+	got := getWifiBroadcast(t, fakeClient)
+	cond := requireReady(t, got.Status.Conditions)
+	if cond.Status != metav1.ConditionFalse || cond.Reason != reasonInvalidSpec {
+		t.Errorf("Ready = %s/%s, want False/%s", cond.Status, cond.Reason, reasonInvalidSpec)
+	}
+	if !strings.Contains(cond.Message, "stale-owner") {
+		t.Errorf("condition message = %q, want it to name the stale owner", cond.Message)
+	}
+	if metav1.IsControlledBy(got, ownedNetwork()) {
+		t.Errorf("broadcast must not be re-owned by its UnifiNetwork")
+	}
+	if controllerutil.ContainsFinalizer(got, unifiv1alpha1.UnifiWifiBroadcastFinalizer) {
+		t.Errorf("broadcast finalizer must not be added on a foreign-owner failure")
+	}
+	if mutations := broadcastMutations(stub.called()); len(mutations) != 0 {
+		t.Errorf("upstream mutations = %v, want none", mutations)
+	}
+	if *metadataWrites != 0 {
+		t.Errorf("metadata writes = %d, want 0", *metadataWrites)
+	}
+	if *statusWrites != 1 {
+		t.Errorf("status writes = %d, want 1", *statusWrites)
+	}
+
+	// A second reconcile must be a no-op: no further status or metadata write
+	// and still no upstream mutation, proving the failure is terminal rather
+	// than an error loop.
+	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName)); err != nil {
+		t.Fatalf("second Reconcile error = %v, want nil", err)
+	}
+	if *statusWrites != 1 {
+		t.Errorf("status writes after second reconcile = %d, want 1", *statusWrites)
+	}
+	if *metadataWrites != 0 {
+		t.Errorf("metadata writes after second reconcile = %d, want 0", *metadataWrites)
+	}
+	if mutations := broadcastMutations(stub.called()); len(mutations) != 0 {
+		t.Errorf("upstream mutations after second reconcile = %v, want none", mutations)
+	}
+}
+
+func TestUnifiWifiBroadcastReconcileNativeFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		objects     func() []client.Object
+		wantReason  string
+		wantRequeue bool
+	}{
+		{
+			name:        "native: siteRef missing",
+			objects:     func() []client.Object { return []client.Object{newNativeWifiBroadcast()} },
+			wantReason:  reasonSiteRefNotFound,
+			wantRequeue: true,
+		},
+		{
+			name: "native: site not adopted",
+			objects: func() []client.Object {
+				site := newUnifiSite()
+				site.UID = testSiteUID
+				return []client.Object{newNativeWifiBroadcast(), site}
+			},
+			wantReason:  reasonSiteNotAdopted,
+			wantRequeue: true,
+		},
+		{
+			name:        "native: controller missing",
+			objects:     func() []client.Object { return []client.Object{newNativeWifiBroadcast(), ownedSite()} },
+			wantReason:  reasonControllerNotFound,
+			wantRequeue: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stub := &stubUnifiClient{}
+			factory := &recordingFactory{client: stub}
+			fakeClient, statusWrites, _ := newBroadcastFakeClient(t, tt.objects()...)
+			reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+
+			result, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName))
+			if err != nil {
+				t.Fatalf("Reconcile error = %v, want nil", err)
+			}
+			if tt.wantRequeue && result.RequeueAfter != wifiBroadcastDependencyRequeueAfter {
+				t.Errorf("RequeueAfter = %v, want %v", result.RequeueAfter, wifiBroadcastDependencyRequeueAfter)
+			}
+			if *statusWrites != 1 {
+				t.Fatalf("status writes = %d, want 1", *statusWrites)
+			}
+
+			got := getWifiBroadcast(t, fakeClient)
+			cond := requireReady(t, got.Status.Conditions)
+			if cond.Status != metav1.ConditionFalse || cond.Reason != tt.wantReason {
+				t.Errorf("Ready = %s/%s, want False/%s", cond.Status, cond.Reason, tt.wantReason)
+			}
+			if mutations := broadcastMutations(stub.called()); len(mutations) != 0 {
+				t.Errorf("upstream mutations = %v, want none", mutations)
+			}
+		})
+	}
+}
+
+func TestUnifiWifiBroadcastReconcileBandSteeringDrift(t *testing.T) {
+	t.Parallel()
+
+	// An unchanged NATIVE broadcast (band steering unset on both sides) writes
+	// nothing, including a second reconcile.
+	broadcast := newNativeWifiBroadcast()
+	broadcast.Status.WifiBroadcastID = testUpstreamBroadcastID
+
+	stub := &stubUnifiClient{broadcasts: []unifi.WifiBroadcast{matchingNativeBroadcast(t)}}
+	factory := &recordingFactory{client: stub}
+	fakeClient, _, _ := newBroadcastFakeClient(t,
+		broadcast, ownedSite(), readyController(testAppVersion), apiKeySecret())
+	reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+
+	for i := 0; i < 2; i++ {
+		if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName)); err != nil {
+			t.Fatalf("reconcile %d: %v", i, err)
+		}
+	}
+	if len(stub.broadcastCreateRequests) != 0 || len(stub.broadcastUpdateRequests) != 0 {
+		t.Errorf("unchanged NATIVE object wrote upstream: create:%d update:%d",
+			len(stub.broadcastCreateRequests), len(stub.broadcastUpdateRequests))
+	}
+
+	// A band-steering-only change is drift on the common field: exactly one
+	// update, carrying the new value, and no create.
+	got := getWifiBroadcast(t, fakeClient)
+	got.Spec.BandSteeringEnabled = boolPtr(true)
+	if err := fakeClient.Update(context.Background(), got); err != nil {
+		t.Fatalf("update broadcast band steering: %v", err)
+	}
+	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName)); err != nil {
+		t.Fatalf("reconcile after band-steering change: %v", err)
+	}
+	if len(stub.broadcastCreateRequests) != 0 {
+		t.Errorf("create requests = %d, want 0 for an existing broadcast", len(stub.broadcastCreateRequests))
+	}
+	if len(stub.broadcastUpdateRequests) != 1 {
+		t.Fatalf("update requests = %d, want 1 for a band-steering-only change", len(stub.broadcastUpdateRequests))
+	}
+	req := stub.broadcastUpdateRequests[0]
+	if req.BandSteeringEnabled == nil || !*req.BandSteeringEnabled {
+		t.Errorf("update BandSteeringEnabled = %v, want true", req.BandSteeringEnabled)
+	}
+	if req.Network == nil || req.Network.Type != wifiBroadcastNetworkReferenceNative || req.Network.NetworkID != "" {
+		t.Errorf("update network = %+v, want a NATIVE reference", req.Network)
+	}
+
+	// Once the console converges on the new value, a further reconcile is a
+	// no-op.
+	converged := matchingNativeBroadcast(t)
+	bandSteering := true
+	converged.BandSteeringEnabled = &bandSteering
+	stub.setWifiBroadcasts([]unifi.WifiBroadcast{converged})
+	if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName)); err != nil {
+		t.Fatalf("reconcile after convergence: %v", err)
+	}
+	if len(stub.broadcastUpdateRequests) != 1 {
+		t.Errorf("update requests = %d, want 1 after the console converges", len(stub.broadcastUpdateRequests))
+	}
+}
+
+func TestUnifiWifiBroadcastReconcileNativeRejectsCrossSiteReference(t *testing.T) {
+	t.Parallel()
+
+	otherNetwork := func(site string) *unifiv1alpha1.UnifiNetwork {
+		network := &unifiv1alpha1.UnifiNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: testOtherNetworkName, Namespace: testNamespace},
+			Spec: unifiv1alpha1.UnifiNetworkSpec{
+				SiteRef:    unifiv1alpha1.CoreRef{Name: site},
+				Management: testManagementUnmanaged,
+				Name:       testOtherNetworkUpstream,
+				VLANID:     10,
+			},
+		}
+		network.Status.NetworkID = testOtherNetworkUpstreamID
+		return network
+	}
+
+	tests := []struct {
+		name       string
+		site       string
+		wantReason string // empty means reconciled
+	}{
+		{name: "same site as spec.siteRef resolves", site: testSiteResourceName},
+		{name: "foreign site fails closed", site: "other-site", wantReason: reasonCrossSiteReference},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			broadcast := newNativeWifiBroadcast()
+			broadcast.Spec.SecurityConfiguration = unifiv1alpha1.WifiSecurityConfiguration{
+				Type: testWifiWPA2Personal,
+				WPA2Personal: &unifiv1alpha1.WifiWPA2PersonalSecurityConfiguration{
+					PresharedKeys: []unifiv1alpha1.WifiPresharedKey{{
+						Network: unifiv1alpha1.CoreRef{Name: testOtherNetworkName},
+						Passphrase: corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: testPassphraseSecretName},
+							Key:                  testPassphraseKey,
+						},
+					}},
+				},
+			}
+
+			stub := &stubUnifiClient{
+				createdBroadcast: unifi.WifiBroadcast{ID: testUpstreamBroadcastID, WifiBroadcastRequest: unifi.WifiBroadcastRequest{Name: testBroadcastUpstreamName}},
+			}
+			factory := &recordingFactory{client: stub}
+			fakeClient, _, _ := newBroadcastFakeClient(t,
+				broadcast, ownedSite(), otherNetwork(tt.site), readyController(testAppVersion), apiKeySecret(), passphraseSecret())
+			reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+
+			if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName)); err != nil {
+				t.Fatalf("Reconcile error = %v, want nil", err)
+			}
+
+			got := getWifiBroadcast(t, fakeClient)
+			cond := requireReady(t, got.Status.Conditions)
+			if tt.wantReason != "" {
+				if cond.Status != metav1.ConditionFalse || cond.Reason != tt.wantReason {
+					t.Errorf("Ready = %s/%s, want False/%s", cond.Status, cond.Reason, tt.wantReason)
+				}
+				if mutations := broadcastMutations(stub.called()); len(mutations) != 0 {
+					t.Errorf("upstream mutations = %v, want none for a cross-site reference", mutations)
+				}
+				return
+			}
+			if cond.Status != metav1.ConditionTrue || cond.Reason != reasonReconciled {
+				t.Errorf("Ready = %s/%s, want True/%s", cond.Status, cond.Reason, reasonReconciled)
+			}
+			if len(stub.broadcastCreateRequests) != 1 {
+				t.Fatalf("create requests = %d, want 1", len(stub.broadcastCreateRequests))
+			}
+			security := stub.broadcastCreateRequests[0].SecurityConfiguration
+			if security == nil || len(security.PresharedKeys) != 1 ||
+				security.PresharedKeys[0].Network.NetworkID != testOtherNetworkUpstreamID {
+				t.Errorf("preshared key network = %+v, want the same-site network UUID", security)
+			}
+		})
+	}
+}
+
+func TestBroadcastMatchesRequestNativeAndBandSteering(t *testing.T) {
+	t.Parallel()
+
+	observed := matchingNativeBroadcast(t)
+
+	tests := []struct {
+		name   string
+		mutate func(*unifi.WifiBroadcastRequest)
+		want   bool
+	}{
+		{name: "identical NATIVE reference matches", want: true},
+		{
+			name: "different network type is drift",
+			mutate: func(req *unifi.WifiBroadcastRequest) {
+				req.Network = &unifi.WifiNetworkReference{Type: wifiBroadcastNetworkReferenceSpecific, NetworkID: testUpstreamNetworkID}
+			},
+			want: false,
+		},
+		{
+			name:   "band steering only change is drift",
+			mutate: func(req *unifi.WifiBroadcastRequest) { req.BandSteeringEnabled = boolPtr(true) },
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := observed.WifiBroadcastRequest
+			if tt.mutate != nil {
+				tt.mutate(&req)
+			}
+			if got := broadcastMatchesRequest(observed, req); got != tt.want {
+				t.Errorf("broadcastMatchesRequest = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -681,6 +1094,53 @@ func TestUnifiWifiBroadcastCleanupPrefersStatusSite(t *testing.T) {
 	}
 }
 
+func TestUnifiWifiBroadcastNativeCleanupUsesStatusSite(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		statusSite string
+	}{
+		{name: "status-first siteID", statusSite: testUpstreamSiteID},
+		{name: "live spec.siteRef fallback", statusSite: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			broadcast := newNativeWifiBroadcast()
+			broadcast.Finalizers = []string{unifiv1alpha1.UnifiWifiBroadcastFinalizer}
+			broadcast.Status.WifiBroadcastID = testUpstreamBroadcastID
+			broadcast.Status.SiteID = tt.statusSite
+
+			stub := &stubUnifiClient{broadcasts: []unifi.WifiBroadcast{{
+				ID:       testUpstreamBroadcastID,
+				Metadata: unifi.NetworkMetadata{Origin: wifiBroadcastOriginUserDefined},
+			}}}
+			factory := &recordingFactory{client: stub}
+			// No UnifiNetwork object exists: a NATIVE broadcast has none.
+			fakeClient, _, _ := newBroadcastFakeClient(t,
+				broadcast, ownedSite(), readyController(testAppVersion), apiKeySecret())
+			reconciler := &UnifiWifiBroadcastReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+
+			if err := fakeClient.Delete(context.Background(), broadcast); err != nil {
+				t.Fatalf("delete broadcast: %v", err)
+			}
+			if _, err := reconciler.Reconcile(context.Background(), controllerRequest(testBroadcastResourceName)); err != nil {
+				t.Fatalf("Reconcile error = %v, want nil", err)
+			}
+			if !slices.Contains(stub.called(), "DeleteWifiBroadcast") {
+				t.Errorf("upstream calls = %v, want DeleteWifiBroadcast", stub.called())
+			}
+			if stub.deletedBroadcastSiteID != testUpstreamSiteID {
+				t.Errorf("DeleteWifiBroadcast site = %q, want the status-recorded site %q",
+					stub.deletedBroadcastSiteID, testUpstreamSiteID)
+			}
+		})
+	}
+}
+
 func TestUnifiWifiBroadcastReconcileTreatsEmptyOriginAsOwn(t *testing.T) {
 	t.Parallel()
 
@@ -748,11 +1208,11 @@ func TestUnifiWifiBroadcastReconcileRejectsCrossSiteReference(t *testing.T) {
 		Spec: unifiv1alpha1.UnifiNetworkSpec{
 			SiteRef:    unifiv1alpha1.CoreRef{Name: "other-site"},
 			Management: testManagementUnmanaged,
-			Name:       "other-network",
+			Name:       testOtherNetworkUpstream,
 			VLANID:     10,
 		},
 	}
-	otherNetwork.Status.NetworkID = "other-network-id"
+	otherNetwork.Status.NetworkID = testOtherNetworkUpstreamID
 
 	stub := &stubUnifiClient{}
 	factory := &recordingFactory{client: stub}

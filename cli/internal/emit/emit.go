@@ -34,3 +34,14 @@ func Marshal(r Resource) ([]byte, error) {
 	}
 	return b, nil
 }
+
+// Unmarshal parses a single YAML Custom Resource document, as written by Marshal. Spec and
+// Status are decoded into generic maps, so a caller can compare a written resource against
+// a freshly projected one without knowing its concrete type.
+func Unmarshal(data []byte) (Resource, error) {
+	var r Resource
+	if err := yaml.Unmarshal(data, &r); err != nil {
+		return Resource{}, fmt.Errorf("unmarshal resource: %w", err)
+	}
+	return r, nil
+}

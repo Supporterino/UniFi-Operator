@@ -17,6 +17,9 @@ operator/bin/
 operator/cover.out
 operator/*.test
 
+# CLI snapshot output (conventional full-snapshot directory)
+/snapshot/
+
 # Secrets and local config
 .env
 *.env

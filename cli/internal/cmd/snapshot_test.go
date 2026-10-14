@@ -77,6 +77,9 @@ const (
 	fixtureVpnServerIDBlank = "c3d4e5f6-0718-4293-a4b5-c6d7e8f90123"
 	fixtureVpnTunnelID      = "d4e5f607-1829-43a4-b5c6-d7e8f9012345"
 	fixtureVpnTunnelIDBlank = "e5f60718-293a-44b5-c6d7-e8f901234567"
+
+	fixtureFirewallZoneIDCustom = "77e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f70"
+	fixtureFirewallZoneIDSystem = "88f5a6b7-c8d9-4e0f-1a2b-3c4d5e6f7081"
 )
 
 const (
@@ -96,6 +99,12 @@ const (
 	pathVpnServers        = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/vpn/servers"
 	pathSiteToSiteTunnels = "/proxy/network/integration/v1/sites/" + fixtureSiteID + "/vpn/site-to-site-tunnels"
 )
+
+// allFixtureResourceCount is the number of resources `snapshot all` emits for
+// newFixtureServer: controller (1) + sites (2) + the default site's site-scoped objects
+// (36) + the branch site's one site-global UnifiAclRuleOrdering (empty, since the branch
+// carries no ACL rules).
+const allFixtureResourceCount = 40
 
 func readFixture(t *testing.T, name string) []byte {
 	t.Helper()
@@ -119,7 +128,8 @@ func networkDetailFixtures(t *testing.T) map[string][]byte {
 }
 
 // newFixtureServer serves the recorded Integration v1 fixtures. The branch site has no
-// networks.
+// upstream objects: every site-scoped endpoint answers it with an empty page so
+// `snapshot all` (which spans all sites) can run against the fixture.
 func newFixtureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -131,7 +141,10 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 	radiusProfiles := readFixture(t, "radius-profiles.json")
 	trafficMatchingLists := readFixture(t, "traffic-matching-lists.json")
 	firewallPolicies := readFixture(t, "firewall-policies.json")
+	firewallPolicyOrderingCustom := readFixture(t, "firewall-policy-ordering.json")
+	firewallPolicyOrderingInternal := readFixture(t, "firewall-policy-ordering-reverse.json")
 	aclRules := readFixture(t, "acl-rules.json")
+	aclRuleOrdering := readFixture(t, "acl-rule-ordering.json")
 	dnsPolicies := readFixture(t, "dns-policies.json")
 	lags := readFixture(t, "switching-lags.json")
 	mcLagDomains := readFixture(t, "switching-mc-lag-domains.json")
@@ -160,8 +173,16 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write(firewallZones)
 		case r.URL.Path == pathFirewallPolicies:
 			_, _ = w.Write(firewallPolicies)
+		case r.URL.Path == pathFirewallPolicies+"/ordering":
+			if r.URL.Query().Get("sourceFirewallZoneId") == fixtureFirewallZoneIDCustom {
+				_, _ = w.Write(firewallPolicyOrderingCustom)
+				return
+			}
+			_, _ = w.Write(firewallPolicyOrderingInternal)
 		case r.URL.Path == pathAclRules:
 			_, _ = w.Write(aclRules)
+		case r.URL.Path == pathAclRules+"/ordering":
+			_, _ = w.Write(aclRuleOrdering)
 		case r.URL.Path == pathDnsPolicies:
 			_, _ = w.Write(dnsPolicies)
 		case r.URL.Path == pathLags:
@@ -180,7 +201,7 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write(radiusProfiles)
 		case r.URL.Path == pathTrafficMatching:
 			_, _ = w.Write(trafficMatchingLists)
-		case r.URL.Path == "/proxy/network/integration/v1/sites/"+fixtureBranchSiteID+"/networks":
+		case strings.Contains(r.URL.Path, fixtureBranchSiteID):
 			_, _ = w.Write(emptyPage)
 		case strings.HasPrefix(r.URL.Path, pathWifiBroadcasts+"/"):
 			id := strings.TrimPrefix(r.URL.Path, pathWifiBroadcasts+"/")
@@ -491,6 +512,162 @@ func TestSnapshotAclResolvesRefsAndSkips(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "Untagged Enforcer") || !strings.Contains(errOut, "device tag") {
 		t.Errorf("stderr = %q, want a warning naming the skipped untagged-enforcer rule", errOut)
+	}
+}
+
+func TestSnapshotFirewallPolicyOrderingGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "firewall-policy-ordering", "--controller", srv.URL)
+	compareGolden(t, "firewall-policy-ordering.golden.yaml", out)
+}
+
+// TestSnapshotFirewallPolicyOrderingResolvesRefs checks the projection rules: one ordering
+// is emitted per distinct user-defined source/destination zone pair, each zone is referenced
+// by name (zoneRef for a configurable zone, builtInZone for a system zone), the partition is
+// resolved to UnifiFirewallPolicy names in upstream order, and an ordered policy that was not
+// emitted is skipped with a warning and an annotation. No upstream zone or policy UUID
+// reaches spec.
+func TestSnapshotFirewallPolicyOrderingResolvesRefs(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, errOut := runSnapshot(t, "firewall-policy-ordering", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 2 {
+		t.Fatalf("got %d firewall policy orderings, want 2:\n%s", len(docs), out)
+	}
+	for _, doc := range docs {
+		if doc.Kind != "UnifiFirewallPolicyOrdering" {
+			t.Fatalf("kind = %q, want UnifiFirewallPolicyOrdering", doc.Kind)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal spec: %v", err)
+		}
+		for _, forbidden := range []string{
+			fixturePolicyIDOne, fixturePolicyIDTwo, fixturePolicyIDThree,
+			fixtureFirewallZoneIDCustom, fixtureFirewallZoneIDSystem,
+			`"zoneId"`, `"sourceZoneID"`, `"destinationZoneID"`,
+		} {
+			if strings.Contains(string(specRaw), forbidden) {
+				t.Errorf("%s spec leaks %q: %s", doc.Metadata.Name, forbidden, specRaw)
+			}
+		}
+	}
+
+	byName := map[string]emittedCR{}
+	for _, doc := range docs {
+		byName[doc.Metadata.Name] = doc
+	}
+
+	customToInternal, ok := byName["custom-zone-to-internal"]
+	if !ok {
+		t.Fatalf("no emitted ordering named custom-zone-to-internal:\n%s", out)
+	}
+	source, _ := customToInternal.Spec["source"].(map[string]any)
+	if zoneRef, ok := source["zoneRef"].(map[string]any); !ok || asString(zoneRef["name"]) != "custom-zone" {
+		t.Errorf("source.zoneRef = %v, want custom-zone", source["zoneRef"])
+	}
+	destination, _ := customToInternal.Spec["destination"].(map[string]any)
+	if builtIn, ok := destination["builtInZone"].(map[string]any); !ok || asString(builtIn["name"]) != "Internal" {
+		t.Errorf("destination.builtInZone = %v, want Internal", destination["builtInZone"])
+	}
+	before, _ := customToInternal.Spec["beforeSystemDefined"].([]any)
+	if len(before) != 1 {
+		t.Fatalf("beforeSystemDefined = %v, want one", customToInternal.Spec["beforeSystemDefined"])
+	}
+	if ref, _ := before[0].(map[string]any); asString(ref["name"]) != "allow-lan-to-wan" {
+		t.Errorf("beforeSystemDefined ref = %v, want allow-lan-to-wan", before[0])
+	}
+	if after, ok := customToInternal.Spec["afterSystemDefined"].([]any); !ok || len(after) != 0 {
+		t.Errorf("afterSystemDefined = %v, want [] (the unemitted policy is skipped)", customToInternal.Spec["afterSystemDefined"])
+	}
+	if got := customToInternal.Metadata.Annotations[snapshot.AnnotationUnresolvedPolicyRef]; got == "" {
+		t.Errorf("annotations = %v, want %s", customToInternal.Metadata.Annotations, snapshot.AnnotationUnresolvedPolicyRef)
+	}
+
+	internalToCustom, ok := byName["internal-to-custom-zone"]
+	if !ok {
+		t.Fatalf("no emitted ordering named internal-to-custom-zone:\n%s", out)
+	}
+	internalSource, _ := internalToCustom.Spec["source"].(map[string]any)
+	if builtIn, ok := internalSource["builtInZone"].(map[string]any); !ok || asString(builtIn["name"]) != "Internal" {
+		t.Errorf("source.builtInZone = %v, want Internal", internalSource["builtInZone"])
+	}
+	internalDest, _ := internalToCustom.Spec["destination"].(map[string]any)
+	if zoneRef, ok := internalDest["zoneRef"].(map[string]any); !ok || asString(zoneRef["name"]) != "custom-zone" {
+		t.Errorf("destination.zoneRef = %v, want custom-zone", internalDest["zoneRef"])
+	}
+	internalBefore, _ := internalToCustom.Spec["beforeSystemDefined"].([]any)
+	if len(internalBefore) != 1 {
+		t.Fatalf("beforeSystemDefined = %v, want one", internalToCustom.Spec["beforeSystemDefined"])
+	}
+	if ref, _ := internalBefore[0].(map[string]any); asString(ref["name"]) != "block-iot-to-lan" {
+		t.Errorf("beforeSystemDefined ref = %v, want block-iot-to-lan", internalBefore[0])
+	}
+
+	if !strings.Contains(errOut, "not emitted") {
+		t.Errorf("stderr = %q, want a warning about the ordered policy that was not emitted", errOut)
+	}
+}
+
+func TestSnapshotAclRuleOrderingGolden(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "acl-rule-ordering", "--controller", srv.URL)
+	compareGolden(t, "acl-rule-ordering.golden.yaml", out)
+}
+
+// TestSnapshotAclRuleOrderingResolvesRefs checks the projection rules: the upstream
+// site-global order is emitted as UnifiAclRule names in upstream order, an ordered rule that
+// was not emitted is skipped with a warning and an annotation, and no upstream rule UUID
+// reaches spec.
+func TestSnapshotAclRuleOrderingResolvesRefs(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, errOut := runSnapshot(t, "acl-rule-ordering", "--controller", srv.URL)
+
+	docs := parseEmittedCRs(t, out)
+	if len(docs) != 1 {
+		t.Fatalf("got %d acl rule orderings, want 1:\n%s", len(docs), out)
+	}
+	doc := docs[0]
+	if doc.Kind != "UnifiAclRuleOrdering" {
+		t.Fatalf("kind = %q, want UnifiAclRuleOrdering", doc.Kind)
+	}
+	if doc.Metadata.Name != "acl-rule-ordering" {
+		t.Errorf("name = %q, want acl-rule-ordering", doc.Metadata.Name)
+	}
+	siteRef, _ := doc.Spec["siteRef"].(map[string]any)
+	if asString(siteRef["name"]) != "default" {
+		t.Errorf("siteRef = %v, want default", doc.Spec["siteRef"])
+	}
+	specRaw, err := json.Marshal(doc.Spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{
+		fixtureAclRuleIDOne, fixtureAclRuleIDTwo, fixtureAclRuleIDThree, fixtureAclRuleIDFour, fixtureAclRuleIDFive,
+		`"id"`, `"ruleID"`, `"orderedAclRuleIds"`,
+	} {
+		if strings.Contains(string(specRaw), forbidden) {
+			t.Errorf("spec leaks %q: %s", forbidden, specRaw)
+		}
+	}
+
+	ordered, _ := doc.Spec["orderedAclRules"].([]any)
+	want := []string{"allow-guest-to-dns", "allow-switch-mac", "block-iot-dns"}
+	if len(ordered) != len(want) {
+		t.Fatalf("orderedAclRules = %v, want %v", ordered, want)
+	}
+	for i, ref := range ordered {
+		entry, _ := ref.(map[string]any)
+		if asString(entry["name"]) != want[i] {
+			t.Errorf("orderedAclRules[%d] = %v, want %s", i, ref, want[i])
+		}
+	}
+	if got := doc.Metadata.Annotations[snapshot.AnnotationUnresolvedAclRuleRef]; got == "" {
+		t.Errorf("annotations = %v, want %s", doc.Metadata.Annotations, snapshot.AnnotationUnresolvedAclRuleRef)
+	}
+	if !strings.Contains(errOut, "not emitted") {
+		t.Errorf("stderr = %q, want a warning about the ordered rule that was not emitted", errOut)
 	}
 }
 
@@ -933,18 +1110,10 @@ func TestSnapshotSpecHasNoOpaqueID(t *testing.T) {
 	srv := newFixtureServer(t)
 	out, _ := runSnapshot(t, "all", "--controller", srv.URL)
 
-	for _, id := range []string{
-		fixtureNetworkIDOne, fixtureNetworkIDTwo, fixtureNetworkIDThree,
-		fixtureZoneID, fixtureDeviceID, fixtureSiteID, fixtureBranchSiteID,
-	} {
-		if strings.Contains(out, id) {
-			t.Errorf("emitted output contains upstream identifier %q:\n%s", id, out)
-		}
-	}
-
 	docs := parseEmittedCRs(t, out)
-	if len(docs) != 10 {
-		t.Fatalf("got %d emitted CRs, want 10 (controller + 2 sites + 3 networks + 4 wifi broadcasts)", len(docs))
+	if len(docs) != allFixtureResourceCount {
+		t.Fatalf("got %d emitted CRs, want %d (controller + 2 sites + the default site's site-scoped objects + the branch's empty ACL-rule ordering)\n%s",
+			len(docs), allFixtureResourceCount, out)
 	}
 	for _, doc := range docs {
 		if doc.APIVersion != "unifi.supporterino.de/v1alpha1" {
@@ -955,6 +1124,20 @@ func TestSnapshotSpecHasNoOpaqueID(t *testing.T) {
 		}
 		if err := rejectOpaqueKeys(doc.Spec); err != nil {
 			t.Errorf("%s/%s: %v", doc.Kind, doc.Metadata.Name, err)
+		}
+		specRaw, err := json.Marshal(doc.Spec)
+		if err != nil {
+			t.Fatalf("marshal %s/%s spec: %v", doc.Kind, doc.Metadata.Name, err)
+		}
+		// Upstream identifiers belong in status only, never in spec, so the check is
+		// scoped to spec rather than the whole stream.
+		for _, id := range []string{
+			fixtureNetworkIDOne, fixtureNetworkIDTwo, fixtureNetworkIDThree,
+			fixtureZoneID, fixtureDeviceID, fixtureSiteID, fixtureBranchSiteID,
+		} {
+			if strings.Contains(string(specRaw), id) {
+				t.Errorf("%s/%s spec contains upstream identifier %q: %s", doc.Kind, doc.Metadata.Name, id, specRaw)
+			}
 		}
 		if doc.Kind == "UnifiNetwork" {
 			if err := validateNetworkSpec(doc.Spec); err != nil {
@@ -1098,8 +1281,8 @@ func TestSnapshotWritesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read output dir: %v", err)
 	}
-	if len(entries) != 10 {
-		t.Fatalf("got %d files, want 10 (controller + 2 sites + 3 networks + 4 wifi broadcasts)", len(entries))
+	if len(entries) != allFixtureResourceCount {
+		t.Fatalf("got %d files, want %d (controller + 2 sites + the default site's site-scoped objects + the branch's empty ACL-rule ordering)", len(entries), allFixtureResourceCount)
 	}
 	for _, entry := range entries {
 		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
@@ -1108,6 +1291,153 @@ func TestSnapshotWritesDirectory(t *testing.T) {
 		}
 		if strings.Contains(string(data), "---") {
 			t.Errorf("%s contains a document separator", entry.Name())
+		}
+	}
+}
+
+// TestSnapshotAllEmitsEveryProjectableKind runs `all` against the complete fixture and
+// asserts the output contains a resource of every projectable kind, so `all` is genuinely
+// complete rather than limited to the four kinds (controller, sites, networks, wifi) it
+// once covered.
+func TestSnapshotAllEmitsEveryProjectableKind(t *testing.T) {
+	srv := newFixtureServer(t)
+	out, _ := runSnapshot(t, "all", "--controller", srv.URL)
+
+	emitted := map[string]bool{}
+	for _, doc := range parseEmittedCRs(t, out) {
+		emitted[doc.Kind] = true
+	}
+	want := []string{
+		"UnifiController", "UnifiSite", "UnifiNetwork", "UnifiFirewallZone",
+		"UnifiFirewallPolicy", "UnifiFirewallPolicyOrdering", "UnifiWifiBroadcast",
+		"UnifiRadiusProfile", "UnifiTrafficMatchingList", "UnifiAclRule",
+		"UnifiAclRuleOrdering", "UnifiDnsPolicy", "UnifiSwitchingLag",
+		"UnifiSwitchingMcLagDomain", "UnifiSwitchingSwitchStack", "UnifiVpnServer",
+		"UnifiSiteToSiteTunnel",
+	}
+	for _, kind := range want {
+		if !emitted[kind] {
+			t.Errorf("`all` emitted no %s; every projectable kind must be present", kind)
+		}
+	}
+}
+
+// TestSnapshotAllDeduplicatesProjectionWarnings proves the orchestrator collapses an exact
+// projection warning repeated by more than one kind while leaving distinct warnings intact.
+// The network projection backs networks, firewall-zones, wifi, acl, and acl-rule-ordering, so
+// its dropped-DHCP-guard warning would otherwise print once per kind; the firewall-policy skip
+// warning is likewise produced by firewall-policies and firewall-policy-ordering.
+func TestSnapshotAllDeduplicatesProjectionWarnings(t *testing.T) {
+	srv := newFixtureServer(t)
+	_, errOut := runSnapshot(t, "all", "--controller", srv.URL)
+
+	repeated := []struct{ name, warning string }{
+		{
+			"network DHCP-guard",
+			`warning: network "Default": dropped 2 invalid trusted DHCP server address(es) that the CRD dhcpGuarding schema rejects`,
+		},
+		{"firewall policy skip", `warning: firewall policy "Legacy Inline Drop"`},
+	}
+	for _, want := range repeated {
+		if got := strings.Count(errOut, want.warning); got != 1 {
+			t.Errorf("%s warning printed %d time(s), want 1:\n%s", want.name, got, errOut)
+		}
+	}
+	// A warning produced by only one kind must not be swallowed by deduplication.
+	if !strings.Contains(errOut, "upstream stack has no name") {
+		t.Errorf("a single-kind warning was dropped by deduplication:\n%s", errOut)
+	}
+}
+
+// TestSnapshotAllCoversEveryAcceptedKind couples the dispatch's accepted-kind set to the
+// projection registry: every accepted kind must be either projectable or explicitly
+// non-projectable (and every projectable/non-projectable kind must be accepted). Adding a
+// kind to acceptedKinds without adding it to projectableKinds (or nonProjectableKinds)
+// fails here, so `all` cannot silently omit a newly accepted kind.
+func TestSnapshotAllCoversEveryAcceptedKind(t *testing.T) {
+	nonProjectable := make(map[string]bool, len(nonProjectableKinds))
+	for _, kind := range nonProjectableKinds {
+		nonProjectable[kind] = true
+	}
+	accepted := make(map[string]bool, len(acceptedKinds))
+	for _, kind := range acceptedKinds {
+		accepted[kind] = true
+	}
+
+	for _, kind := range acceptedKinds {
+		kind := kind
+		t.Run(kind, func(t *testing.T) {
+			if kind == allKind || nonProjectable[kind] {
+				return
+			}
+			if _, ok := projectableKindFor(kind); !ok {
+				t.Errorf("accepted kind %q is neither projectable nor listed in nonProjectableKinds; `snapshot all` would omit it", kind)
+			}
+		})
+	}
+
+	for _, entry := range projectableKinds {
+		if !accepted[entry.kind] {
+			t.Errorf("projectable kind %q is missing from acceptedKinds; the dispatch would reject it", entry.kind)
+		}
+	}
+	for _, kind := range nonProjectableKinds {
+		if !accepted[kind] {
+			t.Errorf("non-projectable kind %q is missing from acceptedKinds; the dispatch would reject it", kind)
+		}
+	}
+}
+
+// TestSnapshotAllSpansEverySite checks that `all` projects the site-scoped kinds of every
+// site on the console, not only the default --site, by serving a distinct RADIUS profile
+// for two sites and asserting both are emitted with their own siteRef. It also passes
+// --site explicitly to prove `all` ignores it (unlike the per-kind commands).
+func TestSnapshotAllSpansEverySite(t *testing.T) {
+	const (
+		siteAID = "11111111-1111-4111-8111-111111111111"
+		siteBID = "22222222-2222-4222-8222-222222222222"
+	)
+	emptyPage := []byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == pathSites:
+			_, _ = w.Write([]byte(`{"count":2,"data":[` +
+				`{"id":"` + siteAID + `","internalReference":"alpha","name":"Alpha"},` +
+				`{"id":"` + siteBID + `","internalReference":"beta","name":"Beta"}],` +
+				`"limit":200,"offset":0,"totalCount":2}`))
+		case r.URL.Path == "/proxy/network/integration/v1/sites/"+siteAID+"/radius/profiles":
+			_, _ = w.Write([]byte(`{"count":1,"data":[{"id":"a1a1a1a1-1111-4111-8111-111111111111","name":"Alpha RADIUS"}],"limit":200,"offset":0,"totalCount":1}`))
+		case r.URL.Path == "/proxy/network/integration/v1/sites/"+siteBID+"/radius/profiles":
+			_, _ = w.Write([]byte(`{"count":1,"data":[{"id":"b2b2b2b2-2222-4222-8222-222222222222","name":"Beta RADIUS"}],"limit":200,"offset":0,"totalCount":1}`))
+		case strings.Contains(r.URL.Path, "/sites/"):
+			_, _ = w.Write(emptyPage)
+		default:
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	out, _ := runSnapshot(t, "all", "--controller", srv.URL, "--site", "alpha")
+
+	bySite := map[string][]emittedCR{}
+	for _, doc := range parseEmittedCRs(t, out) {
+		if doc.Kind != "UnifiRadiusProfile" {
+			continue
+		}
+		siteRef, _ := doc.Spec["siteRef"].(map[string]any)
+		bySite[asString(siteRef["name"])] = append(bySite[asString(siteRef["name"])], doc)
+	}
+	for _, want := range []struct{ site, name string }{
+		{"alpha", "alpha-alpha-radius"},
+		{"beta", "beta-beta-radius"},
+	} {
+		docs := bySite[want.site]
+		if len(docs) != 1 {
+			t.Fatalf("site %q emitted %d radius profiles, want 1:\n%s", want.site, len(docs), out)
+		}
+		if docs[0].Metadata.Name != want.name {
+			t.Errorf("site %q radius profile name = %q, want %q", want.site, docs[0].Metadata.Name, want.name)
 		}
 	}
 }
@@ -1272,7 +1602,10 @@ func apiKeyHandler(keyCh chan<- string) http.Handler {
 		case strings.HasSuffix(r.URL.Path, "/networks"):
 			_, _ = w.Write([]byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`))
 		default:
-			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			// `snapshot all` spans every site-scoped endpoint; answer anything not
+			// explicitly listed with an empty page so the run completes and the API key
+			// is captured.
+			_, _ = w.Write([]byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`))
 		}
 	})
 }

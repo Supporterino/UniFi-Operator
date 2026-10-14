@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -32,20 +33,25 @@ func newSnapshotCommand() *cobra.Command {
 		Short: "Read a UniFi controller and emit adoptable Custom Resources",
 		Long: "snapshot reads objects from a UniFi Network controller over the Integration v1 API\n" +
 			"and writes the equivalent Custom Resources as YAML. Supported kinds: all, controller,\n" +
-			"sites, networks, firewall-zones, firewall-policies, wifi, radius, traffic-matching,\n" +
-			"acl, dns, switching, vpn, device-tags. `all` emits a UnifiController template, the\n" +
-			"UnifiSites, the UnifiNetworks, and the UnifiWifiBroadcasts of the site selected with\n" +
-			"--site. `firewall-zones` emits the site's UnifiFirewallZones; `firewall-policies` emits\n" +
-			"the site's UnifiFirewallPolicies (zone and matching-list references are resolved by\n" +
-			"name); `wifi` emits the site's UnifiWifiBroadcasts (personal passphrases are emitted\n" +
-			"as placeholder Secret references); `radius` emits the site's UnifiRadiusProfiles\n" +
-			"(adopted by name); `traffic-matching` emits the site's UnifiTrafficMatchingLists;\n" +
-			"`acl` emits the site's UnifiAclRules (network and device-tag references are resolved\n" +
-			"by name); `dns` emits the site's UnifiDnsPolicies; `switching` emits the site's\n" +
-			"UnifiSwitchingLags, UnifiSwitchingMcLagDomains, and UnifiSwitchingSwitchStacks\n" +
+			"sites, networks, firewall-zones, firewall-policies, firewall-policy-ordering, wifi,\n" +
+			"radius, traffic-matching, acl, acl-rule-ordering, dns, switching, vpn, device-tags.\n" +
+			"`all` emits every projectable kind across every site on the console; it ignores\n" +
+			"--site. `firewall-zones` emits the\n" +
+			"site's UnifiFirewallZones; `firewall-policies` emits the site's UnifiFirewallPolicies\n" +
+			"(zone and matching-list references are resolved by name); `firewall-policy-ordering`\n" +
+			"emits the site's UnifiFirewallPolicyOrderings (one per user-defined zone pair; policy\n" +
+			"references are resolved by name and the system-defined partition is anchored); `wifi`\n" +
+			"emits the site's UnifiWifiBroadcasts (personal passphrases are emitted as placeholder\n" +
+			"Secret references); `radius` emits the site's UnifiRadiusProfiles (adopted by name);\n" +
+			"`traffic-matching` emits the site's UnifiTrafficMatchingLists; `acl` emits the site's\n" +
+			"UnifiAclRules (network and device-tag references are resolved by name);\n" +
+			"`acl-rule-ordering` emits the site's UnifiAclRuleOrdering (rule references are resolved\n" +
+			"by name in upstream order); `dns` emits the site's UnifiDnsPolicies; `switching` emits\n" +
+			"the site's UnifiSwitchingLags, UnifiSwitchingMcLagDomains, and UnifiSwitchingSwitchStacks\n" +
 			"(adopted); `vpn` emits the site's UnifiVpnServers and UnifiSiteToSiteTunnels (adopted\n" +
 			"by name); `device-tags` prints the read-only device-tag names and device counts\n" +
-			"without emitting a resource.",
+			"without emitting a resource. The `verify` subcommand re-reads the live console and\n" +
+			"reports coverage and fidelity gaps in a previously written snapshot directory.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := "all"
@@ -68,19 +74,18 @@ func newSnapshotCommand() *cobra.Command {
 	flags.StringVar(&opts.controllerRef, "controller-ref", snapshot.DefaultControllerRef,
 		"metadata.name of the UnifiController the emitted sites reference")
 	flags.StringVar(&opts.site, "site", "default",
-		"upstream site internalReference to snapshot networks from")
+		"upstream site internalReference the per-kind commands snapshot (ignored by `all`)")
 	flags.StringVar(&opts.apiKey, "api-key", "", "UniFi API key (or UNIFI_API_KEY); never logged")
 	flags.StringVarP(&opts.output, "output", "o", "-", "output directory for CR files, or - for stdout")
+	cmd.AddCommand(newSnapshotVerifyCommand())
 	return cmd
 }
 
 func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Writer) error {
-	switch kind {
-	case "all", "controller", "sites", "networks", "firewall-zones", "firewall-policies", "wifi", "radius", "traffic-matching", "acl", "dns", "switching", "vpn", "device-tags":
-	default:
+	if !acceptedKind(kind) {
 		return fmt.Errorf(
-			"unknown snapshot kind %q: supported kinds are all, controller, sites, networks, firewall-zones, firewall-policies, wifi, radius, traffic-matching, acl, dns, switching, vpn, device-tags",
-			kind)
+			"unknown snapshot kind %q: supported kinds are %s",
+			kind, strings.Join(acceptedKinds, ", "))
 	}
 	if o.controller == "" {
 		return fmt.Errorf("--controller is required (or set UNIFI_URL)")
@@ -94,231 +99,19 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 		return err
 	}
 
-	needSites := kind != "controller"
-	var sites []unifi.Site
-	var siteResources []emit.Resource
-	var siteNames map[string]string
-	var siteWarnings []string
-	if needSites {
-		sites, err = client.ListSites(ctx)
-		if err != nil {
-			return fmt.Errorf("snapshot sites: %w", err)
-		}
-		siteResources, siteNames, siteWarnings = snapshot.Sites(o.controllerRef, sites)
-	}
-
 	var resources []emit.Resource
 	var warnings []string
 
-	if kind == "controller" || kind == "all" {
-		controller, controllerWarnings := snapshot.Controller(o.controller, o.controllerRef)
-		resources = append(resources, controller)
-		warnings = append(warnings, controllerWarnings...)
+	switch {
+	case kind == allKind:
+		resources, warnings, err = o.projectAll(ctx, client)
+	case slices.Contains(nonProjectableKinds, kind):
+		return o.runNonProjectable(ctx, client, kind, out)
+	default:
+		resources, warnings, err = o.projectKind(ctx, client, kind)
 	}
-	if kind == "sites" || kind == "all" {
-		resources = append(resources, siteResources...)
-		warnings = append(warnings, siteWarnings...)
-	}
-	if kind == "device-tags" {
-		_, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		tags, err := client.ListDeviceTags(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot device-tags: %w", err)
-		}
-		return writeDeviceTags(out, tags)
-	}
-	if kind == "radius" {
-		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		profiles, err := client.ListRadiusProfiles(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot radius: %w", err)
-		}
-		radiusResources, radiusWarnings := snapshot.RadiusProfiles(siteName, profiles)
-		resources = append(resources, radiusResources...)
-		warnings = append(warnings, radiusWarnings...)
-	}
-	if kind == "traffic-matching" {
-		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		lists, err := client.ListTrafficMatchingLists(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot traffic-matching: %w", err)
-		}
-		listResources, listWarnings := snapshot.TrafficMatchingLists(siteName, lists)
-		resources = append(resources, listResources...)
-		warnings = append(warnings, listWarnings...)
-	}
-	if kind == "firewall-policies" {
-		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		zones, err := client.ListZones(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot firewall-policies: %w", err)
-		}
-		policies, err := client.ListFirewallPolicies(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot firewall-policies: %w", err)
-		}
-		// The matching-list endpoints are only needed when a policy carries a traffic
-		// filter, so fetch them lazily: a console without the lists endpoint can still
-		// snapshot filter-free policies.
-		var lists []unifi.TrafficMatchingList
-		if anyFirewallPolicyFilter(policies) {
-			lists, err = client.ListTrafficMatchingLists(ctx, siteID)
-			if err != nil {
-				return fmt.Errorf("snapshot firewall-policies: %w", err)
-			}
-		}
-		policyResources, policyWarnings := snapshot.FirewallPolicies(siteName, zones, lists, policies)
-		resources = append(resources, policyResources...)
-		warnings = append(warnings, policyWarnings...)
-	}
-	if kind == "acl" {
-		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		// Network membership is referenced by Kubernetes identity, so load the network
-		// projection the `networks` command emits and reuse its UUID -> name map.
-		detailed, tags, loadWarnings, err := loadNetworkProjection(ctx, client, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot acl: %w", err)
-		}
-		warnings = append(warnings, loadWarnings...)
-		_, networkNames, networkWarnings := snapshot.Networks(siteName, detailed, tags)
-		warnings = append(warnings, networkWarnings...)
-
-		rules, err := client.ListAclRules(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot acl: %w", err)
-		}
-		// The device-tag list resolves an enforcing-device UUID to a tag name; it is only
-		// needed when a rule scopes enforcement.
-		deviceTags := tags
-		if anyAclEnforcingFilter(rules) && deviceTags == nil {
-			deviceTags, err = client.ListDeviceTags(ctx, siteID)
-			if err != nil {
-				return fmt.Errorf("snapshot acl: %w", err)
-			}
-		}
-		ruleResources, ruleWarnings := snapshot.AclRules(siteName, networkNames, deviceTags, rules)
-		resources = append(resources, ruleResources...)
-		warnings = append(warnings, ruleWarnings...)
-	}
-	if kind == "dns" {
-		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		policies, err := client.ListDnsPolicies(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot dns: %w", err)
-		}
-		dnsResources, dnsWarnings := snapshot.DnsPolicies(siteName, policies)
-		resources = append(resources, dnsResources...)
-		warnings = append(warnings, dnsWarnings...)
-	}
-	if kind == "switching" {
-		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		lags, err := client.ListLags(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot switching: %w", err)
-		}
-		domains, err := client.ListMcLagDomains(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot switching: %w", err)
-		}
-		stacks, err := client.ListSwitchStacks(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot switching: %w", err)
-		}
-		// The device-tag list resolves a LAG member device UUID to a tag name; it is only
-		// needed when at least one LAG is present.
-		var deviceTags []unifi.DeviceTag
-		if len(lags) > 0 {
-			deviceTags, err = client.ListDeviceTags(ctx, siteID)
-			if err != nil {
-				return fmt.Errorf("snapshot switching: %w", err)
-			}
-		}
-		lagResources, lagWarnings := snapshot.SwitchingLags(siteName, deviceTags, lags)
-		resources = append(resources, lagResources...)
-		warnings = append(warnings, lagWarnings...)
-		domainResources, domainWarnings := snapshot.SwitchingMcLagDomains(siteName, domains)
-		resources = append(resources, domainResources...)
-		warnings = append(warnings, domainWarnings...)
-		stackResources, stackWarnings := snapshot.SwitchingSwitchStacks(siteName, stacks)
-		resources = append(resources, stackResources...)
-		warnings = append(warnings, stackWarnings...)
-	}
-	if kind == "vpn" {
-		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		servers, err := client.ListVpnServers(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot vpn: %w", err)
-		}
-		tunnels, err := client.ListSiteToSiteTunnels(ctx, siteID)
-		if err != nil {
-			return fmt.Errorf("snapshot vpn: %w", err)
-		}
-		serverResources, serverWarnings := snapshot.VpnServers(siteName, servers)
-		resources = append(resources, serverResources...)
-		warnings = append(warnings, serverWarnings...)
-		tunnelResources, tunnelWarnings := snapshot.SiteToSiteTunnels(siteName, tunnels)
-		resources = append(resources, tunnelResources...)
-		warnings = append(warnings, tunnelWarnings...)
-	}
-	if kind == "networks" || kind == "all" || kind == "firewall-zones" || kind == "wifi" {
-		siteName, siteID, err := resolveSite(sites, siteNames, o.site)
-		if err != nil {
-			return err
-		}
-		detailed, tags, loadWarnings, err := loadNetworkProjection(ctx, client, siteID)
-		if err != nil {
-			return err
-		}
-		warnings = append(warnings, loadWarnings...)
-
-		networkResources, networkNames, networkWarnings := snapshot.Networks(siteName, detailed, tags)
-		warnings = append(warnings, networkWarnings...)
-		if kind == "networks" || kind == "all" {
-			resources = append(resources, networkResources...)
-		}
-		if kind == "firewall-zones" {
-			zones, err := client.ListZones(ctx, siteID)
-			if err != nil {
-				return fmt.Errorf("snapshot firewall-zones: %w", err)
-			}
-			zoneResources, zoneWarnings := snapshot.FirewallZones(siteName, networkNames, zones)
-			resources = append(resources, zoneResources...)
-			warnings = append(warnings, zoneWarnings...)
-		}
-		if kind == "wifi" || kind == "all" {
-			broadcasts, broadcastTags, broadcastWarnings, err := loadWifiProjection(ctx, client, siteID)
-			if err != nil {
-				return err
-			}
-			warnings = append(warnings, broadcastWarnings...)
-			broadcastResources, projectWarnings := snapshot.WifiBroadcasts(networkNames, siteName, broadcastTags, broadcasts)
-			resources = append(resources, broadcastResources...)
-			warnings = append(warnings, projectWarnings...)
-		}
+	if err != nil {
+		return err
 	}
 
 	for _, w := range warnings {
@@ -327,6 +120,517 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 		}
 	}
 	return emitResources(out, o.output, resources)
+}
+
+// allKind is the aggregate kind that projects every projectable kind across every site;
+// deviceTagsKind is the read-only device-tag listing that emits no Custom Resource.
+const (
+	allKind        = "all"
+	deviceTagsKind = "device-tags"
+)
+
+// acceptedKinds lists every `snapshot <kind>` argument the command accepts, in the order
+// the --help text presents them. Validation is driven by this list; it is kept in lockstep
+// with the projection lists (projectableKinds and nonProjectableKinds) by
+// TestSnapshotAllCoversEveryAcceptedKind, so a kind cannot be added to one without the
+// other.
+var acceptedKinds = []string{
+	allKind, "controller", "sites", "networks", "firewall-zones", "firewall-policies",
+	"firewall-policy-ordering", "wifi", "radius", "traffic-matching", "acl",
+	"acl-rule-ordering", "dns", "switching", "vpn", deviceTagsKind,
+}
+
+// nonProjectableKinds lists accepted kinds that emit no Custom Resource because they are
+// read-only listings. They are excluded from `all`.
+var nonProjectableKinds = []string{deviceTagsKind}
+
+// runNonProjectable dispatches a read-only listing kind to its handler. The dispatch keys
+// off the same list acceptedKind validates against, so a kind added to nonProjectableKinds
+// is routed here rather than falling through to projectKind; one with no handler is
+// reported with its own error instead of projectKind's misleading "unknown snapshot kind".
+func (o *snapshotOptions) runNonProjectable(ctx context.Context, client *unifi.Client, kind string, out io.Writer) error {
+	switch kind {
+	case deviceTagsKind:
+		return o.listDeviceTags(ctx, client, out)
+	default:
+		return fmt.Errorf("snapshot kind %q is a read-only listing with no handler", kind)
+	}
+}
+
+// kindScope describes how `snapshot all` projects a kind.
+type kindScope int
+
+const (
+	// scopeSnapshot kinds are projected once per snapshot and need no site context.
+	scopeSnapshot kindScope = iota
+	// scopeSites kinds are projected once per snapshot from the full upstream site list.
+	scopeSites
+	// scopeSite kinds are projected once per site on the console.
+	scopeSite
+)
+
+// siteRef is the emitted metadata.name, the upstream id, and the site qualifier of the site
+// a site-scoped projection runs against. namePrefix is the `<site>-` qualifier `all` and
+// `verify` prepend to every site-scoped resource name so two sites cannot emit the same
+// (kind, metadata.name); it is empty for a per-kind invocation, which projects one site
+// (design D7).
+type siteRef struct {
+	name       string
+	id         string
+	namePrefix string
+}
+
+// projectionInput is what every kindProjection reads. A site-scoped projection reads site;
+// the `sites` projection reads sites; the `controller` projection reads neither.
+type projectionInput struct {
+	client        *unifi.Client
+	controllerURL string
+	controllerRef string
+	sites         []unifi.Site
+	site          siteRef
+}
+
+// kindProjection is a pure read-and-project step for one snapshot kind. It reads whatever
+// upstream objects the kind needs and returns the emitted resources plus human-readable
+// warnings. It performs no I/O other than reading the controller and never mutates
+// upstream, so the same step is reused by `snapshot all`, a per-kind `snapshot <kind>`
+// invocation, and (later) `snapshot verify`, which projects live state in memory to
+// compare against a written snapshot directory. Orchestration - the site loop, warning
+// output, and file or stdout emission - lives outside the projection.
+type kindProjection func(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error)
+
+// projectableKind is one entry in projectableKinds.
+type projectableKind struct {
+	kind  string
+	scope kindScope
+	// project is the kind's read-and-project step.
+	project kindProjection
+}
+
+// projectableKinds is the single ordered source of truth for every kind `snapshot` can
+// project. `snapshot all` iterates it, projecting the scopeSnapshot and scopeSites kinds
+// once and every scopeSite kind once per site; a per-kind invocation looks its kind up
+// here. A kind therefore cannot be added to the dispatch without `all` picking it up, and
+// TestSnapshotAllCoversEveryAcceptedKind enforces the coupling against acceptedKinds,
+// nonProjectableKinds, and the projections themselves.
+var projectableKinds = []projectableKind{
+	{kind: "controller", scope: scopeSnapshot, project: projectController},
+	{kind: "sites", scope: scopeSites, project: projectSites},
+	{kind: "networks", scope: scopeSite, project: projectNetworks},
+	{kind: "firewall-zones", scope: scopeSite, project: projectFirewallZones},
+	{kind: "firewall-policies", scope: scopeSite, project: projectFirewallPolicies},
+	{kind: "firewall-policy-ordering", scope: scopeSite, project: projectFirewallPolicyOrdering},
+	{kind: "wifi", scope: scopeSite, project: projectWifi},
+	{kind: "radius", scope: scopeSite, project: projectRadius},
+	{kind: "traffic-matching", scope: scopeSite, project: projectTrafficMatching},
+	{kind: "acl", scope: scopeSite, project: projectAcl},
+	{kind: "acl-rule-ordering", scope: scopeSite, project: projectAclRuleOrdering},
+	{kind: "dns", scope: scopeSite, project: projectDns},
+	{kind: "switching", scope: scopeSite, project: projectSwitching},
+	{kind: "vpn", scope: scopeSite, project: projectVpn},
+}
+
+// acceptedKind reports whether kind is a kind the snapshot command accepts: the `all`
+// aggregate, a projectable kind, or a non-projectable listing kind.
+func acceptedKind(kind string) bool {
+	if kind == allKind {
+		return true
+	}
+	if _, ok := projectableKindFor(kind); ok {
+		return true
+	}
+	return slices.Contains(nonProjectableKinds, kind)
+}
+
+// projectableKindFor returns the registry entry for kind, if it is a projectable kind.
+func projectableKindFor(kind string) (projectableKind, bool) {
+	for _, entry := range projectableKinds {
+		if entry.kind == kind {
+			return entry, true
+		}
+	}
+	return projectableKind{}, false
+}
+
+// projectAll projects every projectable kind across every site on the console. It reads
+// the site list once, then iterates projectableKinds: the site-agnostic kinds are projected
+// once and each site-scoped kind once per site, against that site's emitted name and
+// upstream id. It deliberately ignores --site, which only restricts the per-kind commands.
+func (o *snapshotOptions) projectAll(ctx context.Context, client *unifi.Client) ([]emit.Resource, []string, error) {
+	sites, err := client.ListSites(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot sites: %w", err)
+	}
+	// Site-scoped resources must name the site as the `sites` kind emits it, including any
+	// collision suffix, so read the emitted names from the same pure projection. Sites is
+	// deterministic and side-effect free, so recomputing its name map here (the `sites`
+	// projection does the same for the resources it emits) is safe.
+	_, siteNames, _ := snapshot.Sites(o.controllerRef, sites)
+
+	input := projectionInput{
+		client:        client,
+		controllerURL: o.controller,
+		controllerRef: o.controllerRef,
+		sites:         sites,
+	}
+	var resources []emit.Resource
+	// Several kinds share one projection - the network projection backs networks,
+	// firewall-zones, wifi, acl, and acl-rule-ordering - so the same projection warning is
+	// produced once per kind
+	// per site it feeds. Collapse exact duplicates here, at the orchestrator boundary, so the
+	// kinds stay pure and a shared warning is reported once rather than once per consumer.
+	// First-seen order is preserved to keep the output deterministic; a distinct warning is
+	// never merged into another.
+	seenWarnings := make(map[string]bool)
+	var warnings []string
+	appendWarnings := func(entryWarnings []string) {
+		for _, warning := range entryWarnings {
+			if seenWarnings[warning] {
+				continue
+			}
+			seenWarnings[warning] = true
+			warnings = append(warnings, warning)
+		}
+	}
+	for _, entry := range projectableKinds {
+		if entry.scope != scopeSite {
+			res, entryWarnings, err := entry.project(ctx, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			resources = append(resources, res...)
+			appendWarnings(entryWarnings)
+			continue
+		}
+		for _, site := range sites {
+			siteInput := input
+			siteName := siteNames[site.InternalReference]
+			siteInput.site = siteRef{name: siteName, id: site.ID, namePrefix: siteName + "-"}
+			res, entryWarnings, err := entry.project(ctx, siteInput)
+			if err != nil {
+				return nil, nil, err
+			}
+			resources = append(resources, res...)
+			appendWarnings(entryWarnings)
+		}
+	}
+	return resources, warnings, nil
+}
+
+// projectKind projects a single kind for a per-kind `snapshot <kind>` invocation. A
+// site-scoped kind is resolved to the site named by --site (the default site when the flag
+// is unset); the site-agnostic `sites` kind runs against the full site list.
+func (o *snapshotOptions) projectKind(ctx context.Context, client *unifi.Client, kind string) ([]emit.Resource, []string, error) {
+	entry, ok := projectableKindFor(kind)
+	if !ok {
+		return nil, nil, fmt.Errorf("unknown snapshot kind %q", kind)
+	}
+	input := projectionInput{
+		client:        client,
+		controllerURL: o.controller,
+		controllerRef: o.controllerRef,
+	}
+	if entry.scope == scopeSnapshot {
+		return entry.project(ctx, input)
+	}
+
+	sites, err := client.ListSites(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot sites: %w", err)
+	}
+	input.sites = sites
+	if entry.scope == scopeSites {
+		return entry.project(ctx, input)
+	}
+
+	// Site-scoped: only the emitted name map is needed here; the collision warnings Sites
+	// produces are output by the `sites` kind, so they are not repeated per kind. The site
+	// qualifier is deliberately left empty: a per-kind command projects a single site, so it
+	// keeps the upstream-derived names its goldens capture (design D7).
+	_, siteNames, _ := snapshot.Sites(o.controllerRef, sites)
+	siteName, siteID, err := resolveSite(sites, siteNames, o.site)
+	if err != nil {
+		return nil, nil, err
+	}
+	input.site = siteRef{name: siteName, id: siteID}
+	return entry.project(ctx, input)
+}
+
+// listDeviceTags prints the read-only device-tag listing for the site named by --site.
+// device-tags emits no Custom Resource, so it is not a projectable kind and is excluded
+// from `all`.
+func (o *snapshotOptions) listDeviceTags(ctx context.Context, client *unifi.Client, out io.Writer) error {
+	sites, err := client.ListSites(ctx)
+	if err != nil {
+		return fmt.Errorf("snapshot sites: %w", err)
+	}
+	_, siteNames, _ := snapshot.Sites(o.controllerRef, sites)
+	_, siteID, err := resolveSite(sites, siteNames, o.site)
+	if err != nil {
+		return err
+	}
+	tags, err := client.ListDeviceTags(ctx, siteID)
+	if err != nil {
+		return fmt.Errorf("snapshot device-tags: %w", err)
+	}
+	return writeDeviceTags(out, tags)
+}
+
+// projectController emits the UnifiController template. It never reads the console.
+func projectController(_ context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	resource, warnings := snapshot.Controller(in.controllerURL, in.controllerRef)
+	return []emit.Resource{resource}, warnings, nil
+}
+
+// projectSites emits a UnifiSite per upstream site. The emitted-name map it also builds is
+// recomputed by the orchestrator for the site-scoped kinds.
+func projectSites(_ context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	resources, _, warnings := snapshot.Sites(in.controllerRef, in.sites)
+	return resources, warnings, nil
+}
+
+func projectNetworks(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	detailed, tags, warnings, err := loadNetworkProjection(ctx, in.client, in.site.id)
+	if err != nil {
+		return nil, nil, err
+	}
+	resources, _, networkWarnings := snapshot.Networks(in.site.name, in.site.namePrefix, detailed, tags)
+	warnings = append(warnings, networkWarnings...)
+	return resources, warnings, nil
+}
+
+func projectFirewallZones(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	detailed, tags, warnings, err := loadNetworkProjection(ctx, in.client, in.site.id)
+	if err != nil {
+		return nil, nil, err
+	}
+	// A zone's member networks are referenced by Kubernetes identity, so load the network
+	// projection (for its UUID -> name map) the `networks` kind emits.
+	_, networkNames, networkWarnings := snapshot.Networks(in.site.name, in.site.namePrefix, detailed, tags)
+	warnings = append(warnings, networkWarnings...)
+
+	zones, err := in.client.ListZones(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot firewall-zones: %w", err)
+	}
+	resources, zoneWarnings := snapshot.FirewallZones(in.site.name, in.site.namePrefix, networkNames, zones)
+	warnings = append(warnings, zoneWarnings...)
+	return resources, warnings, nil
+}
+
+func projectFirewallPolicies(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	zones, err := in.client.ListZones(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot firewall-policies: %w", err)
+	}
+	policies, err := in.client.ListFirewallPolicies(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot firewall-policies: %w", err)
+	}
+	// The matching-list endpoints are only needed when a policy carries a traffic filter,
+	// so fetch them lazily: a console without the lists endpoint can still snapshot
+	// filter-free policies.
+	var lists []unifi.TrafficMatchingList
+	if anyFirewallPolicyFilter(policies) {
+		lists, err = in.client.ListTrafficMatchingLists(ctx, in.site.id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("snapshot firewall-policies: %w", err)
+		}
+	}
+	resources, _, warnings := snapshot.FirewallPolicies(in.site.name, in.site.namePrefix, zones, lists, policies)
+	return resources, warnings, nil
+}
+
+func projectFirewallPolicyOrdering(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	zones, err := in.client.ListZones(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot firewall-policy-ordering: %w", err)
+	}
+	policies, err := in.client.ListFirewallPolicies(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot firewall-policy-ordering: %w", err)
+	}
+	// The matching-list endpoints are only needed when a policy carries a traffic filter,
+	// so fetch them lazily so the policy-name map agrees with the `firewall-policies`
+	// projection (an unresolvable filter would otherwise drop a policy the ordering
+	// references).
+	var lists []unifi.TrafficMatchingList
+	if anyFirewallPolicyFilter(policies) {
+		lists, err = in.client.ListTrafficMatchingLists(ctx, in.site.id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("snapshot firewall-policy-ordering: %w", err)
+		}
+	}
+	// Reuse the policy projection's upstream-id -> emitted-name map rather than re-deriving
+	// names (design D2); its resources are not emitted by this kind.
+	_, policyNames, warnings := snapshot.FirewallPolicies(in.site.name, in.site.namePrefix, zones, lists, policies)
+
+	orderings := make(map[snapshot.FirewallPolicyZonePair]unifi.FirewallPolicyOrdering)
+	for _, pair := range snapshot.FirewallPolicyZonePairs(policies) {
+		ordering, err := in.client.GetFirewallPolicyOrdering(ctx, in.site.id, pair.SourceZoneID, pair.DestinationZoneID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("snapshot firewall-policy-ordering: %w", err)
+		}
+		orderings[pair] = ordering
+	}
+	resources, orderingWarnings := snapshot.FirewallPolicyOrdering(in.site.name, in.site.namePrefix, zones, policies, policyNames, orderings)
+	warnings = append(warnings, orderingWarnings...)
+	return resources, warnings, nil
+}
+
+func projectWifi(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	detailed, tags, warnings, err := loadNetworkProjection(ctx, in.client, in.site.id)
+	if err != nil {
+		return nil, nil, err
+	}
+	// A SPECIFIC broadcast references an emitted UnifiNetwork by name.
+	_, networkNames, networkWarnings := snapshot.Networks(in.site.name, in.site.namePrefix, detailed, tags)
+	warnings = append(warnings, networkWarnings...)
+
+	broadcasts, broadcastTags, broadcastWarnings, err := loadWifiProjection(ctx, in.client, in.site.id)
+	if err != nil {
+		return nil, nil, err
+	}
+	warnings = append(warnings, broadcastWarnings...)
+	resources, projectWarnings := snapshot.WifiBroadcasts(networkNames, in.site.name, in.site.namePrefix, broadcastTags, broadcasts)
+	warnings = append(warnings, projectWarnings...)
+	return resources, warnings, nil
+}
+
+func projectRadius(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	profiles, err := in.client.ListRadiusProfiles(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot radius: %w", err)
+	}
+	resources, warnings := snapshot.RadiusProfiles(in.site.name, in.site.namePrefix, profiles)
+	return resources, warnings, nil
+}
+
+func projectTrafficMatching(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	lists, err := in.client.ListTrafficMatchingLists(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot traffic-matching: %w", err)
+	}
+	resources, warnings := snapshot.TrafficMatchingLists(in.site.name, in.site.namePrefix, lists)
+	return resources, warnings, nil
+}
+
+func projectAcl(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	// Network membership is referenced by Kubernetes identity, so load the network
+	// projection the `networks` command emits and reuse its UUID -> name map.
+	detailed, tags, warnings, err := loadNetworkProjection(ctx, in.client, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot acl: %w", err)
+	}
+	_, networkNames, networkWarnings := snapshot.Networks(in.site.name, in.site.namePrefix, detailed, tags)
+	warnings = append(warnings, networkWarnings...)
+
+	rules, err := in.client.ListAclRules(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot acl: %w", err)
+	}
+	// The device-tag list resolves an enforcing-device UUID to a tag name; it is only
+	// needed when a rule scopes enforcement.
+	deviceTags := tags
+	if anyAclEnforcingFilter(rules) && deviceTags == nil {
+		deviceTags, err = in.client.ListDeviceTags(ctx, in.site.id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("snapshot acl: %w", err)
+		}
+	}
+	resources, _, ruleWarnings := snapshot.AclRules(in.site.name, in.site.namePrefix, networkNames, deviceTags, rules)
+	warnings = append(warnings, ruleWarnings...)
+	return resources, warnings, nil
+}
+
+func projectAclRuleOrdering(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	detailed, tags, warnings, err := loadNetworkProjection(ctx, in.client, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot acl-rule-ordering: %w", err)
+	}
+	_, networkNames, networkWarnings := snapshot.Networks(in.site.name, in.site.namePrefix, detailed, tags)
+	warnings = append(warnings, networkWarnings...)
+
+	rules, err := in.client.ListAclRules(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot acl-rule-ordering: %w", err)
+	}
+	deviceTags := tags
+	if anyAclEnforcingFilter(rules) && deviceTags == nil {
+		deviceTags, err = in.client.ListDeviceTags(ctx, in.site.id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("snapshot acl-rule-ordering: %w", err)
+		}
+	}
+	// Reuse the rule projection's upstream-id -> emitted-name map rather than re-deriving
+	// names (design D2); its resources are not emitted by this kind.
+	_, ruleNames, ruleWarnings := snapshot.AclRules(in.site.name, in.site.namePrefix, networkNames, deviceTags, rules)
+	warnings = append(warnings, ruleWarnings...)
+
+	orderedRuleIDs, err := in.client.ListAclRuleOrdering(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot acl-rule-ordering: %w", err)
+	}
+	resources, orderingWarnings := snapshot.AclRuleOrdering(in.site.name, in.site.namePrefix, ruleNames, orderedRuleIDs)
+	warnings = append(warnings, orderingWarnings...)
+	return resources, warnings, nil
+}
+
+func projectDns(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	policies, err := in.client.ListDnsPolicies(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot dns: %w", err)
+	}
+	resources, warnings := snapshot.DnsPolicies(in.site.name, in.site.namePrefix, policies)
+	return resources, warnings, nil
+}
+
+func projectSwitching(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	lags, err := in.client.ListLags(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot switching: %w", err)
+	}
+	domains, err := in.client.ListMcLagDomains(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot switching: %w", err)
+	}
+	stacks, err := in.client.ListSwitchStacks(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot switching: %w", err)
+	}
+	// The device-tag list resolves a LAG member device UUID to a tag name; it is only
+	// needed when at least one LAG is present.
+	var deviceTags []unifi.DeviceTag
+	if len(lags) > 0 {
+		deviceTags, err = in.client.ListDeviceTags(ctx, in.site.id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("snapshot switching: %w", err)
+		}
+	}
+	resources, warnings := snapshot.SwitchingLags(in.site.name, in.site.namePrefix, deviceTags, lags)
+	domainResources, domainWarnings := snapshot.SwitchingMcLagDomains(in.site.name, in.site.namePrefix, domains)
+	resources = append(resources, domainResources...)
+	warnings = append(warnings, domainWarnings...)
+	stackResources, stackWarnings := snapshot.SwitchingSwitchStacks(in.site.name, in.site.namePrefix, stacks)
+	resources = append(resources, stackResources...)
+	warnings = append(warnings, stackWarnings...)
+	return resources, warnings, nil
+}
+
+func projectVpn(ctx context.Context, in projectionInput) ([]emit.Resource, []string, error) {
+	servers, err := in.client.ListVpnServers(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot vpn: %w", err)
+	}
+	tunnels, err := in.client.ListSiteToSiteTunnels(ctx, in.site.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("snapshot vpn: %w", err)
+	}
+	resources, warnings := snapshot.VpnServers(in.site.name, in.site.namePrefix, servers)
+	tunnelResources, tunnelWarnings := snapshot.SiteToSiteTunnels(in.site.name, in.site.namePrefix, tunnels)
+	resources = append(resources, tunnelResources...)
+	warnings = append(warnings, tunnelWarnings...)
+	return resources, warnings, nil
 }
 
 // resolveSite returns the emitted UnifiSite name and the upstream UUID for the site

@@ -395,13 +395,23 @@ func listAll[T any](ctx context.Context, c *Client, endpoint string) ([]T, error
 
 // withPageQuery sets the offset and limit query parameters on an endpoint URL.
 func withPageQuery(endpoint string, offset int64) (string, error) {
+	return withQueryParams(endpoint, map[string]string{
+		"offset": strconv.FormatInt(offset, 10),
+		"limit":  strconv.Itoa(listPageLimit),
+	})
+}
+
+// withQueryParams returns endpoint with the given query parameters set. It is the single
+// query-building helper shared by list pagination and the endpoint-scoped reads.
+func withQueryParams(endpoint string, params map[string]string) (string, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return "", fmt.Errorf("parse endpoint: %w", err)
 	}
 	query := u.Query()
-	query.Set("offset", strconv.FormatInt(offset, 10))
-	query.Set("limit", strconv.Itoa(listPageLimit))
+	for key, value := range params {
+		query.Set(key, value)
+	}
 	u.RawQuery = query.Encode()
 	return u.String(), nil
 }

@@ -29,6 +29,7 @@ contract:
 - [Testing](testing.md) — envtest, the fake client, and HTTP fixtures.
 - [Debugging](debugging.md) — diagnosing reconciles and drift.
 - [Deployment](deployment.md) — kustomize and Helm.
+- [CLI snapshot](snapshot.md) — the `snapshot` command: kinds, output, and `verify`.
 - [Documentation](documentation.md) — how this site is built and published.
 
 ## Status

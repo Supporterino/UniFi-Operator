@@ -20,6 +20,7 @@ nav = [
   { "Testing" = "testing.md" },
   { "Debugging" = "debugging.md" },
   { "Deployment" = "deployment.md" },
+  { "CLI snapshot" = "snapshot.md" },
   { "Documentation" = "documentation.md" },
 ]
 

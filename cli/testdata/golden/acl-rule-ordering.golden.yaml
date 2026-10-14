@@ -1,0 +1,16 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiAclRuleOrdering
+metadata:
+  annotations:
+    unifi.supporterino.de/unresolved-acl-rule-ref: ACL rules missing from the snapshot
+      were omitted from spec.orderedAclRules; set them to the intended UnifiAclRule
+      names
+  name: acl-rule-ordering
+spec:
+  orderedAclRules:
+  - name: allow-guest-to-dns
+  - name: allow-switch-mac
+  - name: block-iot-dns
+  siteRef:
+    name: default

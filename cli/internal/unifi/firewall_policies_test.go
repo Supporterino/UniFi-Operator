@@ -75,6 +75,42 @@ func TestListFirewallPoliciesPaginates(t *testing.T) {
 	}
 }
 
+func TestGetFirewallPolicyOrdering(t *testing.T) {
+	t.Parallel()
+
+	var gotPath, gotSource, gotDestination string
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotSource = r.URL.Query().Get("sourceFirewallZoneId")
+		gotDestination = r.URL.Query().Get("destinationFirewallZoneId")
+		_, _ = io.WriteString(w, `{"orderedFirewallPolicyIds":{
+			"beforeSystemDefined":["`+testPolicyID+`"],
+			"afterSystemDefined":["`+testPolicyOtherID+`"]}}`)
+	}))
+
+	ordering, err := client.GetFirewallPolicyOrdering(context.Background(), testSiteID, testPolicyZoneID, testPolicyOtherID)
+	if err != nil {
+		t.Fatalf("GetFirewallPolicyOrdering: %v", err)
+	}
+	if want := fmt.Sprintf("/proxy/network/integration/v1/sites/%s/firewall/policies/ordering", testSiteID); gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+	if gotSource != testPolicyZoneID {
+		t.Errorf("sourceFirewallZoneId = %q, want %q", gotSource, testPolicyZoneID)
+	}
+	if gotDestination != testPolicyOtherID {
+		t.Errorf("destinationFirewallZoneId = %q, want %q", gotDestination, testPolicyOtherID)
+	}
+	before := ordering.OrderedFirewallPolicyIDs.BeforeSystemDefined
+	after := ordering.OrderedFirewallPolicyIDs.AfterSystemDefined
+	if len(before) != 1 || before[0] != testPolicyID {
+		t.Errorf("beforeSystemDefined = %v, want [%s]", before, testPolicyID)
+	}
+	if len(after) != 1 || after[0] != testPolicyOtherID {
+		t.Errorf("afterSystemDefined = %v, want [%s]", after, testPolicyOtherID)
+	}
+}
+
 func TestListFirewallPoliciesUnauthorized(t *testing.T) {
 	t.Parallel()
 

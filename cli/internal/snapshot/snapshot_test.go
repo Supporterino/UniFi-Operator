@@ -33,7 +33,7 @@ func TestDNSSafeName(t *testing.T) {
 func TestNetworksProjectsSiteAndDropsUpstreamIDs(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		ID:                    "opaque-network-id",
 		Management:            ManagementGateway,
 		Name:                  "Default",
@@ -92,7 +92,7 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 		{ID: "id-3", Management: ManagementUnmanaged, Name: "Guest WiFi", VLANID: 40, Enabled: boolPtr(true)},
 	}
 
-	resources, _, warnings := Networks("default", networks, nil)
+	resources, _, warnings := Networks("default", "", networks, nil)
 	if len(resources) != 3 {
 		t.Fatalf("got %d resources, want 3", len(resources))
 	}
@@ -135,7 +135,7 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 	}
 
 	// Disambiguation is deterministic across runs.
-	again, _, _ := Networks("default", networks, nil)
+	again, _, _ := Networks("default", "", networks, nil)
 	for i := range again {
 		if again[i].Metadata.Name != resources[i].Metadata.Name {
 			t.Errorf("run 2 resource %d name = %q, want %q", i, again[i].Metadata.Name, resources[i].Metadata.Name)
@@ -146,7 +146,7 @@ func TestNetworksDisambiguatesCollidingNames(t *testing.T) {
 func TestNetworksGatewayMapping(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		ID:                    "id-1",
 		Management:            ManagementGateway,
 		Name:                  "Guest WiFi",
@@ -191,7 +191,7 @@ func TestNetworksGatewayMapping(t *testing.T) {
 func TestNetworksGatewayCarriesDHCPConfiguration(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		ID:                    "id-1",
 		Management:            ManagementGateway,
 		Name:                  "LAN",
@@ -240,7 +240,7 @@ func TestNetworksGatewayCarriesDHCPConfiguration(t *testing.T) {
 func TestNetworksSwitchCarriesDHCPConfiguration(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		ID:                    "id-1",
 		Management:            ManagementSwitch,
 		Name:                  "IoT",
@@ -271,7 +271,7 @@ func TestNetworksSwitchCarriesDHCPConfiguration(t *testing.T) {
 func TestNetworksFiltersInvalidTrustedDHCPServers(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		Management: ManagementUnmanaged,
 		Name:       "Default",
 		Enabled:    boolPtr(true),
@@ -320,7 +320,7 @@ func TestNetworksFiltersInvalidTrustedDHCPServers(t *testing.T) {
 func TestNetworksOmitsGuardingWhenAllEntriesInvalid(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		Management:   ManagementUnmanaged,
 		Name:         "Default",
 		Enabled:      boolPtr(true),
@@ -341,7 +341,7 @@ func TestNetworksOmitsGuardingWhenAllEntriesInvalid(t *testing.T) {
 func TestNetworksSkipsUnrepresentableDHCPConfiguration(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		Management:            ManagementGateway,
 		Name:                  "LAN",
 		VLANID:                10,
@@ -366,7 +366,7 @@ func TestNetworksSkipsUnrepresentableDHCPConfiguration(t *testing.T) {
 func TestNetworksGatewayPrefixDelegationAnnotated(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		Management:            ManagementGateway,
 		Name:                  "LAN",
 		VLANID:                10,
@@ -402,7 +402,7 @@ func TestNetworksGatewayPrefixDelegationAnnotated(t *testing.T) {
 func TestNetworksSwitchPlaceholder(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		Management:            ManagementSwitch,
 		Name:                  "IoT",
 		VLANID:                30,
@@ -444,7 +444,7 @@ func TestNetworksSwitchPlaceholder(t *testing.T) {
 func TestNetworksSwitchResolvesUniqueDeviceTag(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		ID:                    "net-iot",
 		Management:            ManagementSwitch,
 		Name:                  "IoT",
@@ -476,7 +476,7 @@ func TestNetworksSwitchMultiDeviceTagFallsBackToPlaceholder(t *testing.T) {
 	// The device belongs to exactly one tag, but that tag has more than one member. The
 	// operator requires a single-device tag, so the emitter must keep the annotated
 	// placeholder rather than emit a selector the operator rejects with DeviceTagAmbiguous.
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		ID:                    "net-iot",
 		Management:            ManagementSwitch,
 		Name:                  "IoT",
@@ -507,7 +507,7 @@ func TestNetworksSwitchAmbiguousDeviceTagFallsBackToPlaceholder(t *testing.T) {
 
 	// The device is a member of two tags, so no single selector resolves it; the emitter
 	// must keep the annotated placeholder rather than pick one arbitrarily.
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		ID:                    "net-iot",
 		Management:            ManagementSwitch,
 		Name:                  "IoT",
@@ -557,7 +557,7 @@ func TestFirewallZonesUsesEmittedNetworkNames(t *testing.T) {
 		},
 	}
 
-	resources, warnings := FirewallZones("default", networkNames, zones)
+	resources, warnings := FirewallZones("default", "", networkNames, zones)
 	if len(resources) != 2 || len(warnings) != 0 {
 		t.Fatalf("got %d resources, %d warnings; want 2 and 0: %v", len(resources), len(warnings), warnings)
 	}
@@ -593,7 +593,7 @@ func TestFirewallZonesUsesEmittedNetworkNames(t *testing.T) {
 func TestFirewallZonesAnnotatesUnresolvedNetworkRef(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := FirewallZones("default", map[string]string{"known": "known-net"}, []unifi.FirewallZone{
+	resources, warnings := FirewallZones("default", "", map[string]string{"known": "known-net"}, []unifi.FirewallZone{
 		{Name: "Mixed", NetworkIDs: []string{"known", "missing-id"}},
 	})
 	if len(resources) != 1 {
@@ -618,7 +618,7 @@ func TestFirewallZonesAnnotatesUnresolvedNetworkRef(t *testing.T) {
 func TestNetworksUnmanagedCommonOnly(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{{
+	resources, _, warnings := Networks("default", "", []unifi.Network{{
 		Management:   ManagementUnmanaged,
 		Name:         "Default",
 		Enabled:      nil,
@@ -652,7 +652,7 @@ func TestNetworksUnmanagedCommonOnly(t *testing.T) {
 func TestNetworksSkipsInvalidVLAN(t *testing.T) {
 	t.Parallel()
 
-	resources, _, warnings := Networks("default", []unifi.Network{
+	resources, _, warnings := Networks("default", "", []unifi.Network{
 		{Management: ManagementUnmanaged, Name: "zero", VLANID: 0},
 		{Management: ManagementUnmanaged, Name: "high", VLANID: 5000},
 	}, nil)
@@ -737,7 +737,7 @@ func TestWifiBroadcastsProjectsStandardAndDropsUpstreamIDs(t *testing.T) {
 	t.Parallel()
 
 	tags := []unifi.DeviceTag{{ID: "tag-1", Name: "iot-switch", DeviceIDs: []string{"dev-1"}}}
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
 	}
@@ -811,7 +811,7 @@ func TestWifiBroadcastsPresharedKeysPlaceholder(t *testing.T) {
 		}},
 	}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 || len(warnings) != 1 {
 		t.Fatalf("got %d resources, %d warnings; want 1 and 1", len(resources), len(warnings))
 	}
@@ -844,7 +844,7 @@ func TestWifiBroadcastsAnnotatesUnrepresentedSettings(t *testing.T) {
 	broadcast.BroadcastingDeviceFilter = nil
 	broadcast.MloEnabled = json.RawMessage(`true`)
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -888,7 +888,7 @@ func TestWifiBroadcastsAnnotatesUnrepresentedRadiusConfiguration(t *testing.T) {
 		},
 	}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -915,7 +915,7 @@ func TestWifiBroadcastsWPA2PersonalAlwaysPlaceholder(t *testing.T) {
 	// The console omitted the passphrase; the emitter must still emit the placeholder.
 	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{Type: WifiSecurityWPA2Personal}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -946,7 +946,7 @@ func TestWifiBroadcastsIotOptimized(t *testing.T) {
 		SecurityConfiguration: &unifi.WifiSecurityConfiguration{Type: WifiSecurityWPA2Personal, Passphrase: "secret"},
 	}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1: %v", len(resources), warnings)
 	}
@@ -968,7 +968,7 @@ func TestWifiBroadcastsEmitsNativeBinding(t *testing.T) {
 	broadcast.SecurityConfiguration = &unifi.WifiSecurityConfiguration{Type: WifiSecurityOpen}
 	broadcast.Network = &unifi.WifiNetworkReference{Type: "NATIVE"}
 
-	resources, warnings := WifiBroadcasts(nil, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(nil, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, %d warnings; want 1 emitted NATIVE broadcast", len(resources), len(warnings))
 	}
@@ -1011,7 +1011,7 @@ func TestWifiBroadcastsProjectsBandSteering(t *testing.T) {
 	bandSteering := true
 	broadcast.BandSteeringEnabled = &bandSteering
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -1033,7 +1033,7 @@ func TestWifiBroadcastsProjectsBandSteering(t *testing.T) {
 func TestWifiBroadcastsSkipsUnresolvedNetwork(t *testing.T) {
 	t.Parallel()
 
-	resources, warnings := WifiBroadcasts(nil, "default", nil, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	resources, warnings := WifiBroadcasts(nil, "default", "", nil, []unifi.WifiBroadcast{wifiStandardBroadcast()})
 	if len(resources) != 0 {
 		t.Fatalf("got %d resources, want 0", len(resources))
 	}
@@ -1058,7 +1058,7 @@ func TestWifiBroadcastsEmitsEnterpriseWithPlaceholder(t *testing.T) {
 		},
 	}
 
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (enterprise must be emitted, not dropped)", len(resources))
 	}
@@ -1098,7 +1098,7 @@ func TestWifiBroadcastsAmbiguousDeviceTagAnnotated(t *testing.T) {
 	t.Parallel()
 
 	tags := []unifi.DeviceTag{{ID: "tag-1", Name: "aps", DeviceIDs: []string{"dev-1", "dev-2"}}}
-	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
+	resources, warnings := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", tags, []unifi.WifiBroadcast{wifiStandardBroadcast()})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -1120,7 +1120,7 @@ func TestWifiBroadcastsDevicesFilterAnnotated(t *testing.T) {
 	broadcast := wifiStandardBroadcast()
 	broadcast.BroadcastingDeviceFilter = &unifi.WifiBroadcastingDeviceFilter{Type: "DEVICES", DeviceIDs: []string{"dev-uuid"}}
 
-	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{broadcast})
+	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{broadcast})
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1", len(resources))
 	}
@@ -1148,7 +1148,7 @@ func TestWifiBroadcastsDisambiguatesNames(t *testing.T) {
 	second := wifiStandardBroadcast()
 	second.ID = "id-2"
 
-	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", nil, []unifi.WifiBroadcast{first, second})
+	resources, _ := WifiBroadcasts(map[string]string{"net-1": "default"}, "default", "", nil, []unifi.WifiBroadcast{first, second})
 	if len(resources) != 2 {
 		t.Fatalf("got %d resources, want 2", len(resources))
 	}
@@ -1244,7 +1244,7 @@ func TestTrafficMatchingListsProjectsTypesAndDropsUpstreamIDs(t *testing.T) {
 		},
 	}
 
-	resources, warnings := TrafficMatchingLists("default", lists)
+	resources, warnings := TrafficMatchingLists("default", "", lists)
 	if len(resources) != 2 {
 		t.Fatalf("got %d resources, want 2", len(resources))
 	}
@@ -1340,7 +1340,7 @@ func TestTrafficMatchingListsSkipsUnrepresentable(t *testing.T) {
 		},
 	}
 
-	resources, warnings := TrafficMatchingLists("default", lists)
+	resources, warnings := TrafficMatchingLists("default", "", lists)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the representable list): %+v", len(resources), resources)
 	}
@@ -1400,7 +1400,7 @@ func TestFirewallPoliciesResolvesZonesFiltersAndRecordsStatus(t *testing.T) {
 		},
 	}
 
-	resources, warnings := FirewallPolicies("default", zones, lists, policies)
+	resources, _, warnings := FirewallPolicies("default", "", zones, lists, policies)
 	if len(resources) != 2 {
 		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
 	}
@@ -1505,7 +1505,7 @@ func TestFirewallPoliciesSkipsUnrepresentable(t *testing.T) {
 		},
 	}
 
-	resources, warnings := FirewallPolicies("default", zones, nil, policies)
+	resources, _, warnings := FirewallPolicies("default", "", zones, nil, policies)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the representable policy): %+v", len(resources), resources)
 	}
@@ -1546,7 +1546,7 @@ func TestAclRulesProjectsTypesAndResolvesRefs(t *testing.T) {
 		},
 	}
 
-	resources, warnings := AclRules("default", networkNames, deviceTags, rules)
+	resources, _, warnings := AclRules("default", "", networkNames, deviceTags, rules)
 	if len(resources) != 2 {
 		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
 	}
@@ -1626,7 +1626,7 @@ func TestAclRulesSkipsUnrepresentable(t *testing.T) {
 		{ID: "good", Type: "IPV4", Name: "Good Rule", Action: "BLOCK", Source: ip(), Destination: ip()},
 	}
 
-	resources, warnings := AclRules("default", networkNames, deviceTags, rules)
+	resources, _, warnings := AclRules("default", "", networkNames, deviceTags, rules)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the representable rule): %+v", len(resources), resources)
 	}
@@ -1635,6 +1635,144 @@ func TestAclRulesSkipsUnrepresentable(t *testing.T) {
 	}
 	if len(warnings) != 5 {
 		t.Errorf("warnings = %v, want 5 (one per skipped rule)", warnings)
+	}
+}
+
+func TestFirewallPolicyZonePairs(t *testing.T) {
+	t.Parallel()
+
+	policies := []unifi.FirewallPolicy{
+		{ID: "p1", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Source: unifi.FirewallPolicyZone{ZoneID: "a"}, Destination: unifi.FirewallPolicyZone{ZoneID: "b"}},
+		{ID: "p2", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Source: unifi.FirewallPolicyZone{ZoneID: "a"}, Destination: unifi.FirewallPolicyZone{ZoneID: "b"}},
+		{ID: "sys", Metadata: unifi.NetworkMetadata{Origin: "SYSTEM_DEFINED"}, Source: unifi.FirewallPolicyZone{ZoneID: "x"}, Destination: unifi.FirewallPolicyZone{ZoneID: "y"}},
+		{ID: "p3", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Source: unifi.FirewallPolicyZone{ZoneID: "b"}, Destination: unifi.FirewallPolicyZone{ZoneID: "a"}},
+	}
+
+	pairs := FirewallPolicyZonePairs(policies)
+	want := []FirewallPolicyZonePair{
+		{SourceZoneID: "a", DestinationZoneID: "b"},
+		{SourceZoneID: "b", DestinationZoneID: "a"},
+	}
+	if len(pairs) != len(want) {
+		t.Fatalf("pairs = %v, want %v (distinct user-defined pairs only)", pairs, want)
+	}
+	for i := range want {
+		if pairs[i] != want[i] {
+			t.Errorf("pairs[%d] = %v, want %v", i, pairs[i], want[i])
+		}
+	}
+}
+
+func TestFirewallPolicyOrderingResolvesAndAnchorsSystem(t *testing.T) {
+	t.Parallel()
+
+	const (
+		userZoneID = "user-zone-uuid"
+		sysZoneID  = "sys-zone-uuid"
+	)
+	zones := []unifi.FirewallZone{
+		{ID: userZoneID, Name: "Custom Zone", Metadata: unifi.NetworkMetadata{Origin: firewallZoneOriginUserDefined}},
+		{ID: sysZoneID, Name: "Internal", Metadata: unifi.NetworkMetadata{Origin: "SYSTEM_DEFINED"}},
+	}
+	policies := []unifi.FirewallPolicy{
+		{ID: "order-user", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Source: unifi.FirewallPolicyZone{ZoneID: userZoneID}, Destination: unifi.FirewallPolicyZone{ZoneID: sysZoneID}},
+		{ID: "order-unemitted", Metadata: unifi.NetworkMetadata{Origin: "USER_DEFINED"}, Source: unifi.FirewallPolicyZone{ZoneID: userZoneID}, Destination: unifi.FirewallPolicyZone{ZoneID: sysZoneID}},
+		{ID: "order-system", Metadata: unifi.NetworkMetadata{Origin: "SYSTEM_DEFINED"}, Source: unifi.FirewallPolicyZone{ZoneID: userZoneID}, Destination: unifi.FirewallPolicyZone{ZoneID: sysZoneID}},
+	}
+	// order-system is emitted (it has a name) but system-defined, so it must be anchored
+	// rather than listed; order-unemitted has no emitted name and must be skipped.
+	policyNames := map[string]string{"order-user": "user-policy", "order-system": "system-policy"}
+	orderings := map[FirewallPolicyZonePair]unifi.FirewallPolicyOrdering{
+		{SourceZoneID: userZoneID, DestinationZoneID: sysZoneID}: {
+			OrderedFirewallPolicyIDs: unifi.FirewallPolicyOrderingIDs{
+				BeforeSystemDefined: []string{"order-user", "order-system"},
+				AfterSystemDefined:  []string{"order-unemitted"},
+			},
+		},
+	}
+
+	resources, warnings := FirewallPolicyOrdering("default", "", zones, policies, policyNames, orderings)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1: %+v", len(resources), resources)
+	}
+	if resources[0].Kind != KindUnifiFirewallPolicyOrdering {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiFirewallPolicyOrdering)
+	}
+	spec, ok := resources[0].Spec.(UnifiFirewallPolicyOrderingSpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiFirewallPolicyOrderingSpec", resources[0].Spec)
+	}
+	if spec.SiteRef.Name != "default" {
+		t.Errorf("siteRef = %+v, want default", spec.SiteRef)
+	}
+	if spec.Source.ZoneRef == nil || spec.Source.ZoneRef.Name != "custom-zone" {
+		t.Errorf("source = %+v, want zoneRef custom-zone", spec.Source)
+	}
+	if spec.Destination.BuiltInZone == nil || spec.Destination.BuiltInZone.Name != "Internal" {
+		t.Errorf("destination = %+v, want builtInZone Internal", spec.Destination)
+	}
+	if len(spec.BeforeSystemDefined) != 1 || spec.BeforeSystemDefined[0].Name != "user-policy" {
+		t.Errorf("beforeSystemDefined = %+v, want [user-policy] (system policy anchored)", spec.BeforeSystemDefined)
+	}
+	if len(spec.AfterSystemDefined) != 0 {
+		t.Errorf("afterSystemDefined = %+v, want empty (unemitted policy skipped)", spec.AfterSystemDefined)
+	}
+	if got := resources[0].Metadata.Annotations[AnnotationUnresolvedPolicyRef]; got == "" {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedPolicyRef)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want one", warnings)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{userZoneID, sysZoneID, "order-user", "order-system", "order-unemitted", `"zoneId"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains opaque identifier %s: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestAclRuleOrderingResolvesInUpstreamOrder(t *testing.T) {
+	t.Parallel()
+
+	ruleNames := map[string]string{"r1": "first-rule", "r2": "second-rule"}
+	ordered := []string{"r2", "missing", "r1"}
+
+	resources, warnings := AclRuleOrdering("default", "", ruleNames, ordered)
+	if len(resources) != 1 {
+		t.Fatalf("got %d resources, want 1: %+v", len(resources), resources)
+	}
+	if resources[0].Kind != KindUnifiAclRuleOrdering {
+		t.Errorf("kind = %q, want %q", resources[0].Kind, KindUnifiAclRuleOrdering)
+	}
+	spec, ok := resources[0].Spec.(UnifiAclRuleOrderingSpec)
+	if !ok {
+		t.Fatalf("spec type = %T, want UnifiAclRuleOrderingSpec", resources[0].Spec)
+	}
+	if spec.SiteRef.Name != "default" {
+		t.Errorf("siteRef = %+v, want default", spec.SiteRef)
+	}
+	if len(spec.OrderedAclRules) != 2 || spec.OrderedAclRules[0].Name != "second-rule" || spec.OrderedAclRules[1].Name != "first-rule" {
+		t.Errorf("orderedAclRules = %+v, want [second-rule first-rule] in upstream order", spec.OrderedAclRules)
+	}
+	if got := resources[0].Metadata.Annotations[AnnotationUnresolvedAclRuleRef]; got == "" {
+		t.Errorf("annotations = %v, want %s", resources[0].Metadata.Annotations, AnnotationUnresolvedAclRuleRef)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want one", warnings)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
+	for _, forbidden := range []string{"r1", "r2", "missing", `"id"`, `"ruleID"`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("spec contains opaque identifier %s: %s", forbidden, raw)
+		}
 	}
 }
 
@@ -1657,7 +1795,7 @@ func TestDnsPoliciesProjectsVariantAndRecordsStatus(t *testing.T) {
 		},
 	}
 
-	resources, warnings := DnsPolicies("default", policies)
+	resources, warnings := DnsPolicies("default", "", policies)
 	if len(resources) != 2 {
 		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
 	}
@@ -1715,7 +1853,7 @@ func TestDnsPoliciesSkipsUnrepresentable(t *testing.T) {
 		{ID: "good", Type: "TXT_RECORD", Domain: "text.example.com", Text: "hello"},
 	}
 
-	resources, warnings := DnsPolicies("default", policies)
+	resources, warnings := DnsPolicies("default", "", policies)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the representable policy): %+v", len(resources), resources)
 	}
@@ -1735,7 +1873,7 @@ func TestDnsPoliciesDisambiguatesSameDomainType(t *testing.T) {
 		{ID: "b", Type: "A_RECORD", Domain: "www.example.com", IPv4Address: "192.168.1.11", TTLSeconds: i32Ptr(300)},
 	}
 
-	resources, warnings := DnsPolicies("default", policies)
+	resources, warnings := DnsPolicies("default", "", policies)
 	if len(resources) != 2 {
 		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
 	}
@@ -1762,7 +1900,7 @@ func TestSwitchingLagsResolvesDeviceTagsAndRecordsStatus(t *testing.T) {
 		Members: []unifi.LagMember{{DeviceID: "dev-1", PortIdxs: []int32{1, 2}}},
 	}}
 
-	resources, warnings := SwitchingLags("default", deviceTags, lags)
+	resources, warnings := SwitchingLags("default", "", deviceTags, lags)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1: %+v", len(resources), resources)
 	}
@@ -1820,7 +1958,7 @@ func TestSwitchingLagsSkipsUnrepresentable(t *testing.T) {
 		{ID: "good", Type: "LOCAL", Members: []unifi.LagMember{{DeviceID: "dev-1", PortIdxs: []int32{1}}}},
 	}
 
-	resources, warnings := SwitchingLags("default", deviceTags, lags)
+	resources, warnings := SwitchingLags("default", "", deviceTags, lags)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the representable LAG): %+v", len(resources), resources)
 	}
@@ -1844,7 +1982,7 @@ func TestSwitchingMcLagDomainsAdoptsAndFlattens(t *testing.T) {
 		{ID: "blank", Name: ""},
 	}
 
-	resources, warnings := SwitchingMcLagDomains("default", domains)
+	resources, warnings := SwitchingMcLagDomains("default", "", domains)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the named domain): %+v", len(resources), resources)
 	}
@@ -1876,7 +2014,7 @@ func TestSwitchingSwitchStacksAdoptsAndRecordsMembers(t *testing.T) {
 		{ID: "blank", Name: ""},
 	}
 
-	resources, warnings := SwitchingSwitchStacks("default", stacks)
+	resources, warnings := SwitchingSwitchStacks("default", "", stacks)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the named stack): %+v", len(resources), resources)
 	}
@@ -1907,7 +2045,7 @@ func TestVpnServersAdoptsAndRecordsStatus(t *testing.T) {
 		{ID: "blank", Name: "", Type: "OPENVPN", Enabled: true},
 	}
 
-	resources, warnings := VpnServers("default", servers)
+	resources, warnings := VpnServers("default", "", servers)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the named server): %+v", len(resources), resources)
 	}
@@ -1948,7 +2086,7 @@ func TestVpnServersDisambiguatesNames(t *testing.T) {
 		{ID: "b", Name: "edge-vpn", Type: "OPENVPN", Enabled: false},
 	}
 
-	resources, warnings := VpnServers("default", servers)
+	resources, warnings := VpnServers("default", "", servers)
 	if len(resources) != 2 {
 		t.Fatalf("got %d resources, want 2: %+v", len(resources), resources)
 	}
@@ -1974,7 +2112,7 @@ func TestSiteToSiteTunnelsAdoptsAndRecordsStatus(t *testing.T) {
 		{ID: "blank", Name: "", Type: "WIREGUARD"},
 	}
 
-	resources, warnings := SiteToSiteTunnels("default", tunnels)
+	resources, warnings := SiteToSiteTunnels("default", "", tunnels)
 	if len(resources) != 1 {
 		t.Fatalf("got %d resources, want 1 (only the named tunnel): %+v", len(resources), resources)
 	}

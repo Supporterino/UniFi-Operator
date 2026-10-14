@@ -3,6 +3,7 @@ package unifi
 import (
 	"context"
 	"fmt"
+	"net/http"
 )
 
 // Firewall policy discriminators and constants used to interpret upstream bodies.
@@ -124,4 +125,51 @@ func (c *Client) ListFirewallPolicies(ctx context.Context, siteID string) ([]Fir
 		return nil, fmt.Errorf("list firewall policies: %w", err)
 	}
 	return policies, nil
+}
+
+// FirewallPolicyOrderingIDs is the before/after-system-defined partition of the
+// user-defined firewall policy ordering for a zone pair.
+type FirewallPolicyOrderingIDs struct {
+	// BeforeSystemDefined lists the policy UUIDs ordered before the
+	// system-defined policies.
+	BeforeSystemDefined []string `json:"beforeSystemDefined"`
+	// AfterSystemDefined lists the policy UUIDs ordered after the system-defined
+	// policies.
+	AfterSystemDefined []string `json:"afterSystemDefined"`
+}
+
+// FirewallPolicyOrdering is the user-defined firewall policy ordering for a
+// source/destination zone pair, as returned by the controller. The policy UUIDs it
+// carries are observed upstream and must never reach a Custom Resource's spec.
+type FirewallPolicyOrdering struct {
+	// OrderedFirewallPolicyIDs is the before/after-system-defined partition.
+	OrderedFirewallPolicyIDs FirewallPolicyOrderingIDs `json:"orderedFirewallPolicyIds"`
+}
+
+// GetFirewallPolicyOrdering returns the ordered policy-id partition for the given
+// source/destination zone pair. The endpoint is scoped by the required
+// sourceFirewallZoneId and destinationFirewallZoneId query parameters.
+func (c *Client) GetFirewallPolicyOrdering(ctx context.Context, siteID, sourceZoneID, destinationZoneID string) (FirewallPolicyOrdering, error) {
+	endpoint, err := c.firewallPolicyOrderingEndpoint(siteID, sourceZoneID, destinationZoneID)
+	if err != nil {
+		return FirewallPolicyOrdering{}, err
+	}
+	var ordering FirewallPolicyOrdering
+	if err := c.do(ctx, http.MethodGet, endpoint, &ordering); err != nil {
+		return FirewallPolicyOrdering{}, fmt.Errorf("get firewall policy ordering: %w", err)
+	}
+	return ordering, nil
+}
+
+// firewallPolicyOrderingEndpoint builds the ordering URL for a zone pair, carrying
+// the required source/destination zone query parameters.
+func (c *Client) firewallPolicyOrderingEndpoint(siteID, sourceZoneID, destinationZoneID string) (string, error) {
+	endpoint, err := c.endpoint("sites", siteID, "firewall", "policies", "ordering")
+	if err != nil {
+		return "", err
+	}
+	return withQueryParams(endpoint, map[string]string{
+		"sourceFirewallZoneId":      sourceZoneID,
+		"destinationFirewallZoneId": destinationZoneID,
+	})
 }

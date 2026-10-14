@@ -49,6 +49,10 @@ const (
 	KindUnifiVpnServer = "UnifiVpnServer"
 	// KindUnifiSiteToSiteTunnel is the kind for a projected (adopted) UniFi site-to-site tunnel.
 	KindUnifiSiteToSiteTunnel = "UnifiSiteToSiteTunnel"
+	// KindUnifiFirewallPolicyOrdering is the kind for a projected UniFi firewall-policy ordering.
+	KindUnifiFirewallPolicyOrdering = "UnifiFirewallPolicyOrdering"
+	// KindUnifiAclRuleOrdering is the kind for a projected UniFi ACL-rule ordering.
+	KindUnifiAclRuleOrdering = "UnifiAclRuleOrdering"
 
 	// LAG type discriminators accepted by UnifiSwitchingLag.spec.type.
 	switchingLagTypeLocal        = "LOCAL"
@@ -144,6 +148,13 @@ const (
 	// AnnotationInsecureControllerURL marks an emitted UnifiController whose spec.url is
 	// not https. The CRD requires an https URL, so the user must update it before applying.
 	AnnotationInsecureControllerURL = "unifi.supporterino.de/insecure-controller-url"
+	// AnnotationUnresolvedPolicyRef records that a firewall-policy ordering referenced an
+	// upstream policy that was not emitted, so spec.beforeSystemDefined/afterSystemDefined
+	// is incomplete.
+	AnnotationUnresolvedPolicyRef = "unifi.supporterino.de/unresolved-policy-ref"
+	// AnnotationUnresolvedAclRuleRef records that an ACL-rule ordering referenced an
+	// upstream rule that was not emitted, so spec.orderedAclRules is incomplete.
+	AnnotationUnresolvedAclRuleRef = "unifi.supporterino.de/unresolved-acl-rule-ref"
 
 	// DefaultControllerRef is the default UnifiController name emitted sites reference
 	// and the default name of the emitted UnifiController template.
@@ -469,6 +480,28 @@ type FirewallPolicyStatus struct {
 	Origin            string `json:"origin,omitempty"`
 }
 
+// FirewallZoneSelector identifies an upstream firewall zone for an ordering: a configurable
+// UnifiFirewallZone by Kubernetes identity (zoneRef) or a system-defined zone by name
+// (builtInZone). Exactly one is set. It mirrors the operator's FirewallZoneSelector; no
+// upstream zone UUID appears in spec.
+type FirewallZoneSelector struct {
+	ZoneRef     *CoreRef                     `json:"zoneRef,omitempty"`
+	BuiltInZone *BuiltInFirewallZoneSelector `json:"builtInZone,omitempty"`
+}
+
+// UnifiFirewallPolicyOrderingSpec is the desired state emitted for a UniFi firewall-policy
+// ordering. It identifies a source/destination zone pair and mirrors the upstream
+// before/after-system-defined partition as ordered lists of UnifiFirewallPolicy references
+// resolved by Kubernetes identity. System-defined policies are anchored and are never
+// listed. It carries no upstream zone or policy UUID.
+type UnifiFirewallPolicyOrderingSpec struct {
+	SiteRef             CoreRef              `json:"siteRef"`
+	Source              FirewallZoneSelector `json:"source"`
+	Destination         FirewallZoneSelector `json:"destination"`
+	BeforeSystemDefined []CoreRef            `json:"beforeSystemDefined"`
+	AfterSystemDefined  []CoreRef            `json:"afterSystemDefined"`
+}
+
 // AclPort is a TCP/UDP port number (1..65535).
 type AclPort int32
 
@@ -529,6 +562,14 @@ type UnifiAclRuleSpec struct {
 type AclRuleStatus struct {
 	RuleID string `json:"ruleID,omitempty"`
 	Origin string `json:"origin,omitempty"`
+}
+
+// UnifiAclRuleOrderingSpec is the desired state emitted for a UniFi ACL-rule ordering. It
+// mirrors the upstream site-global orderedAclRuleIds list as ordered UnifiAclRule references
+// resolved by Kubernetes identity. It carries no upstream rule UUID.
+type UnifiAclRuleOrderingSpec struct {
+	SiteRef         CoreRef   `json:"siteRef"`
+	OrderedAclRules []CoreRef `json:"orderedAclRules"`
 }
 
 // DnsARecord is the emitted A_RECORD variant.
@@ -932,15 +973,16 @@ func Sites(controllerRef string, sites []unifi.Site) ([]emit.Resource, map[strin
 
 // Networks projects each UniFi network into a UnifiNetwork Custom Resource. siteName is
 // the metadata.name of the target UnifiSite as returned by Sites, so siteRef.name always
-// matches the emitted site. Colliding projected names get a stable numeric suffix and an
-// AnnotationOriginalName annotation rather than overwriting one another.
+// matches the emitted site. namePrefix is the optional site qualifier `snapshot all`/`verify`
+// set (empty for a per-kind invocation). Colliding projected names get a stable numeric
+// suffix and an AnnotationOriginalName annotation rather than overwriting one another.
 //
 // deviceTags is the read-only device-tag list of the site, used to reverse-map a
 // switch-managed network's observed deviceId to a tag name. The returned map is the
 // upstream-network-id -> emitted-name map (including any collision suffix); callers that
 // reference networks by name, such as FirewallZones, must use it rather than re-deriving
 // names, which can disagree with the emitted resources once a collision is disambiguated.
-func Networks(siteName string, networks []unifi.Network, deviceTags []unifi.DeviceTag) ([]emit.Resource, map[string]string, []string) {
+func Networks(siteName, namePrefix string, networks []unifi.Network, deviceTags []unifi.DeviceTag) ([]emit.Resource, map[string]string, []string) {
 	resources := make([]emit.Resource, 0, len(networks))
 	names := make(map[string]string, len(networks))
 	var warnings []string
@@ -953,7 +995,7 @@ func Networks(siteName string, networks []unifi.Network, deviceTags []unifi.Devi
 			continue
 		}
 
-		base := DNSSafeName(network.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(network.Name))
 		name, collided := alloc.allocate(base)
 		names[network.ID] = name
 		metadata := emit.Metadata{Name: name}
@@ -1189,10 +1231,10 @@ func validIPv4Address(address string) bool {
 // including any collision suffix. A member network that was not emitted is omitted from
 // spec.networkRefs and recorded in an annotation and a warning rather than re-derived from
 // its upstream name, which could disagree with the emitted CR.
-func FirewallZones(siteName string, networkNames map[string]string, zones []unifi.FirewallZone) ([]emit.Resource, []string) {
+func FirewallZones(siteName, namePrefix string, networkNames map[string]string, zones []unifi.FirewallZone) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(zones))
 	var warnings []string
-	names := firewallZoneCRNames(zones)
+	names := firewallZoneCRNames(namePrefix, zones)
 
 	for _, zone := range zones {
 		refs, unresolved := firewallZoneNetworkRefs(zone, networkNames)
@@ -1206,7 +1248,7 @@ func FirewallZones(siteName string, networkNames map[string]string, zones []unif
 				zone.Name, unresolved))
 		}
 
-		base := DNSSafeName(zone.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(zone.Name))
 		name := names[zone.ID]
 		if name != base {
 			setAnnotation(&annotations, AnnotationOriginalName, zone.Name)
@@ -1237,11 +1279,11 @@ func FirewallZones(siteName string, networkNames map[string]string, zones []unif
 // keyed by zone UUID, using the same deterministic allocator sequence as FirewallZones
 // so a firewall policy's zoneRef names exactly the UnifiFirewallZone the snapshot
 // emitted, including any collision suffix.
-func firewallZoneCRNames(zones []unifi.FirewallZone) map[string]string {
+func firewallZoneCRNames(namePrefix string, zones []unifi.FirewallZone) map[string]string {
 	names := make(map[string]string, len(zones))
 	alloc := newNameAllocator()
 	for _, zone := range zones {
-		name, _ := alloc.allocate(DNSSafeName(zone.Name))
+		name, _ := alloc.allocate(siteQualifiedName(namePrefix, DNSSafeName(zone.Name)))
 		names[zone.ID] = name
 	}
 	return names
@@ -1270,13 +1312,13 @@ func firewallZoneNetworkRefs(zone unifi.FirewallZone, networkNames map[string]st
 // only, never in spec. siteName is the metadata.name of the target UnifiSite. Colliding
 // projected names get a stable numeric suffix and an AnnotationOriginalName annotation
 // rather than overwriting one another.
-func RadiusProfiles(siteName string, profiles []unifi.RadiusProfile) ([]emit.Resource, []string) {
+func RadiusProfiles(siteName, namePrefix string, profiles []unifi.RadiusProfile) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(profiles))
 	var warnings []string
 	alloc := newNameAllocator()
 
 	for _, profile := range profiles {
-		base := DNSSafeName(profile.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(profile.Name))
 		name, collided := alloc.allocate(base)
 
 		var annotations map[string]string
@@ -1315,10 +1357,10 @@ func RadiusProfiles(siteName string, profiles []unifi.RadiusProfile) ([]emit.Res
 // an entry which does not conform to its list type, cannot be represented faithfully and
 // is skipped with a warning rather than emitting a partially projected resource
 // (unifi-snapshot spec: unrepresentable objects are skipped with a warning).
-func TrafficMatchingLists(siteName string, lists []unifi.TrafficMatchingList) ([]emit.Resource, []string) {
+func TrafficMatchingLists(siteName, namePrefix string, lists []unifi.TrafficMatchingList) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(lists))
 	var warnings []string
-	names := trafficMatchingListCRNames(lists)
+	names := trafficMatchingListCRNames(namePrefix, lists)
 
 	for _, list := range lists {
 		items, reason, ok := trafficMatchingItems(list.Type, list.Items)
@@ -1328,7 +1370,7 @@ func TrafficMatchingLists(siteName string, lists []unifi.TrafficMatchingList) ([
 			continue
 		}
 
-		base := DNSSafeName(list.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(list.Name))
 		name := names[list.ID]
 
 		var annotations map[string]string
@@ -1364,14 +1406,14 @@ func TrafficMatchingLists(siteName string, lists []unifi.TrafficMatchingList) ([
 // allocator sequence as TrafficMatchingLists. A list TrafficMatchingLists would skip
 // (unknown type or a non-conforming entry) is absent, so a firewall policy filter that
 // references it safe-skips rather than emitting an unresolvable reference.
-func trafficMatchingListCRNames(lists []unifi.TrafficMatchingList) map[string]string {
+func trafficMatchingListCRNames(namePrefix string, lists []unifi.TrafficMatchingList) map[string]string {
 	names := make(map[string]string, len(lists))
 	alloc := newNameAllocator()
 	for _, list := range lists {
 		if _, _, ok := trafficMatchingItems(list.Type, list.Items); !ok {
 			continue
 		}
-		name, _ := alloc.allocate(DNSSafeName(list.Name))
+		name, _ := alloc.allocate(siteQualifiedName(namePrefix, DNSSafeName(list.Name)))
 		names[list.ID] = name
 	}
 	return names
@@ -1494,19 +1536,25 @@ func itemTypeMismatch(itemType, listType string) string {
 // status only. Colliding projected names get a stable numeric suffix and an
 // AnnotationOriginalName annotation.
 //
+// The returned map is the upstream-policy-id -> emitted-name map (including any collision
+// suffix and covering both user-defined and system-defined policies). FirewallPolicyOrdering
+// resolves its ordered policy ids through it rather than re-deriving names, which can
+// disagree with the emitted resources once a collision is disambiguated (design D2).
+//
 // A policy whose source or destination zone cannot be resolved, or whose traffic filter
 // is not a TRAFFIC_MATCHING_LIST-backed IP_ADDRESS/PORT variant, cannot be represented
 // faithfully and is skipped with a warning rather than emitting a partial CR
 // (unifi-snapshot spec: unrepresentable objects are skipped with a warning).
-func FirewallPolicies(siteName string, zones []unifi.FirewallZone, lists []unifi.TrafficMatchingList, policies []unifi.FirewallPolicy) ([]emit.Resource, []string) {
+func FirewallPolicies(siteName, namePrefix string, zones []unifi.FirewallZone, lists []unifi.TrafficMatchingList, policies []unifi.FirewallPolicy) ([]emit.Resource, map[string]string, []string) {
 	zoneByID := make(map[string]unifi.FirewallZone, len(zones))
 	for _, zone := range zones {
 		zoneByID[zone.ID] = zone
 	}
-	zoneNames := firewallZoneCRNames(zones)
-	listNames := trafficMatchingListCRNames(lists)
+	zoneNames := firewallZoneCRNames(namePrefix, zones)
+	listNames := trafficMatchingListCRNames(namePrefix, lists)
 
 	resources := make([]emit.Resource, 0, len(policies))
+	names := make(map[string]string, len(policies))
 	var warnings []string
 	alloc := newNameAllocator()
 
@@ -1518,8 +1566,9 @@ func FirewallPolicies(siteName string, zones []unifi.FirewallZone, lists []unifi
 			continue
 		}
 
-		base := DNSSafeName(policy.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(policy.Name))
 		name, collided := alloc.allocate(base)
+		names[policy.ID] = name
 
 		var annotations map[string]string
 		if collided {
@@ -1546,7 +1595,7 @@ func FirewallPolicies(siteName string, zones []unifi.FirewallZone, lists []unifi
 			},
 		})
 	}
-	return resources, warnings
+	return resources, names, warnings
 }
 
 // buildFirewallPolicySpec maps one upstream policy into a spec valid against the CRD. It
@@ -1689,6 +1738,177 @@ func trafficMatchingListRef(listID string, listNames map[string]string) (CoreRef
 	return CoreRef{Name: name}, "", true
 }
 
+// FirewallPolicyZonePair identifies an upstream source/destination firewall-zone pair. The
+// zone ids are upstream identifiers used only to read the ordering endpoint and never reach
+// a CR's spec.
+type FirewallPolicyZonePair struct {
+	SourceZoneID      string
+	DestinationZoneID string
+}
+
+// FirewallPolicyZonePairs returns the distinct source/destination zone pairs among the
+// user-defined policies, in first-seen order. System-defined policies contribute no pair:
+// the system boundary is anchored, not ordered, so only user-defined pairs are read (design
+// D3).
+func FirewallPolicyZonePairs(policies []unifi.FirewallPolicy) []FirewallPolicyZonePair {
+	seen := make(map[FirewallPolicyZonePair]bool, len(policies))
+	pairs := make([]FirewallPolicyZonePair, 0, len(policies))
+	for _, policy := range policies {
+		if policy.Metadata.Origin != unifi.FirewallPolicyOriginUserDefined {
+			continue
+		}
+		pair := FirewallPolicyZonePair{
+			SourceZoneID:      policy.Source.ZoneID,
+			DestinationZoneID: policy.Destination.ZoneID,
+		}
+		if seen[pair] {
+			continue
+		}
+		seen[pair] = true
+		pairs = append(pairs, pair)
+	}
+	return pairs
+}
+
+// FirewallPolicyOrdering projects the upstream firewall-policy ordering read for each
+// source/destination zone pair into one UnifiFirewallPolicyOrdering (design D3). The zone
+// pair is expressed as a configurable zone reference (zoneRef) or a built-in-zone selector,
+// and the before/after-system-defined partition as ordered UnifiFirewallPolicy references
+// resolved through policyNames (the map FirewallPolicies returned). System-defined policies
+// are anchored and are never listed; a policy that was not emitted, or is unknown, is skipped
+// with a warning and an annotation rather than emitting an unresolvable reference. No
+// upstream zone or policy UUID appears in spec.
+//
+// The pairs are enumerated with FirewallPolicyZonePairs, so the emitted order is
+// deterministic and a pair whose ordering is absent from orderings yields no object.
+func FirewallPolicyOrdering(siteName, namePrefix string, zones []unifi.FirewallZone, policies []unifi.FirewallPolicy, policyNames map[string]string, orderings map[FirewallPolicyZonePair]unifi.FirewallPolicyOrdering) ([]emit.Resource, []string) {
+	zoneByID := make(map[string]unifi.FirewallZone, len(zones))
+	for _, zone := range zones {
+		zoneByID[zone.ID] = zone
+	}
+	zoneNames := firewallZoneCRNames(namePrefix, zones)
+	// The ordering's own name is composed from the *site-unqualified* zone names and then
+	// qualified once. A user-defined zone's spec ref uses the qualified zoneNames, but a
+	// built-in zone's name carries no site qualifier, so deriving the name from zoneNames
+	// alone would leave a built-in zone pair (Internal/External) colliding across sites.
+	zoneLogicalNames := firewallZoneCRNames("", zones)
+	originByID := make(map[string]string, len(policies))
+	for _, policy := range policies {
+		originByID[policy.ID] = policy.Metadata.Origin
+	}
+
+	resources := make([]emit.Resource, 0)
+	var warnings []string
+	alloc := newNameAllocator()
+
+	for _, pair := range FirewallPolicyZonePairs(policies) {
+		ordering, ok := orderings[pair]
+		if !ok {
+			continue
+		}
+
+		source, reason, ok := firewallZoneSelector(pair.SourceZoneID, zoneByID, zoneNames)
+		if !ok {
+			warnings = append(warnings, fmt.Sprintf(
+				"firewall policy ordering: source zone %s; skipping the zone pair", reason))
+			continue
+		}
+		destination, reason, ok := firewallZoneSelector(pair.DestinationZoneID, zoneByID, zoneNames)
+		if !ok {
+			warnings = append(warnings, fmt.Sprintf(
+				"firewall policy ordering: destination zone %s; skipping the zone pair", reason))
+			continue
+		}
+
+		before, beforeUnresolved := orderingPolicyRefs(ordering.OrderedFirewallPolicyIDs.BeforeSystemDefined, originByID, policyNames)
+		after, afterUnresolved := orderingPolicyRefs(ordering.OrderedFirewallPolicyIDs.AfterSystemDefined, originByID, policyNames)
+
+		sourceLogical, _, _ := firewallZoneSelector(pair.SourceZoneID, zoneByID, zoneLogicalNames)
+		destinationLogical, _, _ := firewallZoneSelector(pair.DestinationZoneID, zoneByID, zoneLogicalNames)
+		base := siteQualifiedName(namePrefix, DNSSafeName(zoneSelectorName(sourceLogical)+"-to-"+zoneSelectorName(destinationLogical)))
+		name, collided := alloc.allocate(base)
+
+		var annotations map[string]string
+		if collided {
+			setAnnotation(&annotations, AnnotationOriginalName, base)
+			warnings = append(warnings, fmt.Sprintf(
+				"firewall policy ordering (%s to %s): projected name %q is already in use; emitting as %q",
+				zoneSelectorName(source), zoneSelectorName(destination), base, name))
+		}
+		if unresolved := beforeUnresolved + afterUnresolved; unresolved > 0 {
+			setAnnotation(&annotations, AnnotationUnresolvedPolicyRef,
+				"policies missing from the snapshot were omitted from spec.beforeSystemDefined/afterSystemDefined; set them to the intended UnifiFirewallPolicy names")
+			warnings = append(warnings, fmt.Sprintf(
+				"firewall policy ordering (%s to %s): %d ordered policy reference(s) were not emitted; they were omitted from spec",
+				zoneSelectorName(source), zoneSelectorName(destination), unresolved))
+		}
+
+		metadata := emit.Metadata{Name: name}
+		if len(annotations) > 0 {
+			metadata.Annotations = annotations
+		}
+		resources = append(resources, emit.Resource{
+			APIVersion: Group + "/" + Version,
+			Kind:       KindUnifiFirewallPolicyOrdering,
+			Metadata:   metadata,
+			Spec: UnifiFirewallPolicyOrderingSpec{
+				SiteRef:             CoreRef{Name: siteName},
+				Source:              source,
+				Destination:         destination,
+				BeforeSystemDefined: before,
+				AfterSystemDefined:  after,
+			},
+		})
+	}
+	return resources, warnings
+}
+
+// firewallZoneSelector resolves an upstream zone UUID to a FirewallZoneSelector: a
+// USER_DEFINED zone to a configurable zoneRef naming the emitted UnifiFirewallZone, and any
+// other (system) zone to a built-in-zone selector. It returns ok=false with a reason when
+// the zone is absent from the list.
+func firewallZoneSelector(zoneID string, zoneByID map[string]unifi.FirewallZone, zoneNames map[string]string) (FirewallZoneSelector, string, bool) {
+	endpoint, reason, ok := firewallPolicyEndpoint(unifi.FirewallPolicyZone{ZoneID: zoneID}, zoneByID, zoneNames, nil)
+	if !ok {
+		return FirewallZoneSelector{}, reason, false
+	}
+	return FirewallZoneSelector{ZoneRef: endpoint.ZoneRef, BuiltInZone: endpoint.BuiltInZone}, "", true
+}
+
+// zoneSelectorName is the human-readable name of a zone selector, used to compose an
+// ordering's metadata.name and its warnings. A system zone uses its built-in name; a
+// configurable zone uses the emitted UnifiFirewallZone name.
+func zoneSelectorName(selector FirewallZoneSelector) string {
+	if selector.ZoneRef != nil {
+		return selector.ZoneRef.Name
+	}
+	if selector.BuiltInZone != nil {
+		return selector.BuiltInZone.Name
+	}
+	return ""
+}
+
+// orderingPolicyRefs resolves an upstream ordered policy-id list to emitted
+// UnifiFirewallPolicy names, in upstream order. A system-defined policy (origin other than
+// USER_DEFINED) is anchored and omitted silently; a policy that was not emitted, or is
+// unknown, is omitted and counted so the caller can record the gap.
+func orderingPolicyRefs(ids []string, originByID, policyNames map[string]string) ([]CoreRef, int) {
+	refs := make([]CoreRef, 0, len(ids))
+	unresolved := 0
+	for _, id := range ids {
+		if origin, ok := originByID[id]; ok && origin != unifi.FirewallPolicyOriginUserDefined {
+			continue
+		}
+		name, ok := policyNames[id]
+		if !ok {
+			unresolved++
+			continue
+		}
+		refs = append(refs, CoreRef{Name: name})
+	}
+	return refs, unresolved
+}
+
 // AclRules projects each upstream ACL rule into a UnifiAclRule. siteName is the
 // metadata.name of the target UnifiSite. networkNames is the upstream-network-id ->
 // emitted-name map returned by Networks; a NETWORKS source/destination filter and a MAC
@@ -1698,12 +1918,17 @@ func trafficMatchingListRef(listID string, listNames map[string]string) (CoreRef
 // UUID appears in spec; the rule UUID and origin are recorded in status only. Colliding
 // projected names get a stable numeric suffix and an AnnotationOriginalName annotation.
 //
+// The returned map is the upstream-rule-id -> emitted-name map (including any collision
+// suffix); AclRuleOrdering resolves its ordered rule ids through it rather than re-deriving
+// names (design D2).
+//
 // A rule whose filters cannot be represented faithfully — an unknown type/action, a
 // network reference that was not emitted, an unsupported endpoint shape, or an enforcing
 // device that belongs to no device tag — is skipped with a warning rather than emitting a
 // partial CR (unifi-snapshot spec: unrepresentable objects are skipped with a warning).
-func AclRules(siteName string, networkNames map[string]string, deviceTags []unifi.DeviceTag, rules []unifi.AclRule) ([]emit.Resource, []string) {
+func AclRules(siteName, namePrefix string, networkNames map[string]string, deviceTags []unifi.DeviceTag, rules []unifi.AclRule) ([]emit.Resource, map[string]string, []string) {
 	resources := make([]emit.Resource, 0, len(rules))
+	names := make(map[string]string, len(rules))
 	var warnings []string
 	alloc := newNameAllocator()
 
@@ -1714,8 +1939,9 @@ func AclRules(siteName string, networkNames map[string]string, deviceTags []unif
 			continue
 		}
 
-		base := DNSSafeName(rule.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(rule.Name))
 		name, collided := alloc.allocate(base)
+		names[rule.ID] = name
 
 		var annotations map[string]string
 		if collided {
@@ -1737,7 +1963,50 @@ func AclRules(siteName string, networkNames map[string]string, deviceTags []unif
 			Status:     AclRuleStatus{RuleID: rule.ID, Origin: rule.Metadata.Origin},
 		})
 	}
-	return resources, warnings
+	return resources, names, warnings
+}
+
+// AclRuleOrdering projects the upstream site-global ACL-rule order into one
+// UnifiAclRuleOrdering, referencing emitted UnifiAclRule resources by Kubernetes identity in
+// upstream order (ruleNames is the map AclRules returned). A rule id that was not emitted,
+// or is unknown, is skipped with a warning and an annotation rather than emitting an
+// unresolvable reference. No upstream rule UUID appears in spec.
+func AclRuleOrdering(siteName, namePrefix string, ruleNames map[string]string, orderedRuleIDs []string) ([]emit.Resource, []string) {
+	refs := make([]CoreRef, 0, len(orderedRuleIDs))
+	unresolved := 0
+	for _, id := range orderedRuleIDs {
+		name, ok := ruleNames[id]
+		if !ok {
+			unresolved++
+			continue
+		}
+		refs = append(refs, CoreRef{Name: name})
+	}
+
+	var annotations map[string]string
+	var warnings []string
+	if unresolved > 0 {
+		setAnnotation(&annotations, AnnotationUnresolvedAclRuleRef,
+			"ACL rules missing from the snapshot were omitted from spec.orderedAclRules; set them to the intended UnifiAclRule names")
+		warnings = append(warnings, fmt.Sprintf(
+			"acl rule ordering: %d ordered rule reference(s) were not emitted; they were omitted from spec", unresolved))
+	}
+
+	// The per-kind invocation emits the base name; `all`/`verify` qualify it like every other
+	// site-scoped name so two sites' ACL-rule orderings cannot collide (design D7).
+	metadata := emit.Metadata{Name: siteQualifiedName(namePrefix, "acl-rule-ordering")}
+	if len(annotations) > 0 {
+		metadata.Annotations = annotations
+	}
+	return []emit.Resource{{
+		APIVersion: Group + "/" + Version,
+		Kind:       KindUnifiAclRuleOrdering,
+		Metadata:   metadata,
+		Spec: UnifiAclRuleOrderingSpec{
+			SiteRef:         CoreRef{Name: siteName},
+			OrderedAclRules: refs,
+		},
+	}}, warnings
 }
 
 // buildAclRuleSpec maps one upstream rule into a spec valid against the CRD. It returns
@@ -1966,7 +2235,7 @@ func aclEnforcingDeviceTags(filter unifi.AclRuleDeviceFilter, deviceTags []unifi
 // A policy with an unknown type, a payload that does not match its declared type, or a
 // variant field outside the CRD bounds is skipped with a warning rather than emitting a
 // partial CR (unifi-snapshot spec: unrepresentable objects are skipped with a warning).
-func DnsPolicies(siteName string, policies []unifi.DnsPolicy) ([]emit.Resource, []string) {
+func DnsPolicies(siteName, namePrefix string, policies []unifi.DnsPolicy) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(policies))
 	var warnings []string
 	alloc := newNameAllocator()
@@ -1979,7 +2248,7 @@ func DnsPolicies(siteName string, policies []unifi.DnsPolicy) ([]emit.Resource, 
 			continue
 		}
 
-		base := DNSSafeName(dnsPolicyLogicalName(policy))
+		base := siteQualifiedName(namePrefix, DNSSafeName(dnsPolicyLogicalName(policy)))
 		name, collided := alloc.allocate(base)
 
 		var annotations map[string]string
@@ -2211,7 +2480,7 @@ func dnsBound(value *int32, field string, min, max int32) (int32, string, bool) 
 // A LAG with an unknown type, no members, a member with no port indexes, or a member
 // device that belongs to no device tag or more than one (an ambiguous selector) is skipped
 // with a warning rather than emitting a partial CR.
-func SwitchingLags(siteName string, deviceTags []unifi.DeviceTag, lags []unifi.Lag) ([]emit.Resource, []string) {
+func SwitchingLags(siteName, namePrefix string, deviceTags []unifi.DeviceTag, lags []unifi.Lag) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(lags))
 	var warnings []string
 	alloc := newNameAllocator()
@@ -2225,7 +2494,7 @@ func SwitchingLags(siteName string, deviceTags []unifi.DeviceTag, lags []unifi.L
 		}
 
 		logical := switchingLagLogicalName(spec)
-		base := DNSSafeName(logical)
+		base := siteQualifiedName(namePrefix, DNSSafeName(logical))
 		name, collided := alloc.allocate(base)
 
 		var annotations map[string]string
@@ -2363,7 +2632,7 @@ func lagMemberDeviceTagName(deviceTags []unifi.DeviceTag, deviceID string) (stri
 // are recorded in status only. Colliding projected names get a stable numeric suffix and an
 // AnnotationOriginalName annotation. A domain without a name cannot be adopted by name and
 // is skipped with a warning.
-func SwitchingMcLagDomains(siteName string, domains []unifi.McLagDomain) ([]emit.Resource, []string) {
+func SwitchingMcLagDomains(siteName, namePrefix string, domains []unifi.McLagDomain) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(domains))
 	var warnings []string
 	alloc := newNameAllocator()
@@ -2374,7 +2643,7 @@ func SwitchingMcLagDomains(siteName string, domains []unifi.McLagDomain) ([]emit
 			continue
 		}
 
-		base := DNSSafeName(domain.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(domain.Name))
 		name, collided := alloc.allocate(base)
 
 		var annotations map[string]string
@@ -2436,7 +2705,7 @@ func mcLagDomainPeers(peers []unifi.McLagPeer) []SwitchingMcLagPeer {
 // in status only. Colliding projected names get a stable numeric suffix and an
 // AnnotationOriginalName annotation. A stack without a name cannot be adopted by name and is
 // skipped with a warning.
-func SwitchingSwitchStacks(siteName string, stacks []unifi.SwitchStack) ([]emit.Resource, []string) {
+func SwitchingSwitchStacks(siteName, namePrefix string, stacks []unifi.SwitchStack) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(stacks))
 	var warnings []string
 	alloc := newNameAllocator()
@@ -2447,7 +2716,7 @@ func SwitchingSwitchStacks(siteName string, stacks []unifi.SwitchStack) ([]emit.
 			continue
 		}
 
-		base := DNSSafeName(stack.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(stack.Name))
 		name, collided := alloc.allocate(base)
 
 		var annotations map[string]string
@@ -2494,7 +2763,7 @@ func switchingStackMembers(members []unifi.SwitchStackMember) []SwitchingStackMe
 // never in spec; no credential is authored. Colliding projected names get a stable numeric
 // suffix and an AnnotationOriginalName annotation. A server without a name cannot be
 // adopted by name and is skipped with a warning.
-func VpnServers(siteName string, servers []unifi.VpnServer) ([]emit.Resource, []string) {
+func VpnServers(siteName, namePrefix string, servers []unifi.VpnServer) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(servers))
 	var warnings []string
 	alloc := newNameAllocator()
@@ -2506,7 +2775,7 @@ func VpnServers(siteName string, servers []unifi.VpnServer) ([]emit.Resource, []
 			continue
 		}
 
-		base := DNSSafeName(server.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(server.Name))
 		name, collided := alloc.allocate(base)
 
 		var annotations map[string]string
@@ -2542,7 +2811,7 @@ func VpnServers(siteName string, servers []unifi.VpnServer) ([]emit.Resource, []
 // status only, never in spec; no credential is authored. Colliding projected names get a
 // stable numeric suffix and an AnnotationOriginalName annotation. A tunnel without a name
 // cannot be adopted by name and is skipped with a warning.
-func SiteToSiteTunnels(siteName string, tunnels []unifi.SiteToSiteTunnel) ([]emit.Resource, []string) {
+func SiteToSiteTunnels(siteName, namePrefix string, tunnels []unifi.SiteToSiteTunnel) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(tunnels))
 	var warnings []string
 	alloc := newNameAllocator()
@@ -2554,7 +2823,7 @@ func SiteToSiteTunnels(siteName string, tunnels []unifi.SiteToSiteTunnel) ([]emi
 			continue
 		}
 
-		base := DNSSafeName(tunnel.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(tunnel.Name))
 		name, collided := alloc.allocate(base)
 
 		var annotations map[string]string
@@ -2594,7 +2863,7 @@ func SiteToSiteTunnels(siteName string, tunnels []unifi.SiteToSiteTunnel) ([]emi
 // passphrase is not recoverable is emitted with a placeholder (passphrase) or skipped with
 // a warning rather than silently dropped. The upstream broadcast id is recorded in status
 // only.
-func WifiBroadcasts(networkNames map[string]string, siteName string, deviceTags []unifi.DeviceTag, broadcasts []unifi.WifiBroadcast) ([]emit.Resource, []string) {
+func WifiBroadcasts(networkNames map[string]string, siteName, namePrefix string, deviceTags []unifi.DeviceTag, broadcasts []unifi.WifiBroadcast) ([]emit.Resource, []string) {
 	resources := make([]emit.Resource, 0, len(broadcasts))
 	var warnings []string
 	alloc := newNameAllocator()
@@ -2606,7 +2875,7 @@ func WifiBroadcasts(networkNames map[string]string, siteName string, deviceTags 
 			continue
 		}
 
-		base := DNSSafeName(broadcast.Name)
+		base := siteQualifiedName(namePrefix, DNSSafeName(broadcast.Name))
 		name, collided := alloc.allocate(base)
 		if collided {
 			setAnnotation(&annotations, AnnotationOriginalName, broadcast.Name)
@@ -3105,6 +3374,17 @@ func setAnnotation(annotations *map[string]string, key, value string) {
 		*annotations = map[string]string{}
 	}
 	(*annotations)[key] = value
+}
+
+// siteQualifiedName prepends the site qualifier that `snapshot all` and `verify` set to a
+// site-scoped resource's already DNS-safe base name. The qualifier is empty for a per-kind
+// invocation, so a single-site snapshot keeps its upstream-derived name; `all` spans every
+// site and sets it so two sites that share a site-scoped object name emit distinct
+// (kind, metadata.name) values instead of overwriting one another (design D7). Every
+// site-scoped projection allocates both its resource name and the names it returns in its
+// id -> name maps through it, so cross-resource references keep resolving.
+func siteQualifiedName(namePrefix, base string) string {
+	return namePrefix + base
 }
 
 // DNSSafeName converts a UniFi object name into a DNS-1123 subdomain-safe resource name.

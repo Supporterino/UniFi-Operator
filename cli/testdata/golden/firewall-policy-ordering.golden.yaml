@@ -1,0 +1,38 @@
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiFirewallPolicyOrdering
+metadata:
+  annotations:
+    unifi.supporterino.de/unresolved-policy-ref: policies missing from the snapshot
+      were omitted from spec.beforeSystemDefined/afterSystemDefined; set them to the
+      intended UnifiFirewallPolicy names
+  name: custom-zone-to-internal
+spec:
+  afterSystemDefined: []
+  beforeSystemDefined:
+  - name: allow-lan-to-wan
+  destination:
+    builtInZone:
+      name: Internal
+  siteRef:
+    name: default
+  source:
+    zoneRef:
+      name: custom-zone
+---
+apiVersion: unifi.supporterino.de/v1alpha1
+kind: UnifiFirewallPolicyOrdering
+metadata:
+  name: internal-to-custom-zone
+spec:
+  afterSystemDefined: []
+  beforeSystemDefined:
+  - name: block-iot-to-lan
+  destination:
+    zoneRef:
+      name: custom-zone
+  siteRef:
+    name: default
+  source:
+    builtInZone:
+      name: Internal

@@ -1,0 +1,10 @@
+{
+  "orderedFirewallPolicyIds": {
+    "beforeSystemDefined": [
+      "1a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9"
+    ],
+    "afterSystemDefined": [
+      "3c4d5e6f-7081-4293-a4b5-c6d7e8f90123"
+    ]
+  }
+}

@@ -212,7 +212,7 @@ rather than an upstream id, and the controller resolves the reference to the ups
 | GET | `/v1/sites/{siteId}/firewall/policies/{firewallPolicyId}` | Read one firewall policy | `client.GetFirewallPolicy` | — |
 | PUT | `/v1/sites/{siteId}/firewall/policies/{firewallPolicyId}` | Update a firewall policy | `client.UpdateFirewallPolicy` | — |
 | DELETE | `/v1/sites/{siteId}/firewall/policies/{firewallPolicyId}` | Delete a firewall policy | `client.DeleteFirewallPolicy` | — |
-| GET | `/v1/sites/{siteId}/firewall/policies/ordering` | Read the policy ordering for a zone pair | `client.GetFirewallPolicyOrdering` | — |
+| GET | `/v1/sites/{siteId}/firewall/policies/ordering` | Read the policy ordering for a zone pair | `client.GetFirewallPolicyOrdering` | `snapshot firewall-policy-ordering` |
 | PUT | `/v1/sites/{siteId}/firewall/policies/ordering` | Replace the policy ordering for a zone pair | `client.UpdateFirewallPolicyOrdering` | — |
 
 The ordering endpoint is scoped by the required `sourceFirewallZoneId` and
@@ -252,7 +252,7 @@ appears in `spec`.
 | GET | `/v1/sites/{siteId}/acl-rules/{aclRuleId}` | Read one ACL rule | `client.GetAclRule` | — |
 | PUT | `/v1/sites/{siteId}/acl-rules/{aclRuleId}` | Update an ACL rule | `client.UpdateAclRule` | — |
 | DELETE | `/v1/sites/{siteId}/acl-rules/{aclRuleId}` | Delete an ACL rule | `client.DeleteAclRule` | — |
-| GET | `/v1/sites/{siteId}/acl-rules/ordering` | Read the site-global ACL-rule order | `client.GetAclRuleOrdering` | — |
+| GET | `/v1/sites/{siteId}/acl-rules/ordering` | Read the site-global ACL-rule order | `client.GetAclRuleOrdering` | `snapshot acl-rule-ordering` |
 | PUT | `/v1/sites/{siteId}/acl-rules/ordering` | Replace the site-global ACL-rule order | `client.UpdateAclRuleOrdering` | — |
 
 `UnifiAclRule` is a **writable** kind: the full create/update/delete slice exists, so deletion has

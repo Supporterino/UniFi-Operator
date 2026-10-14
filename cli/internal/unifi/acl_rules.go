@@ -3,6 +3,7 @@ package unifi
 import (
 	"context"
 	"fmt"
+	"net/http"
 )
 
 // ACL rule discriminators and constants used to interpret upstream bodies.
@@ -95,4 +96,22 @@ func (c *Client) ListAclRules(ctx context.Context, siteID string) ([]AclRule, er
 		return nil, fmt.Errorf("list acl rules: %w", err)
 	}
 	return rules, nil
+}
+
+// ListAclRuleOrdering returns the site-global ACL-rule order as the ordered list
+// of upstream rule UUIDs. The UUIDs are observed upstream and must never reach a
+// Custom Resource's spec; the snapshot projection maps each to an emitted rule
+// name in upstream order.
+func (c *Client) ListAclRuleOrdering(ctx context.Context, siteID string) ([]string, error) {
+	endpoint, err := c.endpoint("sites", siteID, "acl-rules", "ordering")
+	if err != nil {
+		return nil, err
+	}
+	var ordering struct {
+		OrderedAclRuleIDs []string `json:"orderedAclRuleIds"`
+	}
+	if err := c.do(ctx, http.MethodGet, endpoint, &ordering); err != nil {
+		return nil, fmt.Errorf("get acl rule ordering: %w", err)
+	}
+	return ordering.OrderedAclRuleIDs, nil
 }

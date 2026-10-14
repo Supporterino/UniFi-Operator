@@ -77,3 +77,4 @@ unifi-operator-cli snapshot <kind> --controller <url>
 - [Testing](testing.md)
 - [Architecture](architecture.md)
 - [CRD conventions](crd-conventions.md)
+- [CLI snapshot](snapshot.md)

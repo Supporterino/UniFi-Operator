@@ -74,6 +74,27 @@ func TestListAclRulesPaginates(t *testing.T) {
 	}
 }
 
+func TestListAclRuleOrdering(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = io.WriteString(w, `{"orderedAclRuleIds":["`+testAclRuleID+`","rule-2"]}`)
+	}))
+
+	ids, err := client.ListAclRuleOrdering(context.Background(), testSiteID)
+	if err != nil {
+		t.Fatalf("ListAclRuleOrdering: %v", err)
+	}
+	if want := fmt.Sprintf("/proxy/network/integration/v1/sites/%s/acl-rules/ordering", testSiteID); gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+	if len(ids) != 2 || ids[0] != testAclRuleID || ids[1] != "rule-2" {
+		t.Errorf("orderedAclRuleIds = %v, want [%s rule-2]", ids, testAclRuleID)
+	}
+}
+
 func TestListAclRulesUnauthorized(t *testing.T) {
 	t.Parallel()
 

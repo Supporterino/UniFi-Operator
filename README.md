@@ -35,18 +35,11 @@ controller into adoptable CRs and a documentation site published to GitHub Pages
 > as the design of record.
 
 ```bash
-# Operator
-cd operator
-make manifests generate
-make test
+# Build and test both modules (generation runs as a task dependency)
+task build
+task test
 
-# CLI
-cd cli
-go build ./...
-go test ./...
-
-# Docs
-cd docs   # or repo root
+# Docs (live preview)
 zensical serve
 ```
 

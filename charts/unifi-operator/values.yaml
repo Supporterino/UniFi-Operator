@@ -19,9 +19,14 @@ replicaCount: 1
 
 image:
   # -- Manager image repository.
-  repository: controller
-  # -- Manager image tag. Falls back to the chart appVersion when empty.
-  tag: latest
+  repository: ghcr.io/supporterino/unifi-operator
+  # -- Manager image tag. Intentionally empty in the committed tree so the rendered
+  # tag follows the chart `appVersion` (see templates/deployment.yaml:
+  # `image.tag | default .Chart.AppVersion`). release-please keeps `appVersion`
+  # equal to the bundle version, so a released chart references the matching image
+  # without a second source of truth. The image only exists once the release
+  # workflow publishes it; override with `--set image.tag=<tag>` to pin another.
+  tag: ""
   # -- Image pull policy.
   pullPolicy: IfNotPresent
 

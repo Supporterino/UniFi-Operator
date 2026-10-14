@@ -3,7 +3,6 @@ package unifi
 import (
 	"context"
 	"fmt"
-	"net/http"
 )
 
 // ACL rule discriminators and constants used to interpret upstream bodies.
@@ -110,7 +109,7 @@ func (c *Client) ListAclRuleOrdering(ctx context.Context, siteID string) ([]stri
 	var ordering struct {
 		OrderedAclRuleIDs []string `json:"orderedAclRuleIds"`
 	}
-	if err := c.do(ctx, http.MethodGet, endpoint, &ordering); err != nil {
+	if err := c.getJSON(ctx, endpoint, &ordering); err != nil {
 		return nil, fmt.Errorf("get acl rule ordering: %w", err)
 	}
 	return ordering.OrderedAclRuleIDs, nil

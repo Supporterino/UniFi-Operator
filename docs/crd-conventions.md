@@ -285,7 +285,7 @@ spec field.
 - [ ] `ownerReference` set to the immediate parent (the strongest reference) via
       `controllerutil.SetControllerReference`.
 - [ ] Finalizer added/removed symmetrically if deletion has upstream effects.
-- [ ] `make manifests generate` run; `config/crd/` and deepcopy updated with no diff.
+- [ ] `task manifests generate` run; `config/crd/` and deepcopy updated with no diff.
 - [ ] Reconciler updates status on every terminal path.
 
 ## Related

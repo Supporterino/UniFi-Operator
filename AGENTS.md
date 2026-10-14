@@ -42,8 +42,8 @@ Read the referenced document before touching the relevant surface. Reference mat
 
 | Trigger | Module(s) | Action |
 |---------|-----------|--------|
-| New managed UniFi resource | `operator/` | Add CRD API type (`api/v1alpha1/`) → `make manifests generate` → controller/reconciler → wiring in `cmd/` |
-| New field on an existing CR | `operator/` | Add to the API type + validation markers → `make manifests generate` → reconcile the field |
+| New managed UniFi resource | `operator/` | Add CRD API type (`api/v1alpha1/`) → `task manifests generate` → controller/reconciler → wiring in `cmd/` |
+| New field on an existing CR | `operator/` | Add to the API type + validation markers → `task manifests generate` → reconcile the field |
 | Reconcile drift / bug | `operator/` | Fix in the controller or UniFi client |
 | New snapshot/adoption capability | `cli/` | Add a cobra command under `cmd/`, reusing the UniFi client and CR emitter |
 | New shared Go helper (both modules need it) | `operator/` + `cli/` | Prefer the operator's `internal/` package; the CLI may vendor/import via its module boundary or duplicate a small helper |
@@ -69,7 +69,7 @@ Read the referenced document before touching the relevant surface. Reference mat
 When implementing a change that spans modules, read `docs/crd-conventions.md` and `docs/unifi-api.md` and run `openspec list` before starting, then:
 
 - [ ] CRD API type updated (`operator/api/v1alpha1/*_types.go`)
-- [ ] `make -C operator manifests generate` re-run; `operator/config/crd/` and `operator/api/v1alpha1/zz_generated.deepcopy.go` updated
+- [ ] `task manifests generate` re-run; `operator/config/crd/` and `operator/api/v1alpha1/zz_generated.deepcopy.go` updated
 - [ ] Kubebuilder validation markers and printer columns added where needed
 - [ ] Controller / reconciler updated
 - [ ] UniFi client (`operator/internal/unifi/`) updated if the upstream contract changed
@@ -78,7 +78,7 @@ When implementing a change that spans modules, read `docs/crd-conventions.md` an
 - [ ] `docs/` pages updated if behavior or CRDs changed
 - [ ] kustomize (`operator/config/`) and Helm (`charts/`) manifests updated if deployment changes
 - [ ] Operator gate passes (`cd operator && go build ./... && go vet ./... && golangci-lint run && go test ./...`)
-- [ ] `make -C operator manifests generate` produces no diff
+- [ ] `task manifests generate` produces no diff
 - [ ] CLI gate passes (`cd cli && go build ./... && go vet ./... && golangci-lint run && go test ./...`)
 - [ ] Docs build passes (`zensical build --strict`)
 - [ ] CRDs tested against a real or envtest API server; UniFi client tested against an `httptest.Server` fake
@@ -124,7 +124,7 @@ See `docs/crd-conventions.md` for the full rules and examples.
 - **Operator:** `go test ./...`. Unit-test reconcilers with the controller-runtime `fake` client and `envtest` for anything needing a real API server (CRD apply/defaulting/validation). Test the UniFi client with `net/http/httptest` — **never** a live controller.
 - **CLI:** `go test ./...`. Snapshot/adoption logic is tested against an `httptest.Server` serving recorded UniFi API fixtures; golden files capture expected CR output. No live network calls.
 - **Docs:** `zensical build --strict` is the gate (broken links/nav fail the build).
-- **Manifests:** `make -C operator manifests generate` must produce no diff in a clean tree.
+- **Manifests:** `task manifests generate` must produce no diff in a clean tree.
 - Do not add a test framework the module does not already use.
 
 ---

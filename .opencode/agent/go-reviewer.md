@@ -30,7 +30,7 @@ You are the independent Go reviewer for the UniFi-Operator workspace — the fou
 | **Error handling** | `fmt.Errorf` without `%w`, ignored errors, panics on nil, context not propagated, no exponential backoff / requeue on transient Unifi failures |
 | **Go quality** | Goroutine leaks, unchecked type assertions, mutex/race hazards, `context.TODO()` in hot paths, unbounded slices, non-deterministic map iteration affecting output |
 | **API contract sync** | A changed `docs/unifi-api.md` contract without matching client code (or vice versa), CLI output schema drifting from operator types |
-| **Verification** | Whether the module gate (build, vet, golangci-lint, tests, `make manifests generate` diff) was run and passes |
+| **Verification** | Whether the module gate (build, vet, golangci-lint, tests, `task manifests generate` diff) was run and passes |
 
 ## Scope
 

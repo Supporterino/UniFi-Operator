@@ -20,7 +20,7 @@ this document holds the strategy.
   validation. Register the scheme with `runtime.NewScheme()` + the API group. Assert the
   resulting objects and `status` conditions.
 - **`envtest`** for anything the API server must enforce: CRD apply/default/validation, the
-  status subresource, and finalizer-driven deletion. `make test` bootstraps envtest via
+  status subresource, and finalizer-driven deletion. `task test` bootstraps envtest via
   `setup-envtest`.
 - Reconciler tests assert **idempotency**: a second reconcile with unchanged input performs no
   writes and preserves conditions.
@@ -50,7 +50,7 @@ this document holds the strategy.
 
 ## Manifests
 
-- `make -C operator manifests generate` must produce no diff in a clean tree. Run it after any
+- `task manifests generate` must produce no diff in a clean tree. Run it after any
   API-type or RBAC-marker change and commit the generated output.
 
 ## Rules

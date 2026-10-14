@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+#
+# Cross-compiles the CLI for the supported platforms and publishes the
+# archives and a checksum file as assets of the release release-please already
+# created. Run from the repository root; the CLI is a separate Go module under
+# cli/, so the build targets that directory.
+version: 2
+
+project_name: unifi-operator-cli
+
+builds:
+  - id: unifi-operator-cli
+    dir: cli
+    main: .
+    binary: unifi-operator-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/Supporterino/UniFi-Operator/cli/internal/version.Version={{ .Version }}
+
+archives:
+  - id: unifi-operator-cli
+    ids:
+      - unifi-operator-cli
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# release-please owns CHANGELOG.md; a goreleaser-generated changelog would
+# duplicate it on the release.
+changelog:
+  disable: true
+
+release:
+  # Attach the assets to the GitHub Release release-please already created for
+  # the tag instead of creating a second release.
+  mode: append

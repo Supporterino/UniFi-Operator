@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 )
 
 // WifiNetworkReference is the upstream `Wifi network reference` union. The
@@ -272,7 +271,7 @@ func (c *Client) GetWifiBroadcast(ctx context.Context, siteID, broadcastID strin
 		return WifiBroadcast{}, err
 	}
 	var broadcast WifiBroadcast
-	if err := c.do(ctx, http.MethodGet, endpoint, &broadcast); err != nil {
+	if err := c.getJSON(ctx, endpoint, &broadcast); err != nil {
 		return WifiBroadcast{}, fmt.Errorf("get wifi broadcast: %w", err)
 	}
 	return broadcast, nil

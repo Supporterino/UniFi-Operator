@@ -38,7 +38,7 @@ Work from the inside out:
 2. **Reconciler** — run the envtest/fake-client test for that branch. Confirm the desired
    request and the status written.
 3. **CRD schema** — if the API server rejects the CR, `kubectl apply --dry-run=server` and
-   `make manifests` diff show whether the generated CRD matches the type.
+   `task manifests` diff show whether the generated CRD matches the type.
 
 ## Drift
 
@@ -70,7 +70,7 @@ unifi-operator-cli snapshot <kind> --controller <url>
 
 - Docs failures (`zensical build --strict`) are almost always a broken internal link — the build
   output names the source file and target.
-- Manifest drift: run `make -C operator manifests generate` and inspect the diff.
+- Manifest drift: run `task manifests generate` and inspect the diff.
 
 ## Related
 

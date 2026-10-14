@@ -1,0 +1,356 @@
+version: '3'
+
+# Root entrypoint for every local build, test, generation, and packaging task.
+# Go-program tools are pinned and resolved with `go run <pkg>@<version>`, so a clean
+# checkout needs no separate install step. Tools that are not Go programs (the
+# container runtime, Helm, kubectl, Kind, zensical) are guarded with preconditions
+# that fail before the task runs and name the missing binary.
+
+vars:
+  # Bundle version; override with `VERSION=x.y.z task <task>` or inject from release tooling.
+  VERSION: '{{.VERSION | default "dev"}}'
+  # Image coordinates; overridable from the environment or as a CLI variable
+  # (`IMAGE_REPOSITORY=x task deploy` or `task deploy IMAGE_REPOSITORY=x`).
+  # A CLI variable outranks the environment, which outranks the default.
+  IMAGE_REPOSITORY: '{{.IMAGE_REPOSITORY | default "ghcr.io/supporterino/unifi-operator"}}'
+  IMAGE_TAG: '{{.IMAGE_TAG | default .VERSION}}'
+  # Image name in operator/config/manager that the image tasks re-point via kustomize.
+  # Must match the repository in manager.yaml exactly; kustomize matches on the
+  # image name, so a mismatch makes `edit set image` a silent no-op.
+  MANAGER_IMAGE_NAME: ghcr.io/supporterino/unifi-operator
+  CHART_PATH: charts/unifi-operator
+  CHART_NAME: unifi-operator
+  OPERATOR_DIR: operator
+  CLI_DIR: cli
+  CRD_SOURCE: operator/config/crd/bases
+  CRD_BUNDLE: charts/unifi-operator/crds
+  CONTAINER_TOOL: docker
+  KIND_CLUSTER: operator-test-e2e
+  PLATFORMS: linux/amd64,linux/arm64
+  IGNORE_NOT_FOUND: 'false'
+  CONTROLLER_GEN_VERSION: v0.19.0
+  KUSTOMIZE_VERSION: v5.7.1
+  ENVTEST_VERSION: release-0.22
+  ENVTEST_K8S_VERSION: 1.34.x
+  GOLANGCI_LINT_VERSION: v2.14.0
+
+tasks:
+  default:
+    desc: List the available tasks.
+    cmds:
+      - task --list
+    silent: true
+
+  help:
+    desc: List the available tasks.
+    cmds:
+      - task --list
+    silent: true
+
+  all:
+    desc: Build every module (equivalent to `make all`).
+    cmds:
+      - task: build
+
+  # --- Generation -----------------------------------------------------------
+
+  manifests:
+    desc: Generate CRD, RBAC, and webhook manifests with the pinned controller-gen.
+    dir: '{{.OPERATOR_DIR}}'
+    sources:
+      - api/**/*.go
+      - internal/**/*.go
+      - cmd/**/*.go
+    generates:
+      - config/crd/bases/*.yaml
+      - config/rbac/role.yaml
+    cmds:
+      - go run sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_GEN_VERSION}} rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+
+  generate:
+    desc: Generate deepcopy methods with the pinned controller-gen.
+    dir: '{{.OPERATOR_DIR}}'
+    sources:
+      - api/**/*.go
+      - hack/boilerplate.go.txt
+    generates:
+      - api/**/zz_generated.deepcopy.go
+    cmds:
+      - go run sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_GEN_VERSION}} object:headerFile="hack/boilerplate.go.txt" paths="./..."
+
+  controller-gen:
+    desc: Resolve the pinned controller-gen tool (no bin/ install required).
+    cmds:
+      - go run sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_GEN_VERSION}} --version
+
+  kustomize:
+    desc: Render the default kustomize overlay to stdout with the pinned kustomize.
+    cmds:
+      - go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} build {{.OPERATOR_DIR}}/config/default
+
+  # --- Formatting, vetting, linting -----------------------------------------
+
+  fmt:
+    desc: Run gofmt over both Go modules.
+    cmds:
+      - cd {{.OPERATOR_DIR}} && go fmt ./...
+      - cd {{.CLI_DIR}} && go fmt ./...
+
+  vet:
+    desc: Run go vet over both Go modules.
+    cmds:
+      - cd {{.OPERATOR_DIR}} && go vet ./...
+      - cd {{.CLI_DIR}} && go vet ./...
+
+  lint:
+    desc: Run golangci-lint (each module under its own config) and go vet over both Go modules.
+    deps: [vet]
+    cmds:
+      - cd {{.OPERATOR_DIR}} && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}} run
+      - cd {{.CLI_DIR}} && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}} run
+
+  lint-fix:
+    desc: Run golangci-lint over both Go modules and apply available fixes.
+    cmds:
+      - cd {{.OPERATOR_DIR}} && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}} run --fix
+      - cd {{.CLI_DIR}} && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}} run --fix
+
+  lint-config:
+    desc: Verify the golangci-lint configuration in both modules.
+    cmds:
+      - cd {{.OPERATOR_DIR}} && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}} config verify
+      - cd {{.CLI_DIR}} && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}} config verify
+
+  golangci-lint:
+    desc: Resolve the pinned golangci-lint tool (no bin/ install required).
+    cmds:
+      - go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}} --version
+
+  # --- Testing --------------------------------------------------------------
+
+  setup-envtest:
+    desc: Download the envtest API server and etcd for the pinned Kubernetes version.
+    aliases: [envtest]
+    dir: '{{.OPERATOR_DIR}}'
+    cmds:
+      - go run sigs.k8s.io/controller-runtime/tools/setup-envtest@{{.ENVTEST_VERSION}} use {{.ENVTEST_K8S_VERSION}} --bin-dir "$(pwd)/bin" -p path
+
+  test:
+    desc: Run the unit and envtest suites for both Go modules.
+    deps: [manifests, generate, fmt, vet]
+    cmds:
+      - |
+        cd {{.OPERATOR_DIR}}
+        KUBEBUILDER_ASSETS="$(
+          go run sigs.k8s.io/controller-runtime/tools/setup-envtest@{{.ENVTEST_VERSION}} use {{.ENVTEST_K8S_VERSION}} --bin-dir "$(pwd)/bin" -p path
+        )" go test $(go list ./... | grep -v /e2e) -coverprofile cover.out
+      - cd {{.CLI_DIR}} && go test ./...
+
+  setup-test-e2e:
+    desc: Create the Kind cluster used by the e2e tests if it does not exist.
+    preconditions:
+      - sh: command -v kind
+        msg: 'kind is not installed or not on PATH; install Kind to run the e2e tests.'
+    cmds:
+      - |
+        case "$(kind get clusters 2>/dev/null)" in
+          *"{{.KIND_CLUSTER}}"*) echo "Kind cluster '{{.KIND_CLUSTER}}' already exists. Skipping creation." ;;
+          *) echo "Creating Kind cluster '{{.KIND_CLUSTER}}'..."; kind create cluster --name {{.KIND_CLUSTER}} ;;
+        esac
+
+  test-e2e:
+    desc: Run the e2e tests against an isolated Kind cluster.
+    deps: [setup-test-e2e]
+    cmds:
+      - cd {{.OPERATOR_DIR}} && KIND=kind KIND_CLUSTER={{.KIND_CLUSTER}} go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+      - task: cleanup-test-e2e
+
+  cleanup-test-e2e:
+    desc: Tear down the Kind cluster used by the e2e tests.
+    preconditions:
+      - sh: command -v kind
+        msg: 'kind is not installed or not on PATH; install Kind to tear down the e2e cluster.'
+    cmds:
+      - kind delete cluster --name {{.KIND_CLUSTER}}
+
+  # --- Build ----------------------------------------------------------------
+
+  build:
+    desc: Build the manager and CLI binaries with the bundle version stamped in.
+    deps: [manifests, generate, fmt, vet]
+    cmds:
+      - cd {{.OPERATOR_DIR}} && go build -ldflags "-X github.com/Supporterino/UniFi-Operator/operator/internal/version.Version={{.VERSION}}" -o bin/manager cmd/main.go
+      - cd {{.CLI_DIR}} && go build -ldflags "-X github.com/Supporterino/UniFi-Operator/cli/internal/version.Version={{.VERSION}}" -o bin/unifi-operator-cli .
+
+  run:
+    desc: Run the operator manager from the host against the current kubeconfig.
+    deps: [manifests, generate, fmt, vet]
+    dir: '{{.OPERATOR_DIR}}'
+    cmds:
+      - go run -ldflags "-X github.com/Supporterino/UniFi-Operator/operator/internal/version.Version={{.VERSION}}" ./cmd/main.go
+
+  image:
+    desc: Build the manager container image with the container tool.
+    dir: '{{.OPERATOR_DIR}}'
+    preconditions:
+      - sh: command -v {{.CONTAINER_TOOL}}
+        msg: '{{.CONTAINER_TOOL}} is not installed or not on PATH; install it to build container images.'
+    cmds:
+      - '{{.CONTAINER_TOOL}} build --build-arg VERSION={{.VERSION}} -t {{.IMAGE_REPOSITORY}}:{{.IMAGE_TAG}} .'
+
+  docker-build:
+    desc: Build the manager container image (alias for `image`).
+    cmds:
+      - task: image
+
+  docker-push:
+    desc: Push the manager container image with the container tool.
+    preconditions:
+      - sh: command -v {{.CONTAINER_TOOL}}
+        msg: '{{.CONTAINER_TOOL}} is not installed or not on PATH; install it to push container images.'
+    cmds:
+      - '{{.CONTAINER_TOOL}} push {{.IMAGE_REPOSITORY}}:{{.IMAGE_TAG}}'
+
+  docker-buildx:
+    desc: Build and push a multi-platform manager image with the container tool.
+    dir: '{{.OPERATOR_DIR}}'
+    preconditions:
+      - sh: command -v {{.CONTAINER_TOOL}}
+        msg: '{{.CONTAINER_TOOL}} is not installed or not on PATH; install it to build container images.'
+    cmds:
+      - |
+        set -e
+        sed -e '1 s/\(^FROM\)/FROM --platform=\$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+        trap 'rm -f Dockerfile.cross' EXIT
+        {{.CONTAINER_TOOL}} buildx create --name operator-builder || true
+        {{.CONTAINER_TOOL}} buildx use operator-builder
+        {{.CONTAINER_TOOL}} buildx build --push --platform={{.PLATFORMS}} --build-arg VERSION={{.VERSION}} --tag {{.IMAGE_REPOSITORY}}:{{.IMAGE_TAG}} -f Dockerfile.cross .
+        {{.CONTAINER_TOOL}} buildx rm operator-builder || true
+
+  build-installer:
+    desc: Build a consolidated install bundle at dist/install.yaml with the image pinned.
+    deps: [manifests, generate]
+    cmds:
+      - |
+        set -e
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        cp -r {{.OPERATOR_DIR}}/config "$tmp/config"
+        ( cd "$tmp/config/manager" && go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} edit set image {{.MANAGER_IMAGE_NAME}}={{.IMAGE_REPOSITORY}}:{{.IMAGE_TAG}} )
+        mkdir -p dist
+        go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} build "$tmp/config/default" > dist/install.yaml
+
+  # --- Deployment -----------------------------------------------------------
+
+  install:
+    desc: Install the CRDs into the cluster in ~/.kube/config.
+    preconditions:
+      - sh: command -v kubectl
+        msg: 'kubectl is not installed or not on PATH; install it to talk to a cluster.'
+    dir: '{{.OPERATOR_DIR}}'
+    cmds:
+      - |
+        out="$(go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} build config/crd 2>/dev/null || true)"
+        if [ -n "$out" ]; then echo "$out" | kubectl apply -f -; else echo "No CRDs to install; skipping."; fi
+
+  uninstall:
+    desc: Uninstall the CRDs from the cluster (IGNORE_NOT_FOUND=true ignores missing resources).
+    preconditions:
+      - sh: command -v kubectl
+        msg: 'kubectl is not installed or not on PATH; install it to talk to a cluster.'
+    dir: '{{.OPERATOR_DIR}}'
+    cmds:
+      - |
+        out="$(go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} build config/crd 2>/dev/null || true)"
+        if [ -n "$out" ]; then echo "$out" | kubectl delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -; else echo "No CRDs to delete; skipping."; fi
+
+  deploy:
+    desc: Deploy the manager to the cluster with the built image pinned.
+    preconditions:
+      - sh: command -v kubectl
+        msg: 'kubectl is not installed or not on PATH; install it to talk to a cluster.'
+    cmds:
+      - |
+        set -e
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        cp -r {{.OPERATOR_DIR}}/config "$tmp/config"
+        ( cd "$tmp/config/manager" && go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} edit set image {{.MANAGER_IMAGE_NAME}}={{.IMAGE_REPOSITORY}}:{{.IMAGE_TAG}} )
+        go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} build "$tmp/config/default" | kubectl apply -f -
+
+  undeploy:
+    desc: Undeploy the manager from the cluster (IGNORE_NOT_FOUND=true ignores missing resources).
+    preconditions:
+      - sh: command -v kubectl
+        msg: 'kubectl is not installed or not on PATH; install it to talk to a cluster.'
+    dir: '{{.OPERATOR_DIR}}'
+    cmds:
+      - go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} build config/default | kubectl delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -
+
+  # --- CRD synchronization --------------------------------------------------
+
+  crd-sync:
+    desc: Fail if the generated CRDs and the Helm-bundled CRDs are not byte-identical.
+    cmds:
+      - |
+        set -e
+        src="{{.CRD_SOURCE}}"
+        dst="{{.CRD_BUNDLE}}"
+        status=0
+        for f in "$src"/*.yaml; do
+          b="$(basename "$f")"
+          if [ ! -f "$dst/$b" ]; then
+            echo "crd-sync: $b is missing from $dst"
+            status=1
+          elif ! cmp -s "$f" "$dst/$b"; then
+            echo "crd-sync: $b differs between $src and $dst"
+            status=1
+          fi
+        done
+        for f in "$dst"/*.yaml; do
+          b="$(basename "$f")"
+          if [ ! -f "$src/$b" ]; then
+            echo "crd-sync: $b is missing from $src"
+            status=1
+          fi
+        done
+        if [ "$status" -ne 0 ]; then
+          echo "crd-sync: $src and $dst are out of sync; run 'task manifests' and copy the CRDs into the chart"
+        fi
+        exit "$status"
+
+  # --- Documentation and chart ----------------------------------------------
+
+  docs:
+    desc: Build the documentation site in strict mode (broken links fail the build).
+    preconditions:
+      - sh: command -v zensical
+        msg: 'zensical is not installed or not on PATH; install it to build the documentation.'
+    cmds:
+      - zensical build --strict
+
+  chart:
+    desc: Lint and render the Helm chart.
+    preconditions:
+      - sh: command -v helm
+        msg: 'helm is not installed or not on PATH; install it to lint and render the chart.'
+    cmds:
+      - helm lint {{.CHART_PATH}}
+      - helm template {{.CHART_NAME}} {{.CHART_PATH}} -f {{.CHART_PATH}}/values.yaml
+
+  # --- Aggregate gate -------------------------------------------------------
+
+  verify:
+    desc: Run the local gate — generation no-diff, both modules' lint and tests, and CRD sync.
+    cmds:
+      - task: generate
+      - task: manifests
+      - |
+        if [ -n "$(git status --porcelain -- {{.OPERATOR_DIR}}/config/crd {{.OPERATOR_DIR}}/config/rbac {{.OPERATOR_DIR}}/api/v1alpha1/zz_generated.deepcopy.go)" ]; then
+          echo "verify: generated manifests or deepcopy are out of date; run 'task manifests generate' and commit the result"
+          git status --porcelain -- {{.OPERATOR_DIR}}/config/crd {{.OPERATOR_DIR}}/config/rbac {{.OPERATOR_DIR}}/api/v1alpha1/zz_generated.deepcopy.go
+          exit 1
+        fi
+      - task: lint
+      - task: test
+      - task: crd-sync

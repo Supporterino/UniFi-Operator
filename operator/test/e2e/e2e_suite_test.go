@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -43,7 +45,38 @@ var (
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
 	projectImage = "example.com/operator:v0.0.1"
+
+	// projectImageRepository and projectImageTag are the two halves of
+	// projectImage. The Taskfile tags the built image as
+	// IMAGE_REPOSITORY:IMAGE_TAG, so passing the split halves keeps the built
+	// image byte-identical to projectImage for the Kind load below.
+	projectImageRepository, projectImageTag = splitImage(projectImage)
 )
+
+// taskCmd returns a `task` command that runs the named task from the workspace
+// root Taskfile. The Taskfile lives above the operator module, and Task resolves
+// the task's `dir` relative to the Taskfile location, so passing the root
+// Taskfile with -t makes every task run from the repository root regardless of
+// the test process working directory (which utils.Run changes to the operator
+// module directory).
+func taskCmd(taskName string, args ...string) *exec.Cmd {
+	projectDir, err := utils.GetProjectDir()
+	if err != nil {
+		projectDir = "."
+	}
+	taskfile := filepath.Join(projectDir, "..", "Taskfile.yml")
+	return exec.Command("task", append([]string{"-t", taskfile, taskName}, args...)...)
+}
+
+// splitImage splits an image reference at its last colon into the repository and
+// tag halves the Taskfile expects. Splitting on the last colon keeps a registry
+// port (host:port/repository) inside the repository.
+func splitImage(image string) (repository, tag string) {
+	if idx := strings.LastIndex(image, ":"); idx >= 0 {
+		return image[:idx], image[idx+1:]
+	}
+	return image, ""
+}
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
 // temporary environment to validate project changes with the purpose of being used in CI jobs.
@@ -57,7 +90,9 @@ func TestE2E(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	By("building the manager(Operator) image")
-	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
+	cmd := taskCmd("docker-build",
+		fmt.Sprintf("IMAGE_REPOSITORY=%s", projectImageRepository),
+		fmt.Sprintf("IMAGE_TAG=%s", projectImageTag))
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
 

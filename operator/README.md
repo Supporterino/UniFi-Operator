@@ -7,7 +7,7 @@
 ## Getting Started
 
 ### Prerequisites
-- go version v1.24.0+
+- go version v1.27.0+
 - docker version 17.03+.
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
@@ -16,7 +16,7 @@
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/operator:tag
+task docker-build docker-push IMAGE_REPOSITORY=<some-registry>/operator VERSION=tag
 ```
 
 **NOTE:** This image ought to be published in the personal registry you specified.
@@ -26,13 +26,13 @@ Make sure you have the proper permission to the registry if the above commands d
 **Install the CRDs into the cluster:**
 
 ```sh
-make install
+task install
 ```
 
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
-make deploy IMG=<some-registry>/operator:tag
+task deploy IMAGE_REPOSITORY=<some-registry>/operator VERSION=tag
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
@@ -57,13 +57,13 @@ kubectl delete -k config/samples/
 **Delete the APIs(CRDs) from the cluster:**
 
 ```sh
-make uninstall
+task uninstall
 ```
 
 **UnDeploy the controller from the cluster:**
 
 ```sh
-make undeploy
+task undeploy
 ```
 
 ## Project Distribution
@@ -75,10 +75,10 @@ Following the options to release and provide this solution to the users.
 1. Build the installer for the image built and published in the registry:
 
 ```sh
-make build-installer IMG=<some-registry>/operator:tag
+task build-installer IMAGE_REPOSITORY=<some-registry>/operator VERSION=tag
 ```
 
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
+**NOTE:** The task mentioned above generates an 'install.yaml'
 file in the dist directory. This file contains all the resources built
 with Kustomize, which are necessary to install this project without its
 dependencies.
@@ -113,7 +113,7 @@ is manually re-applied afterwards.
 ## Contributing
 // TODO(user): Add detailed information on how you would like others to contribute to this project
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+**NOTE:** Run `task help` for more information on all potential tasks
 
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 

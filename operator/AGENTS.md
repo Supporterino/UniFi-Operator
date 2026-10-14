@@ -20,22 +20,25 @@ operator/
     samples/            example CRs
     default/            kustomize root
   test/                 envtest helpers and e2e
-  Makefile              kubebuilder targets
 ```
+
+`kubebuilder create api` (and `kubebuilder init`) re-emit an `operator/Makefile`. It is **not**
+part of the build — the root `Taskfile.yml` is the sole entrypoint — so delete it again after
+scaffolding. Do not wire it back into anything.
 
 ## Commands
 
 | Task | Command |
 |------|---------|
-| Generate CRDs + RBAC + deepcopy | `make manifests generate` |
+| Generate CRDs + RBAC + deepcopy | `task manifests generate` |
 | Build | `go build ./...` |
 | Vet | `go vet ./...` |
 | Lint | `golangci-lint run` |
-| Unit + envtest | `make test` (or `go test ./...`) |
-| Run against a cluster | `make run` |
-| Install CRDs into the cluster | `make install` |
+| Unit + envtest | `task test` (or `go test ./...`) |
+| Run against a cluster | `task run` |
+| Install CRDs into the cluster | `task install` |
 
-`make test` bootstraps `envtest` via `setup-envtest`; the first run downloads the API server
+`task test` bootstraps `envtest` via `setup-envtest`; the first run downloads the API server
 and etcd binaries. If the download is blocked, set `KUBEBUILDER_ASSETS` to a pre-fetched
 `setup-envtest use -p path` directory.
 
@@ -51,7 +54,7 @@ and etcd binaries. If the download is blocked, set `KUBEBUILDER_ASSETS` to a pre
   unless cross-field validation genuinely requires a webhook.
 - **Never put a UniFi `_id` in `spec`.** Reference other CRs by `name`/`namespace` or a typed
   selector; put upstream IDs in `status` only. See `docs/crd-conventions.md`.
-- After any type change: `make manifests generate`, then verify no diff remains.
+- After any type change: `task manifests generate`, then verify no diff remains.
 
 ## Controller rules
 
@@ -65,7 +68,7 @@ and etcd binaries. If the download is blocked, set `KUBEBUILDER_ASSETS` to a pre
 - Return transient UniFi errors so controller-runtime backs off; do not swallow them.
 - Set owner references on child Kubernetes objects and use predicates to drop no-op events.
 - Add the RBAC markers (`+kubebuilder:rbac`) next to the k8s calls that need them and re-run
-  `make manifests`.
+  `task manifests`.
 
 ## UniFi client rules (`internal/unifi/`)
 
@@ -87,7 +90,7 @@ and etcd binaries. If the download is blocked, set `KUBEBUILDER_ASSETS` to a pre
 ## Gate
 
 ```
-go build ./... && go vet ./... && golangci-lint run && go test ./... && make manifests generate
+go build ./... && go vet ./... && golangci-lint run && go test ./... && task manifests generate
 ```
 
-`make manifests generate` must produce no diff.
+`task manifests generate` must produce no diff.

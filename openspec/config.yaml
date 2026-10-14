@@ -41,15 +41,15 @@ rules:
     - Group related requirements under logical requirement names
   tasks:
     - Break tasks into chunks of max 2 hours
-    - Order tasks by dependency (CRD type + `make manifests generate` before controller; operator before CLI)
-    - Include verification steps (go build/vet/lint/test, `make manifests generate` no diff, `zensical build --strict`)
+    - Order tasks by dependency (CRD type + `task manifests generate` before controller; operator before CLI)
+    - Include verification steps (`task verify` no diff, or the individual task targets for go build/vet/lint/test, plus `zensical build --strict`)
 
 # Per-operation guidance
 operations:
   apply:
     guidance:
       - Prefer modifying existing CRD kinds and controllers over creating new ones
-      - Re-run `make manifests generate` and confirm no diff after any API-type change
+      - Re-run `task manifests generate` and confirm no diff after any API-type change
       - Test CRDs against envtest and the UniFi client against an httptest server
   archive:
     guidance:

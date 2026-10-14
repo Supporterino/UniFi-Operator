@@ -39,10 +39,10 @@ Before declaring a task complete, run the affected module's gate and report the 
 
 | Module | Typecheck/Build | Lint | Tests | Codegen |
 |--------|-----------------|------|-------|---------|
-| `operator/` | `go build ./...` | `go vet ./...` and `golangci-lint run` | `go test ./...` (unit + envtest) | `make manifests generate` produces no diff |
+| `operator/` | `go build ./...` | `go vet ./...` and `golangci-lint run` | `go test ./...` (unit + envtest) | `task manifests generate` produces no diff |
 | `cli/` | `go build ./...` | `go vet ./...` and `golangci-lint run` | `go test ./...` | n/a |
 
-- A CRD/API change is not done until `make manifests` and `make generate` have been re-run and committed alongside the types.
+- A CRD/API change is not done until `task manifests` and `task generate` have been re-run and committed alongside the types.
 - Tests that need a Kubernetes API server use `envtest` (setup-envtest); tests that touch the UniFi controller use an `httptest.Server` fake — **never** a live controller or network call.
 - For a cross-module change, run each affected module's gate and work the root Cross-Module Change Checklist.
 - If a gate fails, fix the cause — do not report the task done on a failing gate.

@@ -33,7 +33,7 @@ spec:
       # TODO(user): Uncomment the following code to configure the nodeAffinity expression
       # according to the platforms which are supported by your solution.
       # It is considered best practice to support multiple architectures. You can
-      # build your manager image using the makefile target docker-buildx.
+      # build your manager image using the task docker-buildx.
       # affinity:
       #   nodeAffinity:
       #     requiredDuringSchedulingIgnoredDuringExecution:
@@ -63,7 +63,13 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
-        image: controller:latest
+        # Committed placeholder for the default overlay. A plain `kustomize build`
+        # or `kubectl apply -k` keeps this exact tag; it does not track releases.
+        # The release workflow and the `task deploy`/`task build-installer` tasks
+        # re-point it through `kustomize edit set image`, reading IMAGE_REPOSITORY
+        # and IMAGE_TAG (which defaults to VERSION=dev). The image for a given tag
+        # only exists once a release publishes it.
+        image: ghcr.io/supporterino/unifi-operator:0.1.0
         name: manager
         ports: []
         securityContext:

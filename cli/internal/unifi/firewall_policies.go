@@ -3,7 +3,6 @@ package unifi
 import (
 	"context"
 	"fmt"
-	"net/http"
 )
 
 // Firewall policy discriminators and constants used to interpret upstream bodies.
@@ -155,7 +154,7 @@ func (c *Client) GetFirewallPolicyOrdering(ctx context.Context, siteID, sourceZo
 		return FirewallPolicyOrdering{}, err
 	}
 	var ordering FirewallPolicyOrdering
-	if err := c.do(ctx, http.MethodGet, endpoint, &ordering); err != nil {
+	if err := c.getJSON(ctx, endpoint, &ordering); err != nil {
 		return FirewallPolicyOrdering{}, fmt.Errorf("get firewall policy ordering: %w", err)
 	}
 	return ordering, nil

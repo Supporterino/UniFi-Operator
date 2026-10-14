@@ -98,7 +98,7 @@ module `AGENTS.md`.
 ## kubebuilder-generated code
 
 - Never hand-edit `zz_generated.deepcopy.go` or files under `config/crd/`, `config/rbac/`;
-  change the source marker and re-run `make manifests generate`.
+  change the source marker and re-run `task manifests generate`.
 - Keep `+kubebuilder:*` markers immediately above the type/field/function they annotate.
 
 ## Testing
@@ -119,5 +119,5 @@ Run the affected module's gate before declaring work done:
 go build ./... && go vet ./... && golangci-lint run && go test ./...
 ```
 
-and, for the operator, `make manifests generate` must produce no diff. See the `go-developer`
+and, for the operator, `task manifests generate` must produce no diff. See the `go-developer`
 agent and the module `AGENTS.md` files for the exact commands.

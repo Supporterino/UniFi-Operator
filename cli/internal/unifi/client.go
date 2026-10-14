@@ -292,7 +292,7 @@ func (c *Client) GetInfo(ctx context.Context) (Info, error) {
 		return Info{}, err
 	}
 	var info Info
-	if err := c.do(ctx, http.MethodGet, endpoint, &info); err != nil {
+	if err := c.getJSON(ctx, endpoint, &info); err != nil {
 		return Info{}, fmt.Errorf("get info: %w", err)
 	}
 	return info, nil
@@ -335,7 +335,7 @@ func (c *Client) GetNetwork(ctx context.Context, siteID, networkID string) (Netw
 		return Network{}, err
 	}
 	var network Network
-	if err := c.do(ctx, http.MethodGet, endpoint, &network); err != nil {
+	if err := c.getJSON(ctx, endpoint, &network); err != nil {
 		return Network{}, fmt.Errorf("get network: %w", err)
 	}
 	return network, nil
@@ -381,7 +381,7 @@ func listAll[T any](ctx context.Context, c *Client, endpoint string) ([]T, error
 			return nil, err
 		}
 		var page listPage[T]
-		if err := c.do(ctx, http.MethodGet, pageURL, &page); err != nil {
+		if err := c.getJSON(ctx, pageURL, &page); err != nil {
 			return nil, err
 		}
 		all = append(all, page.Data...)
@@ -416,11 +416,13 @@ func withQueryParams(endpoint string, params map[string]string) (string, error) 
 	return u.String(), nil
 }
 
-// do performs an HTTP request and decodes a JSON response into out. A non-2xx response
-// is mapped to a typed *APIError built from the controller's flat error body. The API
-// key is set as a header and never logged.
-func (c *Client) do(ctx context.Context, method, endpoint string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
+// getJSON performs a GET request and decodes a JSON response into out. Every endpoint
+// this client consumes is a read, so the request method is intentionally fixed to
+// http.MethodGet rather than parameterized. A non-2xx response is mapped to a typed
+// *APIError built from the controller's flat error body. The API key is set as a header
+// and never logged.
+func (c *Client) getJSON(ctx context.Context, endpoint string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
@@ -431,7 +433,7 @@ func (c *Client) do(ctx context.Context, method, endpoint string, out any) error
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s %s: %w", method, endpoint, err)
+		return fmt.Errorf("%s %s: %w", http.MethodGet, endpoint, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

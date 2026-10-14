@@ -23,7 +23,7 @@ ServiceAccount) live in `operator/AGENTS.md`.
 ### Kubernetes RBAC
 
 - **Least privilege.** Grant only the verbs and resources the operator uses. Add
-  `+kubebuilder:rbac` markers next to the calls that need them and re-run `make manifests`;
+  `+kubebuilder:rbac` markers next to the calls that need them and re-run `task manifests`;
   do not hand-edit `config/rbac/`.
 - **Scope cluster-wide verbs deliberately.** `ClusterRole`/`ClusterRoleBinding` is a red flag;
   prefer namespaced `Role` where the resource is namespaced. Justify any cluster-scoped access

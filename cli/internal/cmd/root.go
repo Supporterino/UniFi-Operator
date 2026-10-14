@@ -1,7 +1,11 @@
 // Package cmd implements the unifi-operator-cli command tree.
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/Supporterino/UniFi-Operator/cli/internal/version"
+)
 
 // NewRootCommand builds the root cobra command tree.
 func NewRootCommand() *cobra.Command {
@@ -10,6 +14,7 @@ func NewRootCommand() *cobra.Command {
 		Short: "Snapshot a UniFi controller into Kubernetes Custom Resources",
 		Long: "unifi-operator-cli reads a live UniFi Network controller and emits\n" +
 			"adoptable Custom Resources that the UniFi-Operator reconciles.",
+		Version:      version.Version,
 		SilenceUsage: true,
 	}
 	root.AddCommand(newSnapshotCommand())

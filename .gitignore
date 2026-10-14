@@ -34,3 +34,6 @@ graphify-out/
 # Zensical
 site/
 .cache/
+
+# Task runner checksum cache
+.task/

@@ -30,7 +30,7 @@ SHALL be a status subresource carrying `conditions`, `observedGeneration`, and, 
 an upstream correlation field.
 
 #### Scenario: CRD is generated from markers
-- **WHEN** `make manifests generate` is run in `operator/`
+- **WHEN** `task manifests generate` is run in `operator/`
 - **THEN** the CRD manifests and deepcopy are regenerated and no diff remains
 
 #### Scenario: Status reports readiness

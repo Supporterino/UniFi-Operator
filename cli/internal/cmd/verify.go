@@ -204,13 +204,13 @@ func (r verifyReport) unexplained() int {
 // kind/name pairs only.
 func (r verifyReport) String() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("snapshot verify: %s\n", r.output))
-	b.WriteString(fmt.Sprintf("projected %d resource(s); %d projection warning(s)\n", r.projected, r.skipped))
-	b.WriteString(fmt.Sprintf("coverage: %d missing, %d unexpected\n", len(r.missing), len(r.stale)))
-	b.WriteString(fmt.Sprintf("fidelity: %d drift(s), %d expected gap(s)\n", len(r.drifts), len(r.expected)))
+	fmt.Fprintf(&b, "snapshot verify: %s\n", r.output)
+	fmt.Fprintf(&b, "projected %d resource(s); %d projection warning(s)\n", r.projected, r.skipped)
+	fmt.Fprintf(&b, "coverage: %d missing, %d unexpected\n", len(r.missing), len(r.stale))
+	fmt.Fprintf(&b, "fidelity: %d drift(s), %d expected gap(s)\n", len(r.drifts), len(r.expected))
 	writeLines := func(label string, lines []string) {
 		for _, line := range lines {
-			b.WriteString(fmt.Sprintf("  %s: %s\n", label, line))
+			fmt.Fprintf(&b, "  %s: %s\n", label, line)
 		}
 	}
 	writeLines("missing", r.missing)
@@ -220,7 +220,7 @@ func (r verifyReport) String() string {
 	if r.unexplained() == 0 {
 		b.WriteString("result: OK (no unexplained gaps)\n")
 	} else {
-		b.WriteString(fmt.Sprintf("result: FAIL (%d unexplained gap(s))\n", r.unexplained()))
+		fmt.Fprintf(&b, "result: FAIL (%d unexplained gap(s))\n", r.unexplained())
 	}
 	return b.String()
 }

@@ -2312,7 +2312,7 @@ func buildDnsPolicySpec(siteName string, policy unifi.DnsPolicy) (UnifiDnsPolicy
 		if policy.IPv4Address == "" {
 			return UnifiDnsPolicySpec{}, "A_RECORD is missing ipv4Address", false
 		}
-		ttl, reason, ok := dnsBound(policy.TTLSeconds, "ttlSeconds", dnsMinTTL, dnsMaxAddressTTL)
+		ttl, reason, ok := dnsBound(policy.TTLSeconds, "ttlSeconds", dnsMaxAddressTTL)
 		if !ok {
 			return UnifiDnsPolicySpec{}, reason, false
 		}
@@ -2321,7 +2321,7 @@ func buildDnsPolicySpec(siteName string, policy unifi.DnsPolicy) (UnifiDnsPolicy
 		if policy.IPv6Address == "" {
 			return UnifiDnsPolicySpec{}, "AAAA_RECORD is missing ipv6Address", false
 		}
-		ttl, reason, ok := dnsBound(policy.TTLSeconds, "ttlSeconds", dnsMinTTL, dnsMaxAddressTTL)
+		ttl, reason, ok := dnsBound(policy.TTLSeconds, "ttlSeconds", dnsMaxAddressTTL)
 		if !ok {
 			return UnifiDnsPolicySpec{}, reason, false
 		}
@@ -2330,7 +2330,7 @@ func buildDnsPolicySpec(siteName string, policy unifi.DnsPolicy) (UnifiDnsPolicy
 		if policy.TargetDomain == "" {
 			return UnifiDnsPolicySpec{}, "CNAME_RECORD is missing targetDomain", false
 		}
-		ttl, reason, ok := dnsBound(policy.TTLSeconds, "ttlSeconds", dnsMinTTL, dnsMaxCnameTTL)
+		ttl, reason, ok := dnsBound(policy.TTLSeconds, "ttlSeconds", dnsMaxCnameTTL)
 		if !ok {
 			return UnifiDnsPolicySpec{}, reason, false
 		}
@@ -2339,7 +2339,7 @@ func buildDnsPolicySpec(siteName string, policy unifi.DnsPolicy) (UnifiDnsPolicy
 		if policy.MailServerDomain == "" {
 			return UnifiDnsPolicySpec{}, "MX_RECORD is missing mailServerDomain", false
 		}
-		priority, reason, ok := dnsBound(policy.Priority, "priority", dnsMinTTL, dnsMaxPriority)
+		priority, reason, ok := dnsBound(policy.Priority, "priority", dnsMaxPriority)
 		if !ok {
 			return UnifiDnsPolicySpec{}, reason, false
 		}
@@ -2348,15 +2348,15 @@ func buildDnsPolicySpec(siteName string, policy unifi.DnsPolicy) (UnifiDnsPolicy
 		if policy.Protocol == "" || policy.ServerDomain == "" || policy.Service == "" {
 			return UnifiDnsPolicySpec{}, "SRV_RECORD is missing protocol, serverDomain, or service", false
 		}
-		port, reason, ok := dnsBound(policy.Port, "port", dnsMinTTL, dnsMaxPriority)
+		port, reason, ok := dnsBound(policy.Port, "port", dnsMaxPriority)
 		if !ok {
 			return UnifiDnsPolicySpec{}, reason, false
 		}
-		priority, reason, ok := dnsBound(policy.Priority, "priority", dnsMinTTL, dnsMaxPriority)
+		priority, reason, ok := dnsBound(policy.Priority, "priority", dnsMaxPriority)
 		if !ok {
 			return UnifiDnsPolicySpec{}, reason, false
 		}
-		weight, reason, ok := dnsBound(policy.Weight, "weight", dnsMinTTL, dnsMaxPriority)
+		weight, reason, ok := dnsBound(policy.Weight, "weight", dnsMaxPriority)
 		if !ok {
 			return UnifiDnsPolicySpec{}, reason, false
 		}
@@ -2458,13 +2458,14 @@ func dnsFieldSet(policy unifi.DnsPolicy, field string) bool {
 }
 
 // dnsBound validates a required bounded integer variant field. A nil pointer means the
-// field was absent from the response.
-func dnsBound(value *int32, field string, min, max int32) (int32, string, bool) {
+// field was absent from the response. Every bounded DNS-policy field shares the same lower
+// bound (dnsMinTTL), so only the upper bound varies and is the sole bound parameter.
+func dnsBound(value *int32, field string, max int32) (int32, string, bool) {
 	if value == nil {
 		return 0, field + " is missing", false
 	}
-	if *value < min || *value > max {
-		return 0, fmt.Sprintf("%s %d is outside the CRD range %d..%d", field, *value, min, max), false
+	if *value < dnsMinTTL || *value > max {
+		return 0, fmt.Sprintf("%s %d is outside the CRD range %d..%d", field, *value, dnsMinTTL, max), false
 	}
 	return *value, "", true
 }
@@ -2679,7 +2680,11 @@ func SwitchingMcLagDomains(siteName, namePrefix string, domains []unifi.McLagDom
 // mcLagDomainMembers flattens the members of an MC-LAG domain's local LAGs for the status
 // subresource. The device IDs are upstream identifiers recorded in status only.
 func mcLagDomainMembers(lags []unifi.McLagLocal) []SwitchingLagMember {
-	out := make([]SwitchingLagMember, 0)
+	total := 0
+	for _, lag := range lags {
+		total += len(lag.Members)
+	}
+	out := make([]SwitchingLagMember, 0, total)
 	for _, lag := range lags {
 		out = append(out, switchingLagMembers(lag.Members)...)
 	}
@@ -2967,10 +2972,7 @@ func buildWifiBroadcastSpec(networkNames map[string]string, siteName string, dev
 			"wifi broadcast %q: unknown type %q; skipping", broadcast.Name, broadcast.Type)}, false
 	}
 
-	selectors, deviceAnnotations, deviceWarnings, ok := wifiDeviceTags(broadcast.BroadcastingDeviceFilter, deviceTags)
-	if !ok {
-		return UnifiWifiBroadcastSpec{}, nil, deviceWarnings, false
-	}
+	selectors, deviceAnnotations, deviceWarnings := wifiDeviceTags(broadcast.BroadcastingDeviceFilter, deviceTags)
 	spec.DeviceTags = selectors
 	for key, value := range deviceAnnotations {
 		setAnnotation(&annotations, key, value)
@@ -3087,11 +3089,11 @@ func frequencyStrings(in []float64) ([]string, error) {
 // wifiDeviceTags maps the upstream broadcasting device filter to name-based selectors. A
 // DEVICE_TAGS filter is reverse-mapped to tag names via the read-only device-tag list; an
 // unresolved tag, or an unrepresentable DEVICES (raw device UUID) filter, is recorded in
-// an annotation and a warning. It returns ok=false only for an internal error; an
-// unresolved filter still yields a valid resource.
-func wifiDeviceTags(filter *unifi.WifiBroadcastingDeviceFilter, deviceTags []unifi.DeviceTag) ([]DeviceTagSelector, map[string]string, []string, bool) {
+// an annotation and a warning. An unresolved filter still yields a valid resource, so it
+// is never an error.
+func wifiDeviceTags(filter *unifi.WifiBroadcastingDeviceFilter, deviceTags []unifi.DeviceTag) ([]DeviceTagSelector, map[string]string, []string) {
 	if filter == nil {
-		return nil, nil, nil, true
+		return nil, nil, nil
 	}
 	switch filter.Type {
 	case "DEVICE_TAGS":
@@ -3106,18 +3108,18 @@ func wifiDeviceTags(filter *unifi.WifiBroadcastingDeviceFilter, deviceTags []uni
 			selectors = append(selectors, DeviceTagSelector{Name: name})
 		}
 		if unresolved == 0 {
-			return selectors, nil, nil, true
+			return selectors, nil, nil
 		}
 		annotations := map[string]string{AnnotationUnresolvedDeviceTag: "device scope is incomplete: some upstream device tags were not emitted as names; review spec.deviceTags"}
 		warnings := []string{fmt.Sprintf(
 			"%d device tag(s) in the device scope were not resolved to emitted names; spec.deviceTags may be incomplete", unresolved)}
-		return selectors, annotations, warnings, true
+		return selectors, annotations, warnings
 	case "DEVICES":
 		annotations := map[string]string{AnnotationUnresolvedDeviceTag: "device scope uses raw device IDs, which cannot be represented; spec.deviceTags was omitted and the broadcast applies to all AP-capable devices"}
 		warnings := []string{"device scope uses raw device IDs which cannot be represented; spec.deviceTags was omitted"}
-		return nil, annotations, warnings, true
+		return nil, annotations, warnings
 	default:
-		return nil, nil, nil, true
+		return nil, nil, nil
 	}
 }
 

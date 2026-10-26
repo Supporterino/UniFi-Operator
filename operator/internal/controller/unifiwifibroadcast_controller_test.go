@@ -144,6 +144,23 @@ func matchingNativeBroadcast(t *testing.T) unifi.WifiBroadcast {
 	}
 }
 
+// newEnterpriseWifiBroadcast returns a WPA2_ENTERPRISE UnifiWifiBroadcast
+// fixture referencing the RADIUS profile named testRadiusProfileRefName.
+func newEnterpriseWifiBroadcast() *unifiv1alpha1.UnifiWifiBroadcast {
+	broadcast := newWifiBroadcast()
+	broadcast.Spec.SecurityConfiguration = unifiv1alpha1.WifiSecurityConfiguration{
+		Type: testEnterpriseSecurity,
+		WPA2Enterprise: &unifiv1alpha1.WifiWPA2EnterpriseSecurityConfiguration{
+			CoaEnabled: true,
+			RadiusConfiguration: unifiv1alpha1.WifiEnterpriseRadiusConfiguration{
+				NasID:            unifiv1alpha1.WifiRadiusNasID{Type: testNasIDUserDefined, Value: testNasIDValue},
+				RadiusProfileRef: unifiv1alpha1.CoreRef{Name: testRadiusProfileRefName},
+			},
+		},
+	}
+	return broadcast
+}
+
 // passphraseSecret returns a Secret holding the test broadcast passphrase.
 func passphraseSecret() *corev1.Secret {
 	return &corev1.Secret{
@@ -664,20 +681,6 @@ func TestBroadcastMatchesRequestNativeAndBandSteering(t *testing.T) {
 func TestUnifiWifiBroadcastReconcileFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	enterprise := newWifiBroadcast()
-	enterprise.Spec.SecurityConfiguration = unifiv1alpha1.WifiSecurityConfiguration{
-		Type: testEnterpriseSecurity,
-		WPA2Enterprise: &unifiv1alpha1.WifiWPA2EnterpriseSecurityConfiguration{
-			CoaEnabled: true,
-			RadiusConfiguration: unifiv1alpha1.WifiEnterpriseRadiusConfiguration{
-				NasID:            unifiv1alpha1.WifiRadiusNasID{Type: testNasIDUserDefined, Value: testNasIDValue},
-				RadiusProfileRef: unifiv1alpha1.CoreRef{Name: testRadiusProfileRefName},
-			},
-		},
-	}
-
-	notProvisioned := newGatewayNetwork()
-
 	tests := []struct {
 		name        string
 		objects     func() []client.Object
@@ -692,7 +695,7 @@ func TestUnifiWifiBroadcastReconcileFailsClosed(t *testing.T) {
 		},
 		{
 			name:        "network not provisioned",
-			objects:     func() []client.Object { return []client.Object{newWifiBroadcast(), notProvisioned} },
+			objects:     func() []client.Object { return []client.Object{newWifiBroadcast(), newGatewayNetwork()} },
 			wantReason:  reasonDependencyNotReady,
 			wantRequeue: true,
 		},
@@ -743,7 +746,7 @@ func TestUnifiWifiBroadcastReconcileFailsClosed(t *testing.T) {
 		{
 			name: "enterprise security with a missing profile fails closed",
 			objects: func() []client.Object {
-				return []client.Object{enterprise, ownedNetwork(), ownedSite(), readyController(testAppVersion)}
+				return []client.Object{newEnterpriseWifiBroadcast(), ownedNetwork(), ownedSite(), readyController(testAppVersion)}
 			},
 			wantReason:  reasonRadiusProfileRefNotFound,
 			wantRequeue: true,
@@ -758,7 +761,7 @@ func TestUnifiWifiBroadcastReconcileFailsClosed(t *testing.T) {
 						Name:    testRadiusProfileUpstreamName,
 					},
 				}
-				return []client.Object{enterprise, ownedNetwork(), ownedSite(), readyController(testAppVersion), profile}
+				return []client.Object{newEnterpriseWifiBroadcast(), ownedNetwork(), ownedSite(), readyController(testAppVersion), profile}
 			},
 			wantReason:  reasonDependencyNotReady,
 			wantRequeue: true,
@@ -774,7 +777,7 @@ func TestUnifiWifiBroadcastReconcileFailsClosed(t *testing.T) {
 					},
 				}
 				profile.Status.RadiusProfileID = testRadiusProfileUUID
-				return []client.Object{enterprise, ownedNetwork(), ownedSite(), readyController(testAppVersion), profile}
+				return []client.Object{newEnterpriseWifiBroadcast(), ownedNetwork(), ownedSite(), readyController(testAppVersion), profile}
 			},
 			wantReason: reasonCrossSiteReference,
 		},

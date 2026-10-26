@@ -23,7 +23,10 @@ resources:
 #- ../webhook
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER'. 'WEBHOOK' components are required.
 #- ../certmanager
-# [PROMETHEUS] To enable prometheus monitor, uncomment all sections with 'PROMETHEUS'.
+# [PROMETHEUS] Scraping is opt-in and applied separately, so that a default
+# install never requires the Prometheus Operator's CRDs. Keep this commented;
+# enable scraping with `kubectl apply -k operator/config/prometheus`
+# (see the Observability section of docs/deployment.md).
 #- ../prometheus
 # [METRICS] Expose the controller manager metrics service.
 - metrics_service.yaml

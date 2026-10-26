@@ -1,0 +1,8 @@
+# INSECURE: replaces the ServiceMonitor's TLS settings with an unconditional
+# trust of whatever certificate the metrics endpoint presents. See
+# kustomization.yaml in this directory — this overlay exists for the
+# controller-runtime self-signed certificate case only.
+- op: replace
+  path: /spec/endpoints/0/tlsConfig
+  value:
+    insecureSkipVerify: true

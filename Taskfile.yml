@@ -287,7 +287,7 @@ tasks:
     cmds:
       - go run sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}} build config/default | kubectl delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -
 
-  # --- CRD synchronization --------------------------------------------------
+  # --- CRD and RBAC synchronization -----------------------------------------
 
   crd-sync:
     desc: Fail if the generated CRDs and the Helm-bundled CRDs are not byte-identical.
@@ -319,6 +319,18 @@ tasks:
         fi
         exit "$status"
 
+  rbac-sync:
+    desc: Fail if the generated manager role and the Helm chart role grant different rules.
+    dir: '{{.OPERATOR_DIR}}'
+    cmds:
+      - |
+        set -e
+        if ! go test ./test/utils/ -list 'RBAC' | grep -q '^TestRBAC'; then
+          echo "rbac-sync: no TestRBAC* parity test in ./test/utils/; the role comparison is gone" >&2
+          exit 1
+        fi
+        go test ./test/utils/ -count=1 -run '^TestRBAC'
+
   # --- Documentation and chart ----------------------------------------------
 
   docs:
@@ -341,7 +353,7 @@ tasks:
   # --- Aggregate gate -------------------------------------------------------
 
   verify:
-    desc: Run the local gate — generation no-diff, both modules' lint and tests, and CRD sync.
+    desc: Run the local gate — generation no-diff, both modules' lint and tests, and CRD and RBAC sync.
     cmds:
       - task: generate
       - task: manifests
@@ -354,3 +366,4 @@ tasks:
       - task: lint
       - task: test
       - task: crd-sync
+      - task: rbac-sync

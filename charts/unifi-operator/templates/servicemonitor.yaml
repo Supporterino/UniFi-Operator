@@ -1,0 +1,67 @@
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+# Prometheus Operator scrape configuration for the manager's metrics endpoint.
+#
+# Opt-in on purpose: the monitoring.coreos.com CRDs do not ship with this chart,
+# so a default `helm install` renders nothing here and succeeds on a cluster
+# without the Prometheus Operator. Enable it with
+# `--set metrics.serviceMonitor.enabled=true`. It is also inert when
+# metrics.enabled is false, because then no metrics Service exists to select.
+#
+# No explicit namespace is set: like the metrics Service, this object is created
+# in the release namespace, which is the namespace a ServiceMonitor must share
+# with the Service it selects.
+#
+# Parity contract with the kustomize scrape path (operator/config/prometheus,
+# and the operator/config/prometheus-insecure overlay), recorded as part of the
+# add-operator-observability change and documented in docs/deployment.md:
+#   path /metrics, port name "https", scheme https, and the scraping Pod's
+#   projected service-account token as the bearer token.
+# Both paths set exactly these; keep the endpoints block below in sync with
+# operator/config/prometheus/monitor.yaml when either side changes. Both paths
+# can also verify the endpoint with a certificate they mount instead of the
+# controller-runtime self-signed default: metrics.certSecretName here and the
+# [METRICS-WITH-CERTS] patch there mount the same Secret read-only at
+# /tmp/k8s-metrics-server/metrics-certs and pass --metrics-cert-path for that
+# directory. The only intended difference is the TLS bypass, which is a
+# separately named opt-in on both sides (metrics.serviceMonitor.insecureSkipVerify
+# here, the prometheus-insecure overlay there).
+#
+# The endpoint is authn/authz-protected: the token below belongs to the
+# Prometheus service account, which must be bound to this release's
+# metrics-reader ClusterRole. The chart does not create that binding — the
+# Prometheus service account usually lives in another namespace, so binding it
+# is a cluster-admin decision. See docs/deployment.md.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "unifi-operator.fullname" . }}-controller-manager-metrics-monitor
+  labels:
+    {{- include "unifi-operator.labels" . | nindent 4 }}
+    control-plane: controller-manager
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  endpoints:
+    - path: /metrics
+      port: https
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      {{- with .Values.metrics.serviceMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- if .Values.metrics.serviceMonitor.insecureSkipVerify }}
+      # INSECURE: verification disabled; see values.yaml.
+      tlsConfig:
+        insecureSkipVerify: true
+      {{- else if .Values.metrics.serviceMonitor.tlsConfig }}
+      tlsConfig:
+        {{- toYaml .Values.metrics.serviceMonitor.tlsConfig | nindent 8 }}
+      {{- end }}
+  selector:
+    # Exactly the labels templates/metrics_service.yaml puts on the metrics
+    # Service, so this selects the Service this release installs.
+    matchLabels:
+      {{- include "unifi-operator.selectorLabels" . | nindent 6 }}
+      control-plane: controller-manager
+{{- end }}

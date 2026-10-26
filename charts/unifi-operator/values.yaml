@@ -63,6 +63,68 @@ metrics:
   enabled: true
   # -- Port the metrics Service and manager endpoint listen on.
   port: 8443
+  # -- Name of a Secret holding the metrics server certificate under the keys
+  # "ca.crt", "tls.crt", and "tls.key". When set together with
+  # metrics.enabled, the manager mounts it read-only at
+  # /tmp/k8s-metrics-server/metrics-certs and receives --metrics-cert-path for
+  # that directory, so it serves this certificate instead of the
+  # controller-runtime self-signed default. Mirrors the [METRICS-WITH-CERTS]
+  # patch in operator/config/default/kustomization.yaml field for field.
+  #
+  # Empty disables the mount. The mount itself is not optional: once this is
+  # set, a missing Secret leaves the manager Pod in ContainerCreating with a
+  # FailedMount warning event and the Deployment never becomes available, so
+  # create the Secret first.
+  certSecretName: ""
+
+  # Prometheus Operator scrape configuration, opt-in and disabled by default:
+  # the monitoring.coreos.com CRDs are not installed by this chart, so a default
+  # `helm install` must not require them. When enabled, the rendered
+  # ServiceMonitor matches the canonical kustomize scrape path
+  # (operator/config/prometheus): path /metrics, port name "https", scheme
+  # https, and the scraping Pod's projected service-account token as the bearer
+  # token. docs/deployment.md documents the metrics-reader ClusterRoleBinding
+  # the Prometheus service account needs; this chart does not create it.
+  serviceMonitor:
+    # -- Render a monitoring.coreos.com/v1 ServiceMonitor selecting this
+    # release's metrics Service. Requires the Prometheus Operator CRDs to exist
+    # already. Ignored when metrics.enabled is false: there would be no metrics
+    # Service to select.
+    enabled: false
+    # -- Scrape interval for the metrics endpoint, for example "30s". Empty by
+    # default, so the key is omitted and the Prometheus server's configured
+    # scrape interval applies — the same as the kustomize scrape path, which
+    # sets no interval either.
+    interval: ""
+    # -- Extra labels on the ServiceMonitor object, for example to match a
+    # Prometheus serviceMonitorSelector such as `release: kube-prometheus-stack`.
+    labels: {}
+    # -- TLS settings rendered verbatim as spec.endpoints[0].tlsConfig, used
+    # only when insecureSkipVerify is false. Certificate verification is on, so
+    # the CA referenced here must be one the scraping Prometheus can trust.
+    #
+    # The manager serves a controller-runtime self-signed certificate unless it
+    # runs with --metrics-cert-path, which metrics.certSecretName supplies. The
+    # Secret referenced here therefore does not exist unless you create it:
+    # create "metrics-server-cert" from a certificate you issued (the
+    # repository ships no Certificate) holding ca.crt, tls.crt, and tls.key,
+    # then set metrics.certSecretName so the manager serves it. While it is
+    # missing — or while the manager still serves its self-signed default —
+    # Prometheus reports a failed scrape instead of trusting the endpoint.
+    tlsConfig:
+      ca:
+        secret:
+          name: metrics-server-cert
+          key: ca.crt
+    # -- INSECURE: scrape the metrics endpoint without verifying its
+    # certificate. Anything able to answer on the metrics Service address can
+    # then impersonate the endpoint and feed fabricated metrics, and neither the
+    # operator nor Prometheus can tell. Use it only when the manager serves its
+    # controller-runtime self-signed certificate and you cannot supply a CA, and
+    # never in production. When true it replaces tlsConfig with
+    # `insecureSkipVerify: true`, mirroring the kustomize overlay
+    # operator/config/prometheus-insecure.
+    insecureSkipVerify: false
 
 # -- Annotations added to the manager Pod.
 podAnnotations: {}

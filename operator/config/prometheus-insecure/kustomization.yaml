@@ -1,0 +1,32 @@
+# INSECURE OVERLAY — READ BEFORE APPLYING.
+#
+# This overlay makes Prometheus scrape the operator's metrics endpoint WITHOUT
+# verifying its certificate. Anything able to answer on the metrics Service
+# address can then impersonate the endpoint and feed fabricated metrics, and
+# neither the operator nor Prometheus can tell. docs/security.md requires a
+# skip-verification option to be explicit and documented as insecure; this
+# directory is that option.
+#
+# Use it only when the manager serves its controller-runtime self-signed
+# certificate (no --metrics-cert-path) and you cannot supply a CA, and never in
+# production.
+#
+#   kubectl apply -k operator/config/prometheus-insecure
+#
+# Prefer the verifying composition instead:
+#
+#   kubectl apply -k operator/config/prometheus
+#
+# This overlay is a sibling of ../prometheus rather than a directory inside it:
+# kustomize's default load restrictor rejects a nested kustomization that
+# inherits its parent directory ("cycle detected").
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../prometheus
+
+patches:
+- path: insecure_tls_patch.yaml
+  target:
+    kind: ServiceMonitor

@@ -15,12 +15,31 @@ spec:
       scheme: https
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
       tlsConfig:
-        # TODO(user): The option insecureSkipVerify: true is not recommended for production since it disables
-        # certificate verification, exposing the system to potential man-in-the-middle attacks.
-        # For production environments, it is recommended to use cert-manager for automatic TLS certificate management.
-        # To apply this configuration, enable cert-manager and use the patch located at config/prometheus/servicemonitor_tls_patch.yaml,
-        # which securely references the certificate from the 'metrics-server-cert' secret.
-        insecureSkipVerify: true
+        # Certificate verification is on: nothing in this file disables it, so
+        # Prometheus validates the metrics endpoint against the CA below.
+        #
+        # The CA must exist for the scrape to work. Nothing in this tree issues
+        # it: create this Secret yourself, or write a cert-manager Certificate
+        # whose secretName is "metrics-server-cert" and which carries "ca.crt".
+        # The manager serves that certificate only when it runs with
+        # --metrics-cert-path, which the [METRICS-WITH-CERTS] patch in
+        # config/default/kustomization.yaml adds alongside a non-optional mount
+        # of this Secret -- enabling the mount before the Secret exists keeps
+        # the manager Pod from starting. That patch cannot set tlsConfig here,
+        # because config/default does not include this ServiceMonitor: set
+        # spec.endpoints[0].tlsConfig.serverName by hand to
+        # <service>.<namespace>.svc.
+        #
+        # Without --metrics-cert-path the manager serves a controller-runtime
+        # self-signed certificate valid only for "localhost", which no scraper
+        # can trust; this ServiceMonitor will then fail to scrape. That case is
+        # covered by the separately named overlay
+        # operator/config/prometheus-insecure, which disables verification and
+        # is documented as insecure.
+        ca:
+          secret:
+            name: metrics-server-cert
+            key: ca.crt
   selector:
     matchLabels:
       control-plane: controller-manager

@@ -1,10 +1,43 @@
 resources:
 - monitor.yaml
 
-# [PROMETHEUS-WITH-CERTS] The following patch configures the ServiceMonitor in ../prometheus
-# to securely reference certificates created and managed by cert-manager.
-# Additionally, ensure that you uncomment the [METRICS WITH CERTMANAGER] patch under config/default/kustomization.yaml
-# to mount the "metrics-server-cert" secret in the Manager Deployment.
+# The ServiceMonitor is applied separately from config/default so that a plain
+# `kubectl apply -k operator/config/default` never needs the Prometheus
+# Operator's CRDs. Enable scraping with:
+#
+#   kubectl apply -k operator/config/prometheus
+#
+# Must match the namespace the operator is installed in (config/default uses
+# operator-system). Prometheus selects metrics Services in the ServiceMonitor's
+# own namespace.
+namespace: operator-system
+
+# TLS verification is on by default: monitor.yaml requires a CA that verifies
+# the metrics endpoint in the "metrics-server-cert" Secret (key "ca.crt").
+# Nothing in this tree issues that Secret, so create it before enabling
+# anything that consumes it: either a cert-manager Issuer + Certificate whose
+# secretName is "metrics-server-cert" and which carries "ca.crt", "tls.crt",
+# and "tls.key", or the Secret itself from a certificate you issued.
+#
+# Then:
+#   1. Enable [METRICS-WITH-CERTS] in config/default/kustomization.yaml so the
+#      manager mounts that Secret and runs with --metrics-cert-path. Its volume
+#      is optional: false, so enable it only after the Secret exists: before
+#      that the manager Pod stays in ContainerCreating with a FailedMount
+#      warning event and the Deployment never becomes available.
+#   2. Set spec.endpoints[0].tlsConfig.serverName on the applied ServiceMonitor
+#      by hand to <service>.<namespace>.svc
+#      (operator-controller-manager-metrics-service.operator-system.svc for the
+#      default install). Leave the [PROMETHEUS-WITH-CERTS] patch below
+#      commented: it writes the literal SERVICE_NAME.SERVICE_NAMESPACE.svc, and
+#      the replacements that substitute it live in config/default, which never
+#      includes this ServiceMonitor.
+#
+# If you cannot supply a CA — the manager is serving its controller-runtime
+# self-signed certificate — use the sibling overlay
+# operator/config/prometheus-insecure instead. Its name is a warning: it
+# disables certificate verification and is documented as insecure.
+# [PROMETHEUS-WITH-CERTS]
 #patches:
 #  - path: monitor_tls_patch.yaml
 #    target:

@@ -40,6 +40,9 @@ spec:
         {{- if .Values.leaderElection.enabled }}
         - --leader-elect
         {{- end }}
+        {{- if and .Values.metrics.enabled .Values.metrics.certSecretName }}
+        - --metrics-cert-path=/tmp/k8s-metrics-server/metrics-certs
+        {{- end }}
         - --health-probe-bind-address=:8081
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -60,6 +63,12 @@ spec:
           periodSeconds: 10
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
+        {{- if and .Values.metrics.enabled .Values.metrics.certSecretName }}
+        volumeMounts:
+        - mountPath: /tmp/k8s-metrics-server/metrics-certs
+          name: metrics-certs
+          readOnly: true
+        {{- end }}
       serviceAccountName: {{ include "unifi-operator.serviceAccountName" . }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- with .Values.nodeSelector }}
@@ -73,4 +82,18 @@ spec:
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.metrics.enabled .Values.metrics.certSecretName }}
+      volumes:
+      - name: metrics-certs
+        secret:
+          secretName: {{ .Values.metrics.certSecretName }}
+          optional: false
+          items:
+          - key: ca.crt
+            path: ca.crt
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
       {{- end }}

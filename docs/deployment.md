@@ -119,9 +119,267 @@ the first `helm install` only (pass `--skip-crds` to skip). Document every value
 
 ## Observability
 
-- Ship metrics on the standard controller-runtime endpoint and scrape with a `ServiceMonitor`
-  where available.
-- Emit Kubernetes events for significant reconcile outcomes so `kubectl describe` is useful.
+The operator reports on itself, not on the console: four Prometheus metrics and one Kubernetes
+Event per `Ready` condition change. Both are built in — the deployed manager always serves the
+metrics endpoint, and emitting Events needs nothing beyond the manager's RBAC. **Scraping is opt-in
+on both deployment paths** — a default install creates no `ServiceMonitor` and needs no
+`monitoring.coreos.com` CRDs.
+
+No dashboards, alerting-rule bundles, or tracing ship with the operator: it exports, the user
+monitors.
+
+### Metrics
+
+| Metric | Type | Labels |
+|--------|------|--------|
+| `unifi_operator_reconcile_total` | counter | `kind`, `result`, `reason` |
+| `unifi_operator_upstream_requests_total` | counter | `operation`, `outcome` |
+| `unifi_operator_upstream_request_duration_seconds` | histogram | `operation` |
+| `unifi_operator_build_info` | gauge, always `1` | `version` |
+
+- `kind` — the Custom Resource kind: `UnifiController`, `UnifiSite`, `UnifiNetwork`,
+  `UnifiFirewallPolicy`, and the rest.
+- `result` — `ready` when the reconcile wrote `Ready=True`, `not_ready` when it wrote
+  `Ready=False`.
+- `reason` — the `Ready` condition reason, exactly the value the reconcile wrote to
+  `status.conditions[?(@.type=="Ready")].reason`: a success reason such as `Reconciled` or
+  `SiteAdopted`, or a failure reason such as `SecretNotFound`, `AuthenticationFailed`,
+  `CertificateError`, `InvalidSpec`, `ZoneBasedFirewallNotConfigured`, `MembershipConflict`, or
+  `ZoneNameConflict`. Because the label is the status value, a series is attributable to a
+  condition without reading the object.
+- `operation` — the bounded API surface of the request, derived from the endpoint's shape:
+  `networks`, `firewall.policies`, `acl-rules.ordering`, `vpn.site-to-site-tunnels`, and the rest of
+  the documented surface. Site and object identifiers are stripped, so every site shares one
+  series; a request outside that surface counts as `unknown`.
+- `outcome` — `success` or `error`.
+- `version` — the version stamped into the build at link time.
+
+`unifi_operator_reconcile_total` counts terminal outcomes: one increment per reconcile that reaches
+its terminal status path, whether or not that path needed to write status. A conflict sweep is the
+one exception: it re-runs the status path for every object it refreshes, so one reconcile of one
+claimant records one outcome per refreshed object — the peers' failures are deliberately queryable.
+A reconcile that returns a transient upstream error never reaches that path and is not counted, and
+neither is a failed status write. A failing object is counted again each time it is reconciled — the
+dependency and credential-resolution paths requeue after 30 seconds, and a terminal rejection such
+as `AuthenticationFailed` re-counts only when the object is reconciled again — a spec edit, or a
+change to a dependency this controller watches — not on a timer and not on every scrape. Read a rate
+over this counter as failure activity, and `status.conditions` as the current state.
+
+Every label value is drawn from a closed set. No metric carries a Custom Resource name, a
+namespace, an upstream UUID, a URL, a condition message, or credential material — see
+[Security](security.md).
+
+### Events
+
+Each reconciler records an Event against the object it reconciles:
+
+| Condition change | Type | Event reason | Event message |
+|------------------|------|--------------|---------------|
+| `Ready` becomes `False` | `Warning` | the condition reason, e.g. `SecretNotFound` | the condition message |
+| `Ready` becomes `True` | `Normal` | the condition reason, e.g. `Reconciled` | the condition message |
+| nothing written differs from the stored condition | — | — | no Event |
+
+Emission is gated on the `Ready` condition actually changing, so a repeated identical failure or an
+ordinary resync records nothing and there is no Event per retry. A failure that changes reason while
+staying `False` (`SecretNotFound` → `SecretKeyMissing`, say) is a change and records one more
+`Warning`. The message is the clamped condition message already written to status, and never
+contains credential material.
+
+Read them with `kubectl describe <kind> <name>`, or directly:
+
+```bash
+kubectl get events --field-selector involvedObject.kind=UnifiNetwork,involvedObject.name=default
+```
+
+Emission needs `create` and `patch` on core `events`. The manager ClusterRole grants it in both
+paths — generated into `operator/config/rbac/role.yaml` from the kubebuilder marker, mirrored by
+hand in `charts/unifi-operator/templates/role.yaml`, with `task rbac-sync` failing if the two
+diverge. Apply the RBAC before or with the manager image: a ServiceAccount without it gets a 403
+for every emission, which costs Events only — reconciliation is unaffected.
+
+### Scrape configuration: kustomize
+
+`operator/config/prometheus` is a separate resource set, so a plain
+`kubectl apply -k operator/config/default` never requires the Prometheus Operator's CRDs. Enable
+scraping with one command:
+
+```bash
+# Verifying (default): Prometheus checks the endpoint against the CA in
+# Secret metrics-server-cert, key ca.crt.
+kubectl apply -k operator/config/prometheus
+
+# INSECURE: only for the controller-runtime self-signed certificate.
+kubectl apply -k operator/config/prometheus-insecure
+```
+
+The base `ServiceMonitor` (`operator/config/prometheus/monitor.yaml`) selects the metrics Service on
+port name `https` at path `/metrics` with `scheme: https`, authenticates with the scraping Pod's
+projected service-account token (`bearerTokenFile`), and sets no TLS bypass. The overlay's
+`namespace: operator-system` must match the namespace the operator is installed in, because
+Prometheus selects metrics Services in the `ServiceMonitor`'s own namespace by default.
+
+`operator/config/prometheus-insecure` is a sibling of that directory rather than a subdirectory:
+kustomize's load restrictor forbids a nested kustomization from including a parent directory. It is
+the only scrape configuration in the repository that sets `insecureSkipVerify: true`.
+
+### Scrape configuration: Helm
+
+The chart renders no `ServiceMonitor` by default. Opt in after the Prometheus Operator is present:
+
+```bash
+helm upgrade --install unifi-operator oci://ghcr.io/supporterino/charts/unifi-operator \
+  --namespace unifi-operator --create-namespace \
+  --set metrics.serviceMonitor.enabled=true
+```
+
+| Value | Default | Meaning |
+|-------|---------|---------|
+| `metrics.certSecretName` | `""` | Secret holding `ca.crt`, `tls.crt`, and `tls.key`; when set, the manager mounts it and serves it via `--metrics-cert-path`. Empty disables the mount; a missing Secret blocks Pod start |
+| `metrics.serviceMonitor.enabled` | `false` | Render the `monitoring.coreos.com/v1` `ServiceMonitor` |
+| `metrics.serviceMonitor.interval` | `""` | Scrape interval; empty omits the key, leaving the Prometheus server's own interval in force |
+| `metrics.serviceMonitor.labels` | `{}` | Extra labels on the `ServiceMonitor`, e.g. to match a `serviceMonitorSelector` such as `release: kube-prometheus-stack` |
+| `metrics.serviceMonitor.tlsConfig` | CA Secret `metrics-server-cert`, key `ca.crt` | Rendered verbatim as `spec.endpoints[0].tlsConfig`; used unless the bypass is set |
+| `metrics.serviceMonitor.insecureSkipVerify` | `false` | **INSECURE**: replaces `tlsConfig` with `insecureSkipVerify: true` |
+
+The block is inert when `metrics.enabled` is `false`, because then no metrics Service exists to
+select.
+
+**Bring your own certificate.** The Helm equivalent of the kustomize `[METRICS-WITH-CERTS]` route
+(the same Secret, the same mount path, the same manager argument):
+
+1. Create the `metrics-server-cert` Secret holding `ca.crt`, `tls.crt`, and `tls.key` from a
+   certificate you issued — a cert-manager `Issuer` and `Certificate` with that `secretName`, or a
+   Secret you create yourself. The repository ships no `Certificate`, so nothing issues it for you.
+2. Set `--set metrics.certSecretName=metrics-server-cert`. The chart mounts the Secret read-only at
+   `/tmp/k8s-metrics-server/metrics-certs` and passes
+   `--metrics-cert-path=/tmp/k8s-metrics-server/metrics-certs`. The volume is `optional: false`, so
+   set the value only after the Secret exists: before that the manager Pod stays in
+   `ContainerCreating` with a `FailedMount` warning event and the Deployment never becomes
+   available.
+3. A rotated `tls.crt`/`tls.key` is picked up automatically — the manager runs a certificate
+   watcher that re-reads the pair about every ten seconds, so the endpoint serves the new
+   certificate shortly after the Secret changes. Restart the manager only if the rotation is not
+   observed after that:
+   `kubectl rollout restart deployment/unifi-operator-controller-manager -n unifi-operator`.
+   Setting `metrics.certSecretName` itself already changes the Pod template, so the `helm upgrade`
+   in step 2 rolls the Pod once.
+4. Set `metrics.serviceMonitor.tlsConfig.serverName` to `<service>.<namespace>.svc` —
+   `unifi-operator-controller-manager-metrics-service.unifi-operator.svc` for a release named
+   `unifi-operator` — so the name Prometheus verifies is one the certificate covers. Prometheus
+   discovers the target from `Endpoints`, so it connects to the Pod IP; without `serverName` it
+   verifies the certificate against that address, not the service DNS name the certificate is
+   usually issued for. The chart renders `tlsConfig` verbatim, so nothing substitutes it for you.
+
+The rendered object matches the kustomize one field for field — path `/metrics`, port name
+`https`, `scheme: https`, projected-token bearer authentication. Both paths can verify the endpoint
+with a certificate they mount, so the only intended difference between the two paths remains the
+TLS bypass, which is a separately named opt-in on each and documented as insecure.
+
+### Bind the scraping service account
+
+The endpoint is served over HTTPS with authentication and authorization (`--metrics-secure`, the
+default), so a bearer token alone is not enough: the service account that owns the token must be
+bound to the shipped `metrics-reader` ClusterRole. That role is `operator-metrics-reader` in the
+kustomize output and `<fullname>-metrics-reader` from the chart — `unifi-operator-metrics-reader`
+for a release named `unifi-operator`.
+
+Neither path creates the binding. The Prometheus service account usually lives in another
+namespace, and choosing its name and namespace is a cluster-admin decision:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-unifi-operator-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: operator-metrics-reader  # <fullname>-metrics-reader on the Helm path
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-k8s
+    namespace: monitoring
+```
+
+Without the binding the scrape fails with `403 Forbidden` and Prometheus reports the target as
+down, while the operator itself is healthy.
+
+### TLS
+
+The manager serves a controller-runtime self-signed certificate unless it is started with
+`--metrics-cert-path`. The CA Secret the default scrape configuration references
+(`metrics-server-cert`, key `ca.crt`) therefore does not exist until you create it — the repository
+ships no `Certificate`, so nothing issues it for you.
+
+**Bring your own certificate.** Create a cert-manager `Issuer` and a `Certificate` with
+`secretName: metrics-server-cert` holding `ca.crt`, `tls.crt`, and `tls.key`, or create that Secret
+yourself from a certificate you issued. Then make the manager serve it and the scrape verify it:
+
+- Enable the `[METRICS-WITH-CERTS]` patch in `operator/config/default/kustomization.yaml`. It
+  mounts the Secret and adds `--metrics-cert-path` to the manager's arguments. The volume is
+  `optional: false`, so enable it only after the Secret exists: before that the manager Pod stays in
+  `ContainerCreating` with a `FailedMount` warning event and the Deployment never becomes available.
+  On the Helm path, set `metrics.certSecretName=metrics-server-cert` instead; see
+  [Scrape configuration: Helm](#scrape-configuration-helm).
+- Set `spec.endpoints[0].tlsConfig.serverName` on the `ServiceMonitor` to
+  `<service>.<namespace>.svc` — `operator-controller-manager-metrics-service.operator-system.svc`
+  for the kustomize install — so the name Prometheus verifies is one the served certificate
+  covers. Doing this by hand is required: the `[PROMETHEUS-WITH-CERTS]` patch in
+  `operator/config/prometheus/kustomization.yaml` writes the literal
+  `SERVICE_NAME.SERVICE_NAMESPACE.svc`, and the replacements that substitute it live in
+  `config/default`, which does not include the `ServiceMonitor`.
+
+The bundled self-signed default cannot be verified this way — it is valid for `localhost` alone and
+is regenerated on every process start, so there is no stable CA to publish in a Secret — and
+remains scrapeable only through the insecure overlay.
+
+While the Secret is missing the scrape fails instead of trusting the endpoint, which is the
+intended default (see [Security](security.md)). Only when no CA can be supplied use a bypass, and
+know what it costs: with verification disabled, anything able to answer on the metrics Service
+address can impersonate the endpoint and feed fabricated metrics, and neither the operator nor
+Prometheus can tell. Both bypasses are named for what they do — the
+`operator/config/prometheus-insecure` overlay and `metrics.serviceMonitor.insecureSkipVerify` — and
+neither is set by a default manifest or a default chart value.
+
+### Alerting example
+
+`reason` exists so an alert can name the failure. This rule fires when a terminal authentication
+failure is recorded:
+
+```yaml
+- alert: UnifiOperatorAuthenticationFailing
+  expr: |
+    sum by (kind) (
+      increase(unifi_operator_reconcile_total{result="not_ready",reason="AuthenticationFailed"}[15m])
+    ) > 0
+  labels:
+    severity: warning
+  annotations:
+    summary: "{{ $labels.kind }} failed to authenticate to its UniFi controller"
+    description: "A terminal AuthenticationFailed reconcile was recorded in the last 15m; check the Secret named in spec.secretRef."
+```
+
+It reports failure activity, not a failure that is still open: `status.conditions` is the state. A
+terminal rejection does not requeue on its own, so the counter stays flat until the object is
+reconciled again — a spec edit, a watch event — while the `Ready=False` condition keeps answering
+"failing right now". A reason that keeps retrying — `SecretNotFound`, `DependencyNotReady` — re-counts
+every 30 seconds and keeps the alert firing until it clears.
+
+Swap `reason` for any other code to alert on a different failure — `ZoneBasedFirewallNotConfigured`
+during a Zone-Based Firewall migration, or `MembershipConflict` after a hand edit. When the console
+answers but errors, the client-side series is the earlier signal:
+
+```promql
+sum by (operation) (rate(unifi_operator_upstream_requests_total{outcome="error"}[5m])) > 0
+```
+
+`unifi_operator_build_info` attributes a firing series to a release:
+
+```promql
+unifi_operator_build_info
+```
+
+These expressions are the input to whatever monitoring stack the cluster already runs.
 
 ## Gate
 
@@ -140,7 +398,7 @@ Helm chart. These are **local manifest checks**, not part of CI — CI runs neit
 CI (`.github/workflows/ci.yml`) gates two things instead:
 
 ```
-task verify        # generation no-diff, both modules' lint and tests, CRD sync
+task verify        # generation no-diff, both modules' lint and tests, CRD and RBAC sync
 zensical build --strict   # docs build; broken links fail
 ```
 

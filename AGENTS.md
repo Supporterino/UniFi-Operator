@@ -25,8 +25,8 @@ Read the referenced document before touching the relevant surface. Reference mat
 | Go language bar | `docs/go.md` |
 | Security bar (credentials, RBAC, secret hygiene) | `docs/security.md` |
 | Testing workflow (envtest, fake controller) | `docs/testing.md` |
-| Cross-module debugging & observability | `docs/debugging.md` |
-| Deployment (kustomize + Helm, OLM) | `docs/deployment.md` |
+| Cross-module debugging & failure triage | `docs/debugging.md` |
+| Deployment (kustomize + Helm) and the observability contract (metrics, Events, scrape auth) | `docs/deployment.md` |
 | Docs site pipeline (Zensical → GitHub Pages) | `docs/documentation.md` |
 | Capability inventory (which specs exist) | `openspec/specs/` — enumerate via `openspec list` |
 | Human overview, quickstart | `README.md` |

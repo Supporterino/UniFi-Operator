@@ -11,13 +11,14 @@ every emitted CR follows the [CRD conventions](crd-conventions.md).
 ## Usage
 
 ```bash
-unifi-operator-cli snapshot <kind|all> --controller <url> [--site <ref>] [-o <dir|->]
-unifi-operator-cli snapshot verify [-o <dir>] --controller <url>
+unifi-operator-cli snapshot <kind|all> --controller <url> [--site <ref>] [-o <dir|->] [--summary-json <path>]
+unifi-operator-cli snapshot verify [-o <dir>] --controller <url> [--summary-json <path>]
 ```
 
 `--controller` (or `UNIFI_URL`) is required; `--api-key` (or `UNIFI_API_KEY`) supplies the
 credential and is never logged. `--controller-ref` names the `UnifiController` the emitted `sites`
-reference (default `unifi-controller`).
+reference (default `unifi-controller`). `--summary-json` writes an optional machine-readable
+[run summary](#run-summary).
 
 ## Kinds
 
@@ -151,6 +152,82 @@ treats a resource carrying **any** of the following annotations as an expected g
 | `unifi.supporterino.de/unrepresented-ipv6` | Part of a gateway network's IPv6 configuration is not representable |
 | `unifi.supporterino.de/unresolved-policy-ref` | A firewall-policy ordering referenced an upstream policy that was not emitted |
 | `unifi.supporterino.de/unresolved-acl-rule-ref` | An ACL-rule ordering referenced an upstream rule that was not emitted |
+
+## Run summary
+
+`--summary-json <path>` writes one JSON object describing what the run did. It is opt-in: without
+the flag nothing is written, and the emitted resources and diagnostics are byte-identical to a run
+that never asked for one. `-` sends the summary to stderr; any other value is a file path. The
+summary is **never written to stdout**, because stdout carries the `---`-separated YAML stream that
+`kubectl apply -f -` consumes. `snapshot` and `snapshot verify` both accept the flag.
+
+```bash
+unifi-operator-cli snapshot all -o snapshot/ --summary-json snapshot/summary.json
+unifi-operator-cli snapshot verify --summary-json -   # to stderr
+```
+
+The object carries a `schemaVersion` — currently `1` — so a consumer can pin the shape. Fields may
+be added in a compatible change; a field is not removed without a version bump. Every value is a
+Kubernetes identity, a count, or a duration: no upstream UUID or `_id` appears, so the summary can
+be attached to a CI log or a ticket.
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "networks",
+  "resources": 3,
+  "kinds": [
+    { "kind": "UnifiNetwork", "count": 3 }
+  ],
+  "sites": [
+    {
+      "site": "default",
+      "resources": 3,
+      "kinds": [
+        { "kind": "UnifiNetwork", "count": 3 }
+      ]
+    }
+  ],
+  "warnings": 1,
+  "notes": 0,
+  "elapsedMillis": 12
+}
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `schemaVersion` | int | Version of this object's shape; currently `1` |
+| `kind` | string | The requested kind; `all` for the aggregate and for `verify` |
+| `resources` | int | Custom Resources emitted. `0` for a read-only listing |
+| `kinds` | array of `{kind, count}` | Emitted resources per Custom Resource kind, sorted by kind |
+| `sites` | array of `{site, resources, kinds}` | Site-scoped resources attributed to their site, in projection order; empty when the run has no site scope |
+| `warnings` | int | Distinct projection warnings printed |
+| `notes` | int | Distinct subsystem notes printed |
+| `elapsedMillis` | int | Wall-clock duration of the run, including emission |
+| `verify` | object | `snapshot verify` only — the coverage and fidelity counts |
+
+The `verify` object is present on a `snapshot verify` summary and mirrors the human report:
+
+| Field | Meaning |
+|-------|---------|
+| `projected` | Resources the projection produced |
+| `missing` | Projected resources with no file in the snapshot directory |
+| `unexpected` | On-disk resources with no upstream object |
+| `drifted` | Field-level `spec` differences between an emitted resource and a fresh projection |
+| `expected` | Resources classified as an [expected gap](#known-gaps) |
+| `skipped` | Projection warnings — objects the projection could not represent. Subsystem notes are not counted here |
+
+`sites` does not partition the whole run. Only site-scoped kinds are attributed to a site:
+`UnifiController` and `UnifiSite` are console-wide and appear in `kinds` only. `sum(sites.resources)`
+is therefore **less than** `resources` by those kinds — a `snapshot all` summary reporting 40
+resources can sum 37 across its sites. Use `resources` and `kinds` for totals, `sites` for per-site
+attribution.
+
+A read-only listing emits no Custom Resource, so its summary reports `resources: 0` with empty
+`kinds` and `sites`; the run's warnings, notes, and elapsed time are still described.
+
+`snapshot verify` writes the summary before returning its non-zero exit for unexplained gaps, so a
+failing CI run still leaves the counts behind the exit code.
 
 ## Emitted CRs follow the golden rule
 

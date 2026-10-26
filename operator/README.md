@@ -1,121 +1,66 @@
 # operator
-// TODO(user): Add simple overview of use/purpose
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+The Kubernetes operator module of [UniFi-Operator](../README.md). It reconciles the workspace's
+Custom Resources into a UniFi Network controller through the Integration v1 API, and records the
+outcome of every reconcile in the object's `status`.
 
-## Getting Started
+## What it owns
 
-### Prerequisites
-- go version v1.27.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- `api/v1alpha1/` — the CRD API types (`UnifiController`, `UnifiSite`, `UnifiNetwork`,
+  `UnifiFirewallPolicy`, …) and their generated deepcopy code.
+- `internal/controller/` — one reconciler per kind. Every terminal path writes a `Ready`
+  condition with a stable reason and a human-readable summary.
+- `internal/unifi/` — the typed UniFi client. It returns plain Go structs and imports no
+  Kubernetes types.
+- `internal/metrics/` — the Prometheus series the operator exports about itself.
+- `config/` — the kustomize manifests: generated CRDs and RBAC, the manager Deployment, the
+  `default` overlay, and the opt-in Prometheus scrape overlays.
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+Credentials never live in a Custom Resource: each `UnifiController` names a same-namespace
+`Secret` through `spec.secretRef`, and the client resolves the key at reconcile time. Upstream
+`_id` values appear in `status` only. The design rules are in
+[docs/crd-conventions.md](../docs/crd-conventions.md).
 
-```sh
-task docker-build docker-push IMAGE_REPOSITORY=<some-registry>/operator VERSION=tag
-```
+## Requirements
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+- Go 1.27.1 or newer — the version in `go.mod`.
+- [Task](https://taskfile.dev/) — the root `Taskfile.yml` is the only entrypoint. `kubebuilder`
+  re-emits an `operator/Makefile` when you scaffold a new API; delete it after scaffolding,
+  because it is not part of the build.
+- `kubectl` and a cluster reachable from your current kubeconfig, for the install tasks.
+- Docker, for the image tasks only.
 
-**Install the CRDs into the cluster:**
+## Commands
 
-```sh
-task install
-```
+Run these from the repository root.
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+| Task | Does |
+|------|------|
+| `task manifests generate` | Regenerate CRDs, RBAC, and deepcopy code |
+| `task test` | Unit and envtest suites (downloads the envtest binaries on first run) |
+| `task lint` | `go vet` plus `golangci-lint`, both modules |
+| `task build` | Build the manager and CLI binaries into `bin/` |
+| `task run` | Run the manager from the host against the current kubeconfig |
+| `task install` | Install the CRDs into the cluster |
+| `task deploy` | Install the CRDs and deploy the manager |
+| `task undeploy` `task uninstall` | Remove the manager, then the CRDs |
+| `task kustomize` `task chart` | Render the kustomize overlay and lint/render the Helm chart |
+| `task verify` | The local gate: generation no-diff, lint, both modules' tests, CRD and RBAC sync |
 
-```sh
-task deploy IMAGE_REPOSITORY=<some-registry>/operator VERSION=tag
-```
+`task test` excludes the e2e suite; `task test-e2e` runs it against a Kind cluster.
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+Deepcopy, CRD, and RBAC output is generated — edit the API type or the `+kubebuilder` marker and
+re-run `task manifests generate`, then confirm the tree is unchanged.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+The manager image is `ghcr.io/supporterino/unifi-operator`; the deployment path and its overrides
+are documented in [docs/deployment.md](../docs/deployment.md).
 
-```sh
-kubectl apply -k config/samples/
-```
+## Docs
 
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-task uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-task undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-task build-installer IMAGE_REPOSITORY=<some-registry>/operator VERSION=tag
-```
-
-**NOTE:** The task mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v1-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `task help` for more information on all potential tasks
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+- [`AGENTS.md`](AGENTS.md) — this module's layout, conventions, and verification gate.
+- [Deployment](../docs/deployment.md) — kustomize and Helm, including observability.
+- [UniFi API contract](../docs/unifi-api.md) — the endpoints each kind consumes.
+- [Architecture](../docs/architecture.md) — where this module sits in the workspace.
 
 ## License
 
@@ -132,4 +77,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

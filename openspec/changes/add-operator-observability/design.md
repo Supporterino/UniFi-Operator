@@ -63,8 +63,11 @@ See `proposal.md` — Why. Current state that shapes the approach:
 ### D1 — Record metrics in each `updateStatus`, not in `setReadyCondition` or a Reconcile wrapper
 
 Add `operator/internal/metrics` with `RecordReconcile(kind, ready bool, reason string)`, called at
-the end of each of the seventeen `updateStatus` methods, after the status write succeeds. Tests that
-exercise status transitions therefore observe the metric without any extra hook.
+the end of each of the seventeen `updateStatus` methods after the status write is attempted, so the
+outcome is recorded even when status needed no write (a steady failing object would otherwise let
+`rate()` go dark for a whole resync interval). A failed status write returns before the metric is
+recorded, so an API-server failure is never counted as a reconcile outcome. Tests that exercise
+status transitions therefore observe the metric without any extra hook.
 
 *Alternatives considered:*
 
@@ -107,9 +110,17 @@ or its kind-specific success reason, so the label is never empty.
 ### D3 — Derive the upstream `operation` label from the endpoint pattern, bounded by construction
 
 `HTTPClient.do` records the request using a normalizer that strips the API base path, the site UUID,
-object UUIDs, and the query string, leaving a path template such as
-`firewall.policies` or `sites.zones`. The Integration v1 surface is fixed
-(`docs/unifi-api.md`), so the resulting set is small and enumerable.
+object UUIDs, and the query string, leaving a path template such as `firewall.policies` or
+`networks` (`sites` is dropped as the base prefix). The Integration v1 surface is fixed
+(`docs/unifi-api.md`), so the resulting set is small and enumerable — eighteen labels, with a single
+`unknown` fallback that never echoes the path.
+
+The client reports through a small `unifi.RequestObserver` interface injected as a constructor
+option, rather than importing the metrics package: `docs/go.md` fixes the dependency direction
+(`controller → unifi`) and forbids `unifi` depending on anything in the Kubernetes world, which
+`internal/metrics` does through the controller-runtime registry. `cmd/main.go` injects the
+metrics-backed observer; the default is a no-op, so unit tests and any unobserved client are
+unaffected.
 
 *Alternatives considered:*
 
@@ -145,12 +156,15 @@ and that the label set matches the documented endpoint inventory.
 The metrics endpoint serves a controller-runtime self-signed certificate unless
 `--metrics-cert-path` is set. Rather than defaulting to `insecureSkipVerify: true`:
 
-- The base `config/prometheus/monitor.yaml` uses `scheme: https` with `insecureSkipVerify: false`
-  and expects a CA (the existing `monitor_tls_patch.yaml` cert-manager path, or a user-supplied
-  secret).
-- The self-signed case moves to `config/prometheus/insecure/` — an overlay whose name states what it
-  does, referenced from `docs/deployment.md` as **insecure**, per the security bar ("a skip-verify
-  option must be explicit and documented as insecure").
+- The base `config/prometheus/monitor.yaml` sets no bypass at all and references a CA (the existing
+  `monitor_tls_patch.yaml` cert-manager path, or a user-supplied secret); absence of the field is the
+  verifying default, so a `grep` for the bypass token finds only the insecure overlay.
+- The self-signed case moves to `config/prometheus-insecure/` — a **sibling** overlay whose name
+  states what it does, referenced from `docs/deployment.md` as **insecure**, per the security bar
+  ("a skip-verify option must be explicit and documented as insecure"). It is a sibling rather than
+  `config/prometheus/insecure/` because kustomize's default load restrictor forbids a nested
+  kustomization from including a file in its own parent directory, and the only ways to keep it
+  nested (duplicating the ServiceMonitor, or a symlink) would create a second source of truth.
 - The chart exposes `metrics.serviceMonitor.insecureSkipVerify` defaulting to `false`, documented as
   insecure.
 

@@ -12,7 +12,9 @@ operator/
   cmd/main.go           manager entrypoint — scheme, controllers, flags
   internal/
     controller/         reconcilers
+    metrics/            Prometheus series the operator exports about itself
     unifi/              typed UniFi controller client (no k8s types)
+    version/            link-time stamped build version
   config/
     crd/                generated CRDs
     rbac/               generated RBAC

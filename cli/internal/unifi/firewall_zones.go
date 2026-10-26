@@ -7,9 +7,9 @@ import (
 )
 
 // zbfNotConfiguredCode is the upstream machine-readable error code a console returns
-// when Zone-Based Firewall is not configured. A 400 carrying this code on the
-// firewall-zones endpoint means the subsystem is empty, not that the request was bad
-// (design D3).
+// when Zone-Based Firewall is not configured. It is returned by more than one firewall
+// endpoint (observed on the zones and policies reads), not by the zones endpoint alone, so
+// a 400 carrying it means the subsystem is empty rather than that the request was bad.
 const zbfNotConfiguredCode = "api.firewall.zone-based-firewall-not-configured"
 
 // zoneBasedFirewallUnconfigured reports whether err is the controller's
@@ -34,22 +34,26 @@ type FirewallZone struct {
 	Metadata NetworkMetadata `json:"metadata"`
 }
 
-// ListZones returns every firewall zone on the given site. It is the read-only
-// side of the zone surface; the CLI does not create, update, or delete zones. A
-// console with Zone-Based Firewall unconfigured answers the endpoint with a
-// zone-based-firewall-not-configured 400, which maps to an empty set rather than
-// an error so `snapshot firewall-zones` succeeds with zero resources.
-func (c *Client) ListZones(ctx context.Context, siteID string) ([]FirewallZone, error) {
+// ListZones returns every firewall zone on the given site and whether the console has
+// Zone-Based Firewall configured. It is the read-only side of the zone surface; the CLI
+// does not create, update, or delete zones. A console with Zone-Based Firewall unconfigured
+// answers the endpoint with a zone-based-firewall-not-configured 400, which maps to an empty
+// set rather than an error so `snapshot firewall-zones` succeeds with zero resources.
+//
+// zbfConfigured is false only for that machine-readable code; every other outcome, including
+// an empty 200 page, leaves it true (design D1). It is not inferred from an empty zone list,
+// because an empty page is not a contract guarantee that the subsystem is absent.
+func (c *Client) ListZones(ctx context.Context, siteID string) ([]FirewallZone, bool, error) {
 	endpoint, err := c.endpoint("sites", siteID, "firewall", "zones")
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	zones, err := listAll[FirewallZone](ctx, c, endpoint)
 	if zoneBasedFirewallUnconfigured(err) {
-		return []FirewallZone{}, nil
+		return []FirewallZone{}, false, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list firewall zones: %w", err)
+		return nil, true, fmt.Errorf("list firewall zones: %w", err)
 	}
-	return zones, nil
+	return zones, true, nil
 }

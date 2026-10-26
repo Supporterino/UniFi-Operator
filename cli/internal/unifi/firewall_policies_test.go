@@ -50,9 +50,12 @@ func TestListFirewallPoliciesPaginates(t *testing.T) {
 		}
 	}))
 
-	policies, err := client.ListFirewallPolicies(context.Background(), testSiteID)
+	policies, configured, err := client.ListFirewallPolicies(context.Background(), testSiteID)
 	if err != nil {
 		t.Fatalf("ListFirewallPolicies: %v", err)
+	}
+	if !configured {
+		t.Error("zbfConfigured = false, want true for a populated policy page")
 	}
 	if want := fmt.Sprintf("/proxy/network/integration/v1/sites/%s/firewall/policies", testSiteID); gotPath != want {
 		t.Errorf("path = %q, want %q", gotPath, want)
@@ -111,6 +114,102 @@ func TestGetFirewallPolicyOrdering(t *testing.T) {
 	}
 }
 
+// TestListFirewallPoliciesUnconfiguredIsEmpty pins the family-wide mapping (design D2): a
+// console with Zone-Based Firewall off answers the policies read with the same
+// unconfigured-subsystem code the zones read returns, which must resolve to an empty set
+// rather than an error so `snapshot firewall-policies` succeeds with zero resources. The flag
+// records that the read did so, so a caller can explain the gap instead of degrading silently.
+func TestListFirewallPoliciesUnconfiguredIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"statusCode":400,"statusName":"BAD_REQUEST",`+
+			`"code":"api.firewall.zone-based-firewall-not-configured",`+
+			`"message":"Zone-based firewall is not configured"}`)
+	}))
+
+	policies, configured, err := client.ListFirewallPolicies(context.Background(), testSiteID)
+	if err != nil {
+		t.Fatalf("ListFirewallPolicies: %v, want nil error for an unconfigured subsystem", err)
+	}
+	if configured {
+		t.Error("zbfConfigured = true, want false for the unconfigured-subsystem code")
+	}
+	if len(policies) != 0 {
+		t.Errorf("policies = %+v, want an empty set", policies)
+	}
+}
+
+// TestListFirewallPoliciesEmptyPageIsConfigured pins the flag's contract the same way the zones
+// read does (design D1): an empty 200 page is not evidence that Zone-Based Firewall is off, so
+// zbfConfigured must stay true.
+func TestListFirewallPoliciesEmptyPageIsConfigured(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
+	}))
+
+	policies, configured, err := client.ListFirewallPolicies(context.Background(), testSiteID)
+	if err != nil {
+		t.Fatalf("ListFirewallPolicies: %v", err)
+	}
+	if !configured {
+		t.Error("zbfConfigured = false, want true for an empty 200 page")
+	}
+	if len(policies) != 0 {
+		t.Errorf("policies = %+v, want an empty set", policies)
+	}
+}
+
+// TestListFirewallPoliciesOtherErrorSurfaces guards against widening the mapping: only the
+// unconfigured-subsystem code is tolerated, so another 400 still fails the read and leaves the
+// flag true.
+func TestListFirewallPoliciesOtherErrorSurfaces(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"statusCode":400,"statusName":"BAD_REQUEST",`+
+			`"code":"api.firewall.policy.invalid","message":"invalid policy query"}`)
+	}))
+
+	policies, configured, err := client.ListFirewallPolicies(context.Background(), testSiteID)
+	if err == nil {
+		t.Fatal("ListFirewallPolicies returned no error for an unrelated 400")
+	}
+	if !configured {
+		t.Error("zbfConfigured = false, want true when the code is not the unconfigured subsystem")
+	}
+	if len(policies) != 0 {
+		t.Errorf("policies = %+v, want none", policies)
+	}
+}
+
+// TestGetFirewallPolicyOrderingUnconfiguredSurfaces pins design D2's deliberate omission: the
+// ordering read stays unmapped, so a ZBF-unconfigured response is still an error rather than a
+// silently empty ordering.
+func TestGetFirewallPolicyOrderingUnconfiguredSurfaces(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"statusCode":400,"statusName":"BAD_REQUEST",`+
+			`"code":"api.firewall.zone-based-firewall-not-configured",`+
+			`"message":"Zone-based firewall is not configured"}`)
+	}))
+
+	_, err := client.GetFirewallPolicyOrdering(context.Background(), testSiteID, testPolicyZoneID, testPolicyOtherID)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v, want *APIError", err)
+	}
+	if apiErr.Code != "api.firewall.zone-based-firewall-not-configured" {
+		t.Errorf("Code = %q, want the unconfigured-subsystem code", apiErr.Code)
+	}
+}
+
 func TestListFirewallPoliciesUnauthorized(t *testing.T) {
 	t.Parallel()
 
@@ -119,7 +218,7 @@ func TestListFirewallPoliciesUnauthorized(t *testing.T) {
 		_, _ = io.WriteString(w, `{"statusCode":401,"statusName":"UNAUTHORIZED","message":"Missing credentials"}`)
 	}))
 
-	_, err := client.ListFirewallPolicies(context.Background(), testSiteID)
+	_, configured, err := client.ListFirewallPolicies(context.Background(), testSiteID)
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("error = %v, want *APIError", err)
@@ -129,5 +228,8 @@ func TestListFirewallPoliciesUnauthorized(t *testing.T) {
 	}
 	if apiErr.Message != "Missing credentials" {
 		t.Errorf("Message = %q, want %q", apiErr.Message, "Missing credentials")
+	}
+	if !configured {
+		t.Error("zbfConfigured = false, want true for an authentication failure")
 	}
 }

@@ -49,6 +49,11 @@ const (
 	testManagementUnmanaged = "UNMANAGED"
 	testUnparseableVersion  = "garbage"
 	testHostIPAddress       = "10.0.0.1"
+
+	// testZBFNotConfiguredCode is the machine-readable upstream code a console
+	// returns when Zone-Based Firewall is not configured. It is returned by both
+	// the firewall-zones and the firewall-policies endpoints.
+	testZBFNotConfiguredCode = "api.firewall.zone-based-firewall-not-configured"
 )
 
 // stubUnifiClient is a unifi.Client test double. Every method records its call
@@ -83,6 +88,11 @@ type stubUnifiClient struct {
 
 	zones    []unifi.FirewallZone
 	zonesErr error
+	// zonesZBFUnconfigured, when set, makes ListZones report the console's
+	// zone-based-firewall-not-configured signal: no zones and zbfConfigured
+	// false. It is false by default, so every test that does not set it sees a
+	// configured subsystem.
+	zonesZBFUnconfigured bool
 	// getZoneErr, when set, is returned by GetZone instead of a lookup.
 	getZoneErr error
 
@@ -326,11 +336,11 @@ func (s *stubUnifiClient) DeleteNetwork(_ context.Context, siteID, networkID str
 	return s.deleteErr
 }
 
-func (s *stubUnifiClient) ListZones(context.Context, string) ([]unifi.FirewallZone, error) {
+func (s *stubUnifiClient) ListZones(context.Context, string) ([]unifi.FirewallZone, bool, error) {
 	s.record("ListZones")
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.zones, s.zonesErr
+	return s.zones, !s.zonesZBFUnconfigured, s.zonesErr
 }
 
 func (s *stubUnifiClient) GetZone(_ context.Context, _, zoneID string) (unifi.FirewallZone, error) {

@@ -37,9 +37,12 @@ func TestListZonesPaginates(t *testing.T) {
 		}
 	}))
 
-	zones, err := client.ListZones(context.Background(), testSiteID)
+	zones, configured, err := client.ListZones(context.Background(), testSiteID)
 	if err != nil {
 		t.Fatalf("ListZones: %v", err)
+	}
+	if !configured {
+		t.Error("zbfConfigured = false, want true for a populated zone page")
 	}
 	if want := fmt.Sprintf("/proxy/network/integration/v1/sites/%s/firewall/zones", testSiteID); gotPath != want {
 		t.Errorf("path = %q, want %q", gotPath, want)
@@ -71,12 +74,60 @@ func TestListZonesUnconfiguredFirewallIsEmpty(t *testing.T) {
 			`"message":"Zone-based firewall is not configured"}`)
 	}))
 
-	zones, err := client.ListZones(context.Background(), testSiteID)
+	zones, configured, err := client.ListZones(context.Background(), testSiteID)
 	if err != nil {
 		t.Fatalf("ListZones: %v, want nil error for an unconfigured subsystem", err)
 	}
+	if configured {
+		t.Error("zbfConfigured = true, want false for the unconfigured-subsystem code")
+	}
 	if len(zones) != 0 {
 		t.Errorf("zones = %+v, want an empty set", zones)
+	}
+}
+
+// TestListZonesEmptyPageIsConfigured pins the flag's contract: an empty page is not evidence
+// that Zone-Based Firewall is off, so an empty 200 must leave zbfConfigured true (design D1).
+func TestListZonesEmptyPageIsConfigured(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
+	}))
+
+	zones, configured, err := client.ListZones(context.Background(), testSiteID)
+	if err != nil {
+		t.Fatalf("ListZones: %v", err)
+	}
+	if !configured {
+		t.Error("zbfConfigured = false, want true for an empty 200 page")
+	}
+	if len(zones) != 0 {
+		t.Errorf("zones = %+v, want an empty set", zones)
+	}
+}
+
+// TestListZonesOtherErrorIsConfigured guards against widening the mapping: only the
+// unconfigured-subsystem code sets the flag false, so another 400 surfaces as an error and
+// leaves the flag true.
+func TestListZonesOtherErrorIsConfigured(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"statusCode":400,"statusName":"BAD_REQUEST",`+
+			`"code":"api.firewall.zone.invalid","message":"invalid zone query"}`)
+	}))
+
+	zones, configured, err := client.ListZones(context.Background(), testSiteID)
+	if err == nil {
+		t.Fatal("ListZones returned no error for an unrelated 400")
+	}
+	if !configured {
+		t.Error("zbfConfigured = false, want true when the code is not the unconfigured subsystem")
+	}
+	if len(zones) != 0 {
+		t.Errorf("zones = %+v, want none", zones)
 	}
 }
 
@@ -88,7 +139,7 @@ func TestListZonesUnauthorized(t *testing.T) {
 		_, _ = io.WriteString(w, `{"statusCode":401,"statusName":"UNAUTHORIZED","message":"Missing credentials"}`)
 	}))
 
-	_, err := client.ListZones(context.Background(), testSiteID)
+	_, configured, err := client.ListZones(context.Background(), testSiteID)
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("error = %v, want *APIError", err)
@@ -98,5 +149,8 @@ func TestListZonesUnauthorized(t *testing.T) {
 	}
 	if apiErr.Message != "Missing credentials" {
 		t.Errorf("Message = %q, want %q", apiErr.Message, "Missing credentials")
+	}
+	if !configured {
+		t.Error("zbfConfigured = false, want true for an authentication failure")
 	}
 }

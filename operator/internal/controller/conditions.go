@@ -35,6 +35,11 @@ const (
 	// reasonInvalidSpec marks a spec the controller cannot act on (bad URL or a
 	// terminal 4xx from the console).
 	reasonInvalidSpec = "InvalidSpec"
+	// reasonZoneBasedFirewallNotConfigured marks a firewall reconcile the
+	// console rejected because Zone-Based Firewall is not configured. The spec
+	// is valid; the console's firewall subsystem is absent, so this is terminal
+	// and distinct from InvalidSpec (design D5).
+	reasonZoneBasedFirewallNotConfigured = "ZoneBasedFirewallNotConfigured"
 	// reasonAuthenticationFailed marks a console that rejected the API key.
 	reasonAuthenticationFailed = "AuthenticationFailed"
 	// reasonCertificateError marks a TLS certificate verification failure.

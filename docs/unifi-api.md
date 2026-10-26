@@ -494,9 +494,34 @@ The client maps any non-2xx response to a typed `*unifi.APIError` carrying these
 - `401`/authentication failure fails closed: the reconciler sets a failing condition and does
   not fall back to a default credential. There is no session re-authentication.
 - A `400` carrying the machine-readable code `api.firewall.zone-based-firewall-not-configured` is
-  not bad input: it means Zone-Based Firewall is unconfigured on that console. The operator and
-  CLI clients map it to an **empty zone set** rather than an error, so firewall reconciliation
-  reports no zones instead of failing.
+  not bad input: it means Zone-Based Firewall is unconfigured on that console. A probe of a
+  ZBF-off console (2026-10-26) returned that body from **both** `GET .../firewall/zones` and
+  `GET .../firewall/policies`, so the code reports a missing subsystem for the firewall family,
+  not for zones alone. Neither consumer treats it as a bad spec:
+  - **Operator** — `ListZones` maps the code to an **empty zone set** with no failing condition and
+    returns a flag that is `false` only for this code. A `UnifiFirewallPolicy` or
+    `UnifiFirewallPolicyOrdering` acts on that flag **before** resolving its zone selectors —
+    otherwise the empty set would fail as a missing built-in zone and hot-requeue — and sets
+    `Ready=False` with reason `ZoneBasedFirewallNotConfigured`: terminal, no requeue, and no
+    upstream write. `UnifiFirewallZone` discards the flag: the read resolves no zones, but the
+    reconcile does not stop there — it attempts the zone create, the console rejects that write
+    with the same code, and the reconcile then ends `Ready=False` with reason
+    `ZoneBasedFirewallNotConfigured`, still terminal and writing nothing upstream. That reason
+    also covers a policy or ordering read or write carrying the code after a zone read that
+    reported the subsystem **configured**, where the other `4xx` responses still map to
+    `InvalidSpec`.
+  - **CLI** — firewall zones and policies both map to an empty set rather than an error, so
+    `snapshot all` still emits every non-firewall kind and exits `0`. A projection that reads them
+    prints one site-scoped warning naming the site, the unconfigured subsystem, and that this is
+    expected if the console has not migrated to ZBF yet; `snapshot verify` prints the same warning
+    without counting it as a skipped object. See [CLI snapshot](snapshot.md).
+  - The ordering read (`GetFirewallPolicyOrdering`) is deliberately **not** remapped to an empty
+    ordering in either client. In the CLI it is only read for zone pairs derived from user-defined
+    policies, so a ZBF-off console never reaches it, and a stray failure there still surfaces
+    instead of hiding as an empty set. The operator reads ordering for the pair named by a
+    `UnifiFirewallPolicyOrdering` CR, so it does reach the call whenever the zone read reports the
+    subsystem **configured**; the code is classified by the same upstream-error path as the other
+    firewall calls (the same terminal reason) rather than remapped, and no ordering is written.
 
 ## Rules
 

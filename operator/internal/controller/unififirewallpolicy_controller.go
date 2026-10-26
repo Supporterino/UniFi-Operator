@@ -57,6 +57,12 @@ const (
 	// firewallFilterTrafficMatchingList is the IP/port filter discriminator for
 	// a filter backed by a traffic matching list.
 	firewallFilterTrafficMatchingList = "TRAFFIC_MATCHING_LIST"
+
+	// firewallPolicyUnconfiguredZBFMessage explains a firewall policy reconcile
+	// the console cannot serve because Zone-Based Firewall is off. The zone-read
+	// gate and the upstream error classifier share it so the condition text
+	// cannot drift between the two entry points.
+	firewallPolicyUnconfiguredZBFMessage = "console reports Zone-Based Firewall is not configured; no upstream firewall policy was created or updated"
 )
 
 // UnifiFirewallPolicyReconciler reconciles a UnifiFirewallPolicy object. It
@@ -235,9 +241,19 @@ func (r *UnifiFirewallPolicyReconciler) reconcileUpstream(
 		return ctrl.Result{}, fmt.Errorf("resolve controller client: %w", err)
 	}
 
-	zones, err := apiClient.ListZones(ctx, site.Status.SiteID)
+	zones, zbfConfigured, err := apiClient.ListZones(ctx, site.Status.SiteID)
 	if err != nil {
 		return r.handleUpstreamError(ctx, policy, err)
+	}
+	// A console with Zone-Based Firewall off answers the zone read with the
+	// subsystem code, which maps to an empty set and no error. Resolving a zone
+	// selector against that set would report a missing zone (or a missing
+	// built-in zone) and hot-requeue forever, so report the absent subsystem
+	// terminally here, before any selector resolution, and write nothing
+	// upstream (design D5).
+	if !zbfConfigured {
+		return r.updateStatus(ctx, policy, false, reasonZoneBasedFirewallNotConfigured,
+			firewallPolicyUnconfiguredZBFMessage, nil, nil, nil, nil)
 	}
 
 	sourceRes := resolveZoneSelector(ctx, r.Client, policy.Namespace, policy.Spec.SiteRef.Name, policy.Spec.Source.ZoneRef, policy.Spec.Source.BuiltInZone, zones)
@@ -400,6 +416,13 @@ func (r *UnifiFirewallPolicyReconciler) handleUpstreamError(
 		case apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden:
 			return r.updateStatus(ctx, policy, false, reasonAuthenticationFailed,
 				"console rejected the API key; verify the controller Secret", nil, nil, nil, nil)
+		case unifi.IsZoneBasedFirewallUnconfigured(err):
+			// The spec is valid; the console's firewall subsystem is absent.
+			// Report that distinctly from a bad spec and write nothing upstream
+			// (design D5). This covers a policy read or write the console
+			// rejects after the zone read succeeded.
+			return r.updateStatus(ctx, policy, false, reasonZoneBasedFirewallNotConfigured,
+				firewallPolicyUnconfiguredZBFMessage, nil, nil, nil, nil)
 		case !apiErr.Retryable():
 			return r.updateStatus(ctx, policy, false, reasonInvalidSpec,
 				"console rejected the request: "+apiErr.Error(), nil, nil, nil, nil)

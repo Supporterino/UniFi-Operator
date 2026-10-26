@@ -227,7 +227,9 @@ func (r *UnifiFirewallZoneReconciler) reconcileUpstream(
 		return ctrl.Result{}, fmt.Errorf("resolve controller client: %w", err)
 	}
 
-	zones, err := apiClient.ListZones(ctx, site.Status.SiteID)
+	// The ZBF flag from the zone read is discarded: the read stays empty and
+	// non-failing, and only a rejected write gets the distinct reason below.
+	zones, _, err := apiClient.ListZones(ctx, site.Status.SiteID)
 	if err != nil {
 		return r.handleUpstreamError(ctx, zone, err)
 	}
@@ -439,6 +441,13 @@ func (r *UnifiFirewallZoneReconciler) handleUpstreamError(
 		case apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden:
 			return r.updateStatus(ctx, zone, false, reasonAuthenticationFailed,
 				"console rejected the API key; verify the controller Secret", nil, nil)
+		case unifi.IsZoneBasedFirewallUnconfigured(err):
+			// The read path already maps the unconfigured subsystem to an empty
+			// set; a rejected write is a genuine upstream failure and fails
+			// closed with a reason that names the absent subsystem (design D5),
+			// not InvalidSpec.
+			return r.updateStatus(ctx, zone, false, reasonZoneBasedFirewallNotConfigured,
+				"console reports Zone-Based Firewall is not configured; no upstream firewall zone was written", nil, nil)
 		case !apiErr.Retryable():
 			return r.updateStatus(ctx, zone, false, reasonInvalidSpec,
 				"console rejected the request: "+apiErr.Error(), nil, nil)

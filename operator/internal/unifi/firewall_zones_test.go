@@ -38,9 +38,12 @@ func TestListZonesPaginates(t *testing.T) {
 		}
 	}))
 
-	zones, err := client.ListZones(context.Background(), testSiteID)
+	zones, zbfConfigured, err := client.ListZones(context.Background(), testSiteID)
 	if err != nil {
 		t.Fatalf("ListZones: %v", err)
+	}
+	if !zbfConfigured {
+		t.Errorf("zbfConfigured = false, want true for a readable zone page")
 	}
 	if want := fmt.Sprintf("/proxy/network/integration/v1/sites/%s/firewall/zones", testSiteID); gotPath != want {
 		t.Errorf("path = %q, want %q", gotPath, want)
@@ -250,32 +253,94 @@ func writeZBFBadRequest(w http.ResponseWriter, code, message string) {
 		code, message)
 }
 
+func TestIsZoneBasedFirewallUnconfigured(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil is not the unconfigured subsystem",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "the machine-readable code on a 400 is the unconfigured subsystem",
+			err: &APIError{
+				StatusCode: http.StatusBadRequest,
+				Code:       zbfNotConfiguredCode,
+				Message:    "Zone Based Firewall is not configured",
+			},
+			want: true,
+		},
+		{
+			name: "another 400 is not the unconfigured subsystem",
+			err: &APIError{
+				StatusCode: http.StatusBadRequest,
+				Code:       "api.firewall.some-other-problem",
+				Message:    "Zone Based Firewall is not configured",
+			},
+			want: false,
+		},
+		{
+			name: "a 401 is not the unconfigured subsystem",
+			err: &APIError{
+				StatusCode: http.StatusUnauthorized,
+				Code:       "api.authentication.invalid-api-key",
+				Message:    "invalid API key",
+			},
+			want: false,
+		},
+		{
+			name: "a non-API error is not the unconfigured subsystem",
+			err:  errors.New("boom"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := IsZoneBasedFirewallUnconfigured(tt.err); got != tt.want {
+				t.Errorf("IsZoneBasedFirewallUnconfigured(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestListZonesMapsUnconfiguredZBFToEmpty(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		code      string
-		message   string
-		wantEmpty bool
+		name           string
+		code           string
+		message        string
+		wantEmpty      bool
+		wantConfigured bool
 	}{
 		{
-			name:      "unconfigured code maps to an empty set",
-			code:      "api.firewall.zone-based-firewall-not-configured",
-			message:   "Zone based firewall is not configured",
-			wantEmpty: true,
+			name:           "unconfigured code maps to an empty set and a false flag",
+			code:           "api.firewall.zone-based-firewall-not-configured",
+			message:        "Zone based firewall is not configured",
+			wantEmpty:      true,
+			wantConfigured: false,
 		},
 		{
-			name:      "the code alone decides, not the message text",
-			code:      "api.firewall.zone-based-firewall-not-configured",
-			message:   "something else entirely",
-			wantEmpty: true,
+			name:           "the code alone decides, not the message text",
+			code:           "api.firewall.zone-based-firewall-not-configured",
+			message:        "something else entirely",
+			wantEmpty:      true,
+			wantConfigured: false,
 		},
 		{
-			name:      "the same message with another code stays an error",
-			code:      "api.firewall.some-other-problem",
-			message:   "Zone based firewall is not configured",
-			wantEmpty: false,
+			name:           "the same message with another code stays an error and a configured flag",
+			code:           "api.firewall.some-other-problem",
+			message:        "Zone based firewall is not configured",
+			wantEmpty:      false,
+			wantConfigured: true,
 		},
 	}
 
@@ -287,7 +352,10 @@ func TestListZonesMapsUnconfiguredZBFToEmpty(t *testing.T) {
 				writeZBFBadRequest(w, tt.code, tt.message)
 			}))
 
-			zones, err := client.ListZones(context.Background(), testSiteID)
+			zones, zbfConfigured, err := client.ListZones(context.Background(), testSiteID)
+			if zbfConfigured != tt.wantConfigured {
+				t.Errorf("zbfConfigured = %t, want %t", zbfConfigured, tt.wantConfigured)
+			}
 			if tt.wantEmpty {
 				if err != nil {
 					t.Fatalf("ListZones = %v, want nil error", err)
@@ -305,6 +373,28 @@ func TestListZonesMapsUnconfiguredZBFToEmpty(t *testing.T) {
 				t.Errorf("code = %q, want %q", apiErr.Code, tt.code)
 			}
 		})
+	}
+}
+
+// TestListZonesEmptyPageStaysConfigured pins the flag's other half: an empty
+// zone page is not a contract signal that the subsystem is absent, so only the
+// machine-readable code may clear it.
+func TestListZonesEmptyPageStaysConfigured(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
+	}))
+
+	zones, zbfConfigured, err := client.ListZones(context.Background(), testSiteID)
+	if err != nil {
+		t.Fatalf("ListZones = %v, want nil error", err)
+	}
+	if !zbfConfigured {
+		t.Errorf("zbfConfigured = false, want true for an empty page")
+	}
+	if len(zones) != 0 {
+		t.Errorf("zones = %+v, want empty", zones)
 	}
 }
 

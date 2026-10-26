@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -133,6 +135,48 @@ func networkDetailFixtures(t *testing.T) map[string][]byte {
 func newFixtureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
+	srv := httptest.NewServer(fixtureHandler(t))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// newZBFOffFixtureServer is newFixtureServer with Zone-Based Firewall unconfigured: every
+// firewall zones and policies read answers the recorded unconfigured-subsystem 400 (for any
+// site, as on a console that has not migrated), while every non-firewall path is delegated to
+// the recording. It proves the whole firewall family degrades without taking the snapshot down.
+//
+// The two fixtures come from two probes: firewall-zones-unconfigured.json is the older
+// zones-only recording and firewall-policies-unconfigured.json is the 2026-10-26 probe of both
+// endpoints (design.md, Context). They differ only in the human-readable message wording, which
+// is why the client matches on the machine-readable code alone.
+func newZBFOffFixtureServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	base := fixtureHandler(t)
+	zbfOffZones := readFixture(t, "firewall-zones-unconfigured.json")
+	zbfOffPolicies := readFixture(t, "firewall-policies-unconfigured.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/firewall/zones"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write(zbfOffZones)
+		case strings.HasSuffix(r.URL.Path, "/firewall/policies"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write(zbfOffPolicies)
+		default:
+			base.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// fixtureHandler answers the recorded Integration v1 fixtures for the sites in sites.json.
+func fixtureHandler(t *testing.T) http.Handler {
+	t.Helper()
+
 	sites := readFixture(t, "sites.json")
 	networks := readFixture(t, "networks.json")
 	deviceTags := readFixture(t, "device-tags.json")
@@ -160,7 +204,7 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 	}
 	emptyPage := []byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == pathSites:
@@ -222,9 +266,7 @@ func newFixtureServer(t *testing.T) *httptest.Server {
 		default:
 			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
 		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+	})
 }
 
 // runSnapshot executes `snapshot` with args and returns stdout (CRs) and stderr (warnings).
@@ -310,25 +352,30 @@ func TestSnapshotFirewallZonesGolden(t *testing.T) {
 	compareGolden(t, "firewall-zones.golden.yaml", out)
 }
 
-// newZBFOffServer serves the default site and an empty network list, and answers the
-// firewall-zones endpoint with the recorded zone-based-firewall-not-configured 400 so the
-// snapshot must treat the subsystem as empty rather than fail.
+// newZBFOffServer serves the default site with no objects and answers both firewall endpoints
+// with the recorded zone-based-firewall-not-configured 400, so the snapshot must treat the
+// whole firewall family as empty rather than fail. Every other site-scoped path answers an
+// empty page, so the only stderr output the per-kind firewall runs produce is the firewall note.
 func newZBFOffServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	emptyPage := []byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
-	zbfOff := readFixture(t, "firewall-zones-unconfigured.json")
+	zbfOffZones := readFixture(t, "firewall-zones-unconfigured.json")
+	zbfOffPolicies := readFixture(t, "firewall-policies-unconfigured.json")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case pathSites:
+		switch {
+		case r.URL.Path == pathSites:
 			_, _ = w.Write([]byte(`{"count":1,"data":[{"id":"` + fixtureSiteID +
 				`","internalReference":"default","name":"Default"}],"limit":200,"offset":0,"totalCount":1}`))
-		case pathNetworks:
-			_, _ = w.Write(emptyPage)
-		case pathFirewallZones:
+		case strings.HasSuffix(r.URL.Path, "/firewall/zones"):
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write(zbfOff)
+			_, _ = w.Write(zbfOffZones)
+		case strings.HasSuffix(r.URL.Path, "/firewall/policies"):
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write(zbfOffPolicies)
+		case strings.Contains(r.URL.Path, "/sites/"):
+			_, _ = w.Write(emptyPage)
 		default:
 			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
 		}
@@ -337,12 +384,117 @@ func newZBFOffServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// newZBFOffPoliciesServer serves the default site with the recorded zone page but answers only
+// the policies read with the recorded unconfigured-subsystem code. It pins the partial signal:
+// a console whose zones read succeeds while its policies read reports the condition must still
+// produce the site-scoped note and no policies rather than a silent empty set.
+func newZBFOffPoliciesServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	emptyPage := []byte(`{"count":0,"data":[],"limit":200,"offset":0,"totalCount":0}`)
+	zones := readFixture(t, "firewall-zones.json")
+	zbfOffPolicies := readFixture(t, "firewall-policies-unconfigured.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == pathSites:
+			_, _ = w.Write([]byte(`{"count":1,"data":[{"id":"` + fixtureSiteID +
+				`","internalReference":"default","name":"Default"}],"limit":200,"offset":0,"totalCount":1}`))
+		case strings.HasSuffix(r.URL.Path, "/firewall/zones"):
+			_, _ = w.Write(zones)
+		case strings.HasSuffix(r.URL.Path, "/firewall/policies"):
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write(zbfOffPolicies)
+		case strings.Contains(r.URL.Path, "/sites/"):
+			_, _ = w.Write(emptyPage)
+		default:
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// zbfNote is the note text a firewall kind must print for site, pinned literally here so the
+// command tests assert the wording instead of re-deriving it from firewallUnconfiguredNote. It
+// names no individual firewall kind and claims no complete loss, so the same text holds whether
+// the zones read, the policies read, or both reported the condition, and whether the other read
+// succeeded.
+func zbfNote(site string) string {
+	return `site "` + site + `": Zone-Based Firewall is not configured; firewall ` +
+		`resources could not be fully snapshotted. This is expected if the console has ` +
+		`not migrated to ZBF yet.`
+}
+
+// TestSnapshotFirewallZonesUnconfiguredExitsZero covers the ZBF-off `firewall-zones` scenario:
+// no resource is emitted, exactly one site-scoped note reaches stderr, and the command still
+// exits 0 (runSnapshot fails the test on any error).
 func TestSnapshotFirewallZonesUnconfiguredExitsZero(t *testing.T) {
 	srv := newZBFOffServer(t)
-	out, _ := runSnapshot(t, "firewall-zones", "--controller", srv.URL)
+	out, errOut := runSnapshot(t, "firewall-zones", "--controller", srv.URL)
 
 	if docs := parseEmittedCRs(t, out); len(docs) != 0 {
 		t.Fatalf("got %d CRs for an unconfigured firewall, want 0:\n%s", len(docs), out)
+	}
+	if want := "warning: " + zbfNote("default") + "\n"; errOut != want {
+		t.Errorf("stderr = %q, want exactly %q", errOut, want)
+	}
+}
+
+// TestSnapshotFirewallPoliciesUnconfiguredExitsZero covers the policy read on a ZBF-off
+// console: the endpoint's unconfigured-subsystem code maps to no policies, the same note is
+// printed once, and the command exits 0.
+func TestSnapshotFirewallPoliciesUnconfiguredExitsZero(t *testing.T) {
+	srv := newZBFOffServer(t)
+	out, errOut := runSnapshot(t, "firewall-policies", "--controller", srv.URL)
+
+	if docs := parseEmittedCRs(t, out); len(docs) != 0 {
+		t.Fatalf("got %d CRs for an unconfigured firewall, want 0:\n%s", len(docs), out)
+	}
+	if want := "warning: " + zbfNote("default") + "\n"; errOut != want {
+		t.Errorf("stderr = %q, want exactly %q", errOut, want)
+	}
+}
+
+// TestSnapshotFirewallPoliciesPartialSignalStillNotes covers the partial signal: the zones read
+// succeeds while the policies read reports the unconfigured subsystem, so the policy family is
+// still empty and the site-scoped note is still printed exactly once. A policies-only signal
+// must not degrade to a silent empty policy set, and the note must stay true for it: no zone was
+// lost on this console, so the text must not claim the firewall resources were not snapshotted
+// at all.
+func TestSnapshotFirewallPoliciesPartialSignalStillNotes(t *testing.T) {
+	srv := newZBFOffPoliciesServer(t)
+	out, errOut := runSnapshot(t, "firewall-policies", "--controller", srv.URL)
+
+	if docs := parseEmittedCRs(t, out); len(docs) != 0 {
+		t.Fatalf("got %d CRs when only the policies read is unconfigured, want 0:\n%s", len(docs), out)
+	}
+	if want := "warning: " + zbfNote("default") + "\n"; errOut != want {
+		t.Errorf("stderr = %q, want exactly %q", errOut, want)
+	}
+}
+
+// TestSnapshotFirewallPolicyOrderingUnconfiguredExitsZero covers the third firewall kind: it
+// reads the same disabled subsystem, emits no ordering, and reports the same single note.
+func TestSnapshotFirewallPolicyOrderingUnconfiguredExitsZero(t *testing.T) {
+	srv := newZBFOffServer(t)
+	out, errOut := runSnapshot(t, "firewall-policy-ordering", "--controller", srv.URL)
+
+	if docs := parseEmittedCRs(t, out); len(docs) != 0 {
+		t.Fatalf("got %d CRs for an unconfigured firewall, want 0:\n%s", len(docs), out)
+	}
+	if want := "warning: " + zbfNote("default") + "\n"; errOut != want {
+		t.Errorf("stderr = %q, want exactly %q", errOut, want)
+	}
+}
+
+// TestSnapshotFirewallNoteMatchesHelper keeps the pinned test wording and the production
+// helper in lockstep, so the note the tests assert is the note the three kinds emit.
+func TestSnapshotFirewallNoteMatchesHelper(t *testing.T) {
+	for _, site := range []string{"default", "branch", "lab-a"} {
+		if got, want := firewallUnconfiguredNote(site), zbfNote(site); got != want {
+			t.Errorf("firewallUnconfiguredNote(%q) = %q, want %q", site, got, want)
+		}
 	}
 }
 
@@ -1319,6 +1471,78 @@ func TestSnapshotAllEmitsEveryProjectableKind(t *testing.T) {
 		if !emitted[kind] {
 			t.Errorf("`all` emitted no %s; every projectable kind must be present", kind)
 		}
+	}
+}
+
+// TestSnapshotAllZBFOffStillEmitsNonFirewallKinds is the `all` regression for a console whose
+// Zone-Based Firewall is unconfigured: the two firewall reads answer with the recorded code, so
+// no firewall resource is emitted and exactly one note is printed per site, while every
+// non-firewall resource the same console projects with ZBF on is still emitted unchanged.
+func TestSnapshotAllZBFOffStillEmitsNonFirewallKinds(t *testing.T) {
+	onOut, _ := runSnapshot(t, "all", "--controller", newFixtureServer(t).URL)
+	offOut, errOut := runSnapshot(t, "all", "--controller", newZBFOffFixtureServer(t).URL)
+
+	firewallKinds := []string{"UnifiFirewallZone", "UnifiFirewallPolicy", "UnifiFirewallPolicyOrdering"}
+	emitted := map[string]bool{}
+	for _, doc := range parseEmittedCRs(t, offOut) {
+		emitted[doc.Kind] = true
+	}
+	for _, kind := range firewallKinds {
+		if emitted[kind] {
+			t.Errorf("`all` emitted a %s for an unconfigured firewall", kind)
+		}
+	}
+	for _, kind := range []string{
+		"UnifiSite", "UnifiNetwork", "UnifiWifiBroadcast", "UnifiRadiusProfile",
+		"UnifiTrafficMatchingList", "UnifiAclRule", "UnifiAclRuleOrdering", "UnifiDnsPolicy",
+		"UnifiSwitchingLag", "UnifiSwitchingMcLagDomain", "UnifiSwitchingSwitchStack",
+		"UnifiVpnServer", "UnifiSiteToSiteTunnel",
+	} {
+		if !emitted[kind] {
+			t.Errorf("`all` emitted no %s on a ZBF-off console; only the firewall kinds may degrade", kind)
+		}
+	}
+
+	// comparable drops the firewall kinds and the controller template - whose spec embeds the
+	// per-server URL - so the two projections can be compared field for field.
+	comparable := func(stream string) []emittedCR {
+		var kept []emittedCR
+		for _, doc := range parseEmittedCRs(t, stream) {
+			if doc.Kind == "UnifiController" || slices.Contains(firewallKinds, doc.Kind) {
+				continue
+			}
+			kept = append(kept, doc)
+		}
+		return kept
+	}
+	want := comparable(onOut)
+	if len(want) == 0 {
+		t.Fatal("the ZBF-on fixture emitted no non-firewall resource to compare against")
+	}
+	if got := comparable(offOut); !reflect.DeepEqual(got, want) {
+		t.Errorf("`all` dropped or changed non-firewall resources on a ZBF-off console: got %d, want %d\n%s",
+			len(got), len(want), offOut)
+	}
+
+	for _, site := range []string{"default", "branch"} {
+		note := "warning: " + zbfNote(site) + "\n"
+		if count := strings.Count(errOut, note); count != 1 {
+			t.Errorf("site %q note printed %d time(s), want exactly 1:\n%s", site, count, errOut)
+		}
+	}
+	if count := strings.Count(errOut, "Zone-Based Firewall is not configured"); count != 2 {
+		t.Errorf("printed %d Zone-Based Firewall note(s), want one per site (2):\n%s", count, errOut)
+	}
+}
+
+// TestSnapshotAllConfiguredFirewallHasNoNote keeps the note conditional: a ZBF-on console has
+// nothing to explain, so `all` must not print it.
+func TestSnapshotAllConfiguredFirewallHasNoNote(t *testing.T) {
+	srv := newFixtureServer(t)
+	_, errOut := runSnapshot(t, "all", "--controller", srv.URL)
+
+	if strings.Contains(errOut, "Zone-Based Firewall") {
+		t.Errorf("stderr contains a Zone-Based Firewall note for a configured console:\n%s", errOut)
 	}
 }
 

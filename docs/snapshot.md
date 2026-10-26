@@ -45,6 +45,16 @@ reference (default `unifi-controller`).
 
 `device-tags` emits no Custom Resource, so it is excluded from `all`.
 
+### If Zone-Based Firewall is not configured
+
+A console that has not yet migrated to Zone-Based Firewall answers both `firewall/zones` and
+`firewall/policies` with the `api.firewall.zone-based-firewall-not-configured` code. The three
+firewall kinds therefore resolve to an empty result, and the command prints one warning per site
+naming the site, the unconfigured subsystem, and that this is expected on a pre-ZBF console.
+`snapshot all` still emits every non-firewall kind and exits `0`, and `snapshot verify` prints the
+same warning without counting it as a skipped object. The endpoint contract is in the
+[UniFi API contract](unifi-api.md).
+
 ### Breaking change: `all`
 
 **BREAKING.** `snapshot all` now emits **every projectable kind** across **every site** on the
@@ -110,7 +120,9 @@ drift, and is not compared field-for-field.
 | `0` | Only expected/explained gaps remain (or none at all) |
 | non-zero | At least one unexplained gap: a missing file, an unexpected/on-disk-only resource, or unexplained drift |
 
-Warnings (objects the projection could not represent) go to **stderr**; the report goes to stdout.
+Warnings (objects the projection could not represent) and subsystem notes go to **stderr**, both
+with the `warning:` prefix; notes are not counted in the `N projection warning(s)` line. The report
+goes to stdout.
 A sample report:
 
 ```text

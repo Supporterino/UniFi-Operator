@@ -13,9 +13,17 @@ import (
 // request was bad (design D3).
 const zbfNotConfiguredCode = "api.firewall.zone-based-firewall-not-configured"
 
-// zoneBasedFirewallUnconfigured reports whether err is the controller's
-// zone-based-firewall-not-configured response. It matches the machine-readable
-// code, never the message text.
+// IsZoneBasedFirewallUnconfigured reports whether err is the controller's
+// zone-based-firewall-not-configured response. The code is returned by both the
+// firewall-zones and the firewall-policies endpoints, so reconcilers use this to
+// report an absent upstream subsystem instead of a bad spec. It matches the
+// machine-readable code, never the message text.
+func IsZoneBasedFirewallUnconfigured(err error) bool {
+	return zoneBasedFirewallUnconfigured(err)
+}
+
+// zoneBasedFirewallUnconfigured is the implementation of
+// IsZoneBasedFirewallUnconfigured.
 func zoneBasedFirewallUnconfigured(err error) bool {
 	var apiErr *APIError
 	return errors.As(err, &apiErr) && apiErr.Code == zbfNotConfiguredCode
@@ -63,20 +71,25 @@ func (r FirewallZoneRequest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(requestBody{Name: r.Name, NetworkIDs: networkIDs})
 }
 
-// ListZones returns every firewall zone on the given site. A console with
+// ListZones returns every firewall zone on the given site and reports whether
+// the console's Zone-Based Firewall subsystem is configured. A console with
 // Zone-Based Firewall unconfigured answers the endpoint with a
 // zone-based-firewall-not-configured 400, which maps to an empty set rather than
-// an error so reconciliation reports no zones instead of failing.
-func (c *HTTPClient) ListZones(ctx context.Context, siteID string) ([]FirewallZone, error) {
+// an error so reconciliation reports no zones instead of failing; zbfConfigured
+// is then false, which lets a caller distinguish "the subsystem is absent" from
+// "the site has no zones". Every other outcome — an empty 200, another error, or
+// an unbuildable endpoint — leaves it true, so only the machine-readable code
+// signals an absent subsystem.
+func (c *HTTPClient) ListZones(ctx context.Context, siteID string) (zones []FirewallZone, zbfConfigured bool, err error) {
 	endpoint, err := c.endpoint("sites", siteID, "firewall", "zones")
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	zones, err := listAll[FirewallZone](ctx, c, endpoint)
+	zones, err = listAll[FirewallZone](ctx, c, endpoint)
 	if zoneBasedFirewallUnconfigured(err) {
-		return []FirewallZone{}, nil
+		return []FirewallZone{}, false, nil
 	}
-	return zones, err
+	return zones, true, err
 }
 
 // GetZone returns the firewall zone with the given UUID on the given site. A

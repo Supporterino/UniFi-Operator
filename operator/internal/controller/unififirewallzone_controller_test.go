@@ -826,13 +826,13 @@ func TestUnifiFirewallZoneFinalizerSkipsSystemObject(t *testing.T) {
 
 // TestUnifiFirewallZoneReconcileUnconfiguredZBF verifies the unconfigured-ZBF
 // reconcile read path: when a console turns Zone-Based Firewall off after
-// adoption, ListZones maps the subsystem error to an empty set and GetZone
-// (resolving the recorded status.zoneID) maps it to ErrNotFound, so the
-// reconciler treats the zone as absent and creates it rather than reporting a
-// spurious SystemObjectReadOnly failure for the unconfigured subsystem. The
-// write that follows is outside that read-path mapping; see
-// TestUnifiFirewallZoneReconcileUnconfiguredZBFWriteFailsClosed for the
-// fail-closed boundary.
+// adoption, ListZones maps the subsystem error to an empty set (reporting the
+// flag the policy and ordering reconcilers consume) and GetZone (resolving the
+// recorded status.zoneID) maps it to ErrNotFound, so the reconciler treats the
+// zone as absent and creates it rather than reporting a spurious
+// SystemObjectReadOnly failure for the unconfigured subsystem. The zone read path
+// deliberately discards the flag: only a rejected write fails closed. See
+// TestUnifiFirewallZoneReconcileUnconfiguredZBFWriteFailsClosed for that boundary.
 func TestUnifiFirewallZoneReconcileUnconfiguredZBF(t *testing.T) {
 	t.Parallel()
 
@@ -840,9 +840,9 @@ func TestUnifiFirewallZoneReconcileUnconfiguredZBF(t *testing.T) {
 	zone.Status.ZoneID = testZoneResourceUUID
 
 	stub := &stubUnifiClient{
-		zones:       []unifi.FirewallZone{},
-		getZoneErr:  unifi.ErrNotFound,
-		createdZone: matchingUpstreamZone(),
+		zonesZBFUnconfigured: true,
+		getZoneErr:           unifi.ErrNotFound,
+		createdZone:          matchingUpstreamZone(),
 	}
 	factory := &recordingFactory{client: stub}
 	fakeClient, _, _ := newFirewallZoneFakeClient(t,
@@ -869,7 +869,8 @@ func TestUnifiFirewallZoneReconcileUnconfiguredZBF(t *testing.T) {
 // read-path mapping only. When the read resolves no zone but the console then
 // rejects the create because Zone-Based Firewall is off, that 400 is a genuine
 // upstream failure, not an "unconfigured subsystem" read, and must fail closed
-// (Ready=False) rather than be reported as a successful reconcile.
+// (Ready=False) with the distinct ZoneBasedFirewallNotConfigured reason rather
+// than being reported as a successful reconcile or as a bad spec.
 func TestUnifiFirewallZoneReconcileUnconfiguredZBFWriteFailsClosed(t *testing.T) {
 	t.Parallel()
 
@@ -881,7 +882,7 @@ func TestUnifiFirewallZoneReconcileUnconfiguredZBFWriteFailsClosed(t *testing.T)
 		getZoneErr: unifi.ErrNotFound,
 		createZoneErr: &unifi.APIError{
 			StatusCode: http.StatusBadRequest,
-			Code:       "api.firewall.zone-based-firewall-not-configured",
+			Code:       testZBFNotConfiguredCode,
 			Message:    "Zone based firewall is not configured",
 		},
 	}
@@ -900,11 +901,12 @@ func TestUnifiFirewallZoneReconcileUnconfiguredZBFWriteFailsClosed(t *testing.T)
 
 	got := getFirewallZone(t, fakeClient, testFirewallZoneResourceName)
 	cond := requireReady(t, got.Status.Conditions)
-	if cond.Status != metav1.ConditionFalse || cond.Reason != reasonInvalidSpec {
-		t.Errorf("Ready = %s/%s, want False/%s for a rejected write", cond.Status, cond.Reason, reasonInvalidSpec)
+	if cond.Status != metav1.ConditionFalse || cond.Reason != reasonZoneBasedFirewallNotConfigured {
+		t.Errorf("Ready = %s/%s, want False/%s for a rejected write",
+			cond.Status, cond.Reason, reasonZoneBasedFirewallNotConfigured)
 	}
-	if !strings.Contains(cond.Message, "console rejected the request") {
-		t.Errorf("message = %q, want the upstream rejection surfaced", cond.Message)
+	if !strings.Contains(cond.Message, "Zone-Based Firewall") {
+		t.Errorf("message = %q, want the absent subsystem named", cond.Message)
 	}
 	if got.Status.ZoneID != testZoneResourceUUID {
 		t.Errorf("zoneID = %q, want the last-known %q preserved: a failed create must not record a new ID",
@@ -912,6 +914,12 @@ func TestUnifiFirewallZoneReconcileUnconfiguredZBFWriteFailsClosed(t *testing.T)
 	}
 	if !slices.Contains(stub.called(), "CreateZone") {
 		t.Errorf("upstream calls = %v, want the rejected CreateZone attempted", stub.called())
+	}
+	if len(stub.zoneCreateRequests) != 1 {
+		t.Errorf("zone create requests = %d, want the single rejected attempt", len(stub.zoneCreateRequests))
+	}
+	if len(stub.zoneUpdateRequests) != 0 {
+		t.Errorf("zone update requests = %d, want none", len(stub.zoneUpdateRequests))
 	}
 }
 

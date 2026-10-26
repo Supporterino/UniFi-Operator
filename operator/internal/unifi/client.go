@@ -284,8 +284,11 @@ type Client interface {
 	UpdateNetwork(ctx context.Context, siteID, networkID string, req NetworkRequest) (Network, error)
 	// DeleteNetwork deletes the network with the given UUID on the given site.
 	DeleteNetwork(ctx context.Context, siteID, networkID string) error
-	// ListZones returns every firewall zone on the given site.
-	ListZones(ctx context.Context, siteID string) ([]FirewallZone, error)
+	// ListZones returns every firewall zone on the given site and reports
+	// whether the console's Zone-Based Firewall subsystem is configured. An
+	// unconfigured subsystem yields an empty set with zbfConfigured false and no
+	// error; every other outcome leaves zbfConfigured true.
+	ListZones(ctx context.Context, siteID string) (zones []FirewallZone, zbfConfigured bool, err error)
 	// GetZone returns the firewall zone with the given UUID on the given site.
 	GetZone(ctx context.Context, siteID, zoneID string) (FirewallZone, error)
 	// CreateZone creates a custom firewall zone on the given site.

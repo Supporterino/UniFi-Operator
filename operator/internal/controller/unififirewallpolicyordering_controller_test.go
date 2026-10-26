@@ -18,11 +18,14 @@ package controller
 
 import (
 	"context"
+	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -339,6 +342,108 @@ func TestUnifiFirewallPolicyOrderingZonePairMismatchFailsClosed(t *testing.T) {
 	}
 	if len(stub.firewallPolicyOrderingUpdateReqs) != 0 {
 		t.Errorf("ordering update requests = %d, want none when a referenced policy is on another zone pair",
+			len(stub.firewallPolicyOrderingUpdateReqs))
+	}
+}
+
+// TestUnifiFirewallPolicyOrderingUnconfiguredZBF covers the variant where the
+// zone read succeeds and the console then rejects the policies read with the
+// subsystem code. handleUpstreamError must report it distinctly from InvalidSpec
+// and apply no order.
+func TestUnifiFirewallPolicyOrderingUnconfiguredZBF(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubUnifiClient{
+		zones: []unifi.FirewallZone{systemUpstreamZone()},
+		firewallPoliciesErr: &unifi.APIError{
+			StatusCode: http.StatusBadRequest,
+			Code:       testZBFNotConfiguredCode,
+			Message:    "Zone Based Firewall is not configured",
+		},
+	}
+	factory := &recordingFactory{client: stub}
+	fakeClient, statusWrites, _ := newOrderingFakeClient(t,
+		newFirewallPolicyOrdering(),
+		orderedPolicy(testBeforePolicyName, testBeforePolicyUUID),
+		orderedPolicy(testAfterPolicyName, testAfterPolicyUUID),
+		ownedFirewallZone(), ownedSite(), readyController(testAppVersion), apiKeySecret())
+
+	reconciler := &UnifiFirewallPolicyOrderingReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+	result, err := reconciler.Reconcile(context.Background(), controllerRequest(testOrderingResourceName))
+	if err != nil {
+		t.Fatalf("Reconcile error = %v, want nil (a terminal 4xx is reported in status)", err)
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0 for the terminal unconfigured subsystem", result.RequeueAfter)
+	}
+	if *statusWrites != 1 {
+		t.Errorf("status writes = %d, want 1", *statusWrites)
+	}
+
+	cond := requireReady(t, getOrdering(t, fakeClient, testOrderingResourceName).Status.Conditions)
+	if cond.Status != metav1.ConditionFalse || cond.Reason != reasonZoneBasedFirewallNotConfigured {
+		t.Errorf("Ready = %s/%s, want False/%s",
+			cond.Status, cond.Reason, reasonZoneBasedFirewallNotConfigured)
+	}
+	if !strings.Contains(cond.Message, "Zone-Based Firewall") {
+		t.Errorf("message = %q, want the absent subsystem named", cond.Message)
+	}
+	if len(stub.firewallPolicyOrderingUpdateReqs) != 0 {
+		t.Errorf("ordering update requests = %d, want none on an unconfigured subsystem",
+			len(stub.firewallPolicyOrderingUpdateReqs))
+	}
+}
+
+// TestUnifiFirewallPolicyOrderingUnconfiguredZBFZoneRead covers the shape a real
+// ZBF-off console produces: the zone read answers with the subsystem code, so
+// ListZones returns no zones and zbfConfigured false. The zone pair cannot
+// resolve against that set, so the reconciler must report the absent subsystem
+// terminally before resolving it — otherwise the built-in selector turns it into
+// a hot BuiltInZoneNotFound requeue and no order is ever applied for the right
+// reason.
+func TestUnifiFirewallPolicyOrderingUnconfiguredZBFZoneRead(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubUnifiClient{zonesZBFUnconfigured: true}
+	factory := &recordingFactory{client: stub}
+	fakeClient, statusWrites, _ := newOrderingFakeClient(t,
+		newFirewallPolicyOrdering(),
+		orderedPolicy(testBeforePolicyName, testBeforePolicyUUID),
+		orderedPolicy(testAfterPolicyName, testAfterPolicyUUID),
+		ownedFirewallZone(), ownedSite(), readyController(testAppVersion), apiKeySecret())
+
+	reconciler := &UnifiFirewallPolicyOrderingReconciler{Client: fakeClient, Scheme: fakeClient.Scheme(), NewClient: factory.new}
+	result, err := reconciler.Reconcile(context.Background(), controllerRequest(testOrderingResourceName))
+	if err != nil {
+		t.Fatalf("Reconcile error = %v, want nil (an unconfigured subsystem is terminal)", err)
+	}
+	if result != (ctrl.Result{}) {
+		t.Errorf("result = %+v, want no requeue for the terminal unconfigured subsystem", result)
+	}
+	if *statusWrites != 1 {
+		t.Errorf("status writes = %d, want 1", *statusWrites)
+	}
+
+	got := getOrdering(t, fakeClient, testOrderingResourceName)
+	cond := requireReady(t, got.Status.Conditions)
+	if cond.Status != metav1.ConditionFalse || cond.Reason != reasonZoneBasedFirewallNotConfigured {
+		t.Errorf("Ready = %s/%s, want False/%s",
+			cond.Status, cond.Reason, reasonZoneBasedFirewallNotConfigured)
+	}
+	if !strings.Contains(cond.Message, "Zone-Based Firewall") {
+		t.Errorf("message = %q, want the absent subsystem named", cond.Message)
+	}
+	if got.Status.SourceZoneID != "" || got.Status.DestinationZoneID != "" {
+		t.Errorf("status zone IDs = %q/%q, want none resolved from an absent subsystem",
+			got.Status.SourceZoneID, got.Status.DestinationZoneID)
+	}
+
+	calls := stub.called()
+	if slices.Contains(calls, "ListFirewallPolicies") {
+		t.Errorf("upstream calls = %v, want no policies read before the subsystem gate", calls)
+	}
+	if len(stub.firewallPolicyOrderingUpdateReqs) != 0 {
+		t.Errorf("ordering update requests = %d, want none on an unconfigured subsystem",
 			len(stub.firewallPolicyOrderingUpdateReqs))
 	}
 }

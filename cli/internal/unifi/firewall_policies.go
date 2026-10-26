@@ -111,19 +111,33 @@ type FirewallPolicy struct {
 	Destination FirewallPolicyZone `json:"destination"`
 }
 
-// ListFirewallPolicies returns every firewall policy on the given site. The list
-// response carries the full policy shape (action, scope, source, and destination),
-// so no detail call is needed to project a policy into a Custom Resource.
-func (c *Client) ListFirewallPolicies(ctx context.Context, siteID string) ([]FirewallPolicy, error) {
+// ListFirewallPolicies returns every firewall policy on the given site and whether the
+// console has Zone-Based Firewall configured. The list response carries the full policy
+// shape (action, scope, source, and destination), so no detail call is needed to project a
+// policy into a Custom Resource.
+//
+// A console with Zone-Based Firewall unconfigured answers the endpoint with the same
+// zone-based-firewall-not-configured 400 the zones read returns, which maps to an empty set
+// rather than an error (design D2). Only that machine-readable code is tolerated; any other
+// failure still surfaces so a real breakage is not hidden.
+//
+// zbfConfigured is false only for that machine-readable code; every other outcome, including
+// an empty 200 page and any other error, leaves it true. It is reported alongside the empty
+// set so a caller can explain the gap rather than degrade silently when the zones read of the
+// same subsystem succeeded.
+func (c *Client) ListFirewallPolicies(ctx context.Context, siteID string) ([]FirewallPolicy, bool, error) {
 	endpoint, err := c.endpoint("sites", siteID, "firewall", "policies")
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	policies, err := listAll[FirewallPolicy](ctx, c, endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("list firewall policies: %w", err)
+	if zoneBasedFirewallUnconfigured(err) {
+		return []FirewallPolicy{}, false, nil
 	}
-	return policies, nil
+	if err != nil {
+		return nil, true, fmt.Errorf("list firewall policies: %w", err)
+	}
+	return policies, true, nil
 }
 
 // FirewallPolicyOrderingIDs is the before/after-system-defined partition of the

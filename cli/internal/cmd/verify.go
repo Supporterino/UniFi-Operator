@@ -62,7 +62,8 @@ func newSnapshotVerifyCommand() *cobra.Command {
 			"Resources carrying a known-gap annotation (an unresolved passphrase, RADIUS profile,\n" +
 			"device tag, network/policy/rule reference, or an unrepresented setting) are expected\n" +
 			"gaps, not drift. It exits 0 when only expected gaps remain and non-zero when an\n" +
-			"unexplained gap exists. Warnings go to stderr.",
+			"unexplained gap exists. Warnings and subsystem notes go to stderr; only warnings\n" +
+			"count as skipped.",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -88,8 +89,10 @@ func newSnapshotVerifyCommand() *cobra.Command {
 
 // run re-reads the console, projects every projectable kind across every site (the same
 // scope as `snapshot all`), and compares that fresh projection to the resources on disk.
-// It writes only to out (the report) and warn (projection warnings); it creates, updates,
-// or deletes no file and mutates nothing upstream.
+// It writes only to out (the report) and warn (projection warnings and subsystem notes); it
+// creates, updates, or deletes no file and mutates nothing upstream. Only the warnings reach
+// the comparison: a note explains a subsystem-level gap and is printed without being counted
+// as a skipped object.
 func (o *snapshotVerifyOptions) run(ctx context.Context, out, warn io.Writer) error {
 	if o.controller == "" {
 		return fmt.Errorf("--controller is required (or set UNIFI_URL)")
@@ -115,20 +118,21 @@ func (o *snapshotVerifyOptions) run(ctx context.Context, out, warn io.Writer) er
 	// state through the same steps the snapshot used is what makes the comparison
 	// meaningful. projectAll ignores --site and spans every site, mirroring `all`.
 	projector := &snapshotOptions{controller: o.controller, controllerRef: o.controllerRef}
-	fresh, warnings, err := projector.projectAll(ctx, client)
+	fresh, err := projector.projectAll(ctx, client)
 	if err != nil {
 		return err
 	}
 
-	report, err := compareSnapshot(o.output, disk, fresh, warnings)
+	// Only the warnings can name a dropped object, so only they feed the skipped count
+	// (design D4). A note explains a subsystem-level gap and is printed without being
+	// counted.
+	report, err := compareSnapshot(o.output, disk, fresh.Resources, fresh.Warnings)
 	if err != nil {
 		return err
 	}
 
-	for _, w := range warnings {
-		if _, err := fmt.Fprintf(warn, "warning: %s\n", w); err != nil {
-			return fmt.Errorf("write warning: %w", err)
-		}
+	if err := writeDiagnostics(warn, fresh); err != nil {
+		return err
 	}
 	if _, err := io.WriteString(out, report.String()); err != nil {
 		return fmt.Errorf("write report: %w", err)

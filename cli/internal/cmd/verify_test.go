@@ -109,6 +109,42 @@ func TestSnapshotVerifyFaithfulSnapshotExitsZero(t *testing.T) {
 	}
 }
 
+// TestSnapshotVerifyZBFOffNoteIsNotSkipped covers the ZBF-off verify scenario: the note is
+// printed to stderr, it is not counted as a skipped object in the report, and verify exits 0
+// because nothing was actually dropped (design D4). The console is served over http, so the
+// controller template contributes its own projection warnings; the assertion is therefore that
+// the skipped count is exactly the non-note stderr lines, not a fixed zero.
+func TestSnapshotVerifyZBFOffNoteIsNotSkipped(t *testing.T) {
+	srv := newZBFOffServer(t)
+	dir := t.TempDir()
+	writeAllSnapshot(t, dir, srv.URL)
+
+	out, errOut, err := runVerify(t, "--controller", srv.URL, "--output", dir)
+	if err != nil {
+		t.Fatalf("verify of a ZBF-off snapshot: %v\n%s", err, out)
+	}
+
+	lines := strings.Split(strings.TrimSuffix(errOut, "\n"), "\n")
+	note := "warning: " + zbfNote("default")
+	notes := 0
+	for _, line := range lines {
+		if line == note {
+			notes++
+		}
+	}
+	if notes != 1 {
+		t.Fatalf("the ZBF note printed %d time(s), want exactly 1:\n%s", notes, errOut)
+	}
+	want := fmt.Sprintf("; %d projection warning(s)", len(lines)-notes)
+	if !strings.Contains(out, want) {
+		t.Errorf("report skipped count is not the %d non-note warning(s), so the note was counted:\n%s\nstderr:\n%s",
+			len(lines)-notes, out, errOut)
+	}
+	if !strings.Contains(out, "result: OK") {
+		t.Errorf("report does not report OK for an unconfigured subsystem:\n%s", out)
+	}
+}
+
 // TestSnapshotVerifyProjectionWarningCountIsDistinct proves the report's projection-warning
 // count is the number of distinct warnings actually emitted (the orchestrator deduplicates
 // them), not the raw per-kind-per-site occurrence count, so the header does not overstate it.

@@ -1,4 +1,4 @@
-# Spec Delta
+# operator-observability Specification
 
 ## Purpose
 
@@ -6,7 +6,7 @@ Define what the UniFi operator must export about its own health, how both deploy
 that signal scrapeable, and the cardinality, credential, and TLS constraints the exported signal
 must respect. This capability describes operator observability, not the state of the UniFi console.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Reconcile outcomes are exported with their reason
 
@@ -97,7 +97,7 @@ credential material.
 - **WHEN** a reconcile fails while resolving a credential Secret
 - **THEN** the Event message names the Secret and key at most, and contains no credential value
 
-
+### Requirement: Exported labels are bounded and credential-free
 
 Every metric the operator exports SHALL use a closed, enumerable label set. No metric SHALL use a
 label whose value includes a Custom Resource name, a namespace, an upstream UUID or `_id`, a URL or

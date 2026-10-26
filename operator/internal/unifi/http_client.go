@@ -49,6 +49,10 @@ type HTTPClient struct {
 	baseURL *url.URL
 	apiKey  string
 	client  *http.Client
+
+	// observer receives one observation per request. NewClient always sets it,
+	// defaulting to the no-op observer, so the request path never nil-checks it.
+	observer RequestObserver
 }
 
 // NewClient constructs an HTTPClient for the given console base URL and API
@@ -58,7 +62,11 @@ type HTTPClient struct {
 // insecureSkipVerify is true, TLS certificate verification is disabled; this is
 // insecure and must only be used for a self-signed console in a trusted
 // environment.
-func NewClient(baseURL, apiKey string, insecureSkipVerify bool) (*HTTPClient, error) {
+//
+// Options are applied after the client is validated. Production passes
+// WithRequestObserver so request traffic is exported; without it the client
+// records nothing.
+func NewClient(baseURL, apiKey string, insecureSkipVerify bool, opts ...Option) (*HTTPClient, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		// url.Error embeds the raw URL, which may contain userinfo credentials;
@@ -92,11 +100,16 @@ func NewClient(baseURL, apiKey string, insecureSkipVerify bool) (*HTTPClient, er
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = tlsConfig
 
-	return &HTTPClient{
-		baseURL: u,
-		apiKey:  apiKey,
-		client:  &http.Client{Timeout: defaultTimeout, Transport: transport},
-	}, nil
+	c := &HTTPClient{
+		baseURL:  u,
+		apiKey:   apiKey,
+		client:   &http.Client{Timeout: defaultTimeout, Transport: transport},
+		observer: noopRequestObserver{},
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c, nil
 }
 
 // urlErrorCause unwraps a *url.Error to its underlying cause. The wrapper's
@@ -264,7 +277,17 @@ func withPageQuery(endpoint string, offset int64) (string, error) {
 // do performs an HTTP request and decodes a JSON response into out. A non-2xx
 // response is mapped to a typed *APIError built from the controller's flat
 // error body. The API key is set as a header and never logged.
-func (c *HTTPClient) do(ctx context.Context, method, endpoint string, body, out any) error {
+//
+// Every request is reported once to the client's RequestObserver, whatever the
+// outcome: the deferred call runs on all return paths and sees the named error
+// result. Observing the operation this way leaves the request, error types, and
+// retry semantics untouched.
+func (c *HTTPClient) do(ctx context.Context, method, endpoint string, body, out any) (err error) {
+	start := time.Now()
+	defer func() {
+		c.observer.ObserveRequest(operationFromEndpoint(endpoint), err, time.Since(start))
+	}()
+
 	var bodyReader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)

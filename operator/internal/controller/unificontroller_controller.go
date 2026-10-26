@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	unifiv1alpha1 "github.com/Supporterino/UniFi-Operator/operator/api/v1alpha1"
+	"github.com/Supporterino/UniFi-Operator/operator/internal/metrics"
 	"github.com/Supporterino/UniFi-Operator/operator/internal/unifi"
 )
 
@@ -58,6 +60,11 @@ type UnifiControllerReconciler struct {
 	// NewClient constructs the UniFi client. It defaults to unifi.NewClient and
 	// is injectable so tests substitute a stub.
 	NewClient ConnectionFactory
+
+	// Recorder records Ready-condition transitions as Kubernetes Events. It is
+	// constructed in cmd/main.go with the same name as the controller so the
+	// Event source matches kubectl describe.
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unificontrollers,verbs=get;list;watch
@@ -185,16 +192,18 @@ func (r *UnifiControllerReconciler) updateStatus(
 		controller.Status.ApplicationVersion = applicationVersion
 		changed = true
 	}
-	if setReadyCondition(&controller.Status.Conditions, controller.Generation, ready, reason, message) {
+	readyChanged := setReadyCondition(&controller.Status.Conditions, controller.Generation, ready, reason, message)
+	if readyChanged {
 		changed = true
 	}
 
-	if !changed {
-		return ctrl.Result{}, nil
+	if changed {
+		if err := r.Status().Update(ctx, controller); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update status: %w", err)
+		}
 	}
-	if err := r.Status().Update(ctx, controller); err != nil {
-		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
-	}
+	metrics.RecordReconcile(reconcileKindController, ready, reason)
+	recordConditionTransition(r.Recorder, controller, readyChanged, ready, reason, message)
 	return ctrl.Result{}, nil
 }
 

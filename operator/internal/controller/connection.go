@@ -44,6 +44,21 @@ func defaultConnectionFactory(baseURL, apiKey string, insecureSkipVerify bool) (
 	return unifi.NewClient(baseURL, apiKey, insecureSkipVerify)
 }
 
+// NewConnectionFactory returns a ConnectionFactory whose clients report every
+// request to obs, so the upstream metrics measure the reconcilers' traffic. A
+// nil obs returns the default factory, which builds an unobserved client: the
+// dependency is passed explicitly rather than defaulted to package state
+// (docs/go.md, "Packages and layering"). cmd/main.go builds one factory and
+// gives it to every reconciler.
+func NewConnectionFactory(obs unifi.RequestObserver) ConnectionFactory {
+	if obs == nil {
+		return defaultConnectionFactory
+	}
+	return func(baseURL, apiKey string, insecureSkipVerify bool) (unifi.Client, error) {
+		return unifi.NewClient(baseURL, apiKey, insecureSkipVerify, unifi.WithRequestObserver(obs))
+	}
+}
+
 // ResolveError reports that a controller reference or its credential Secret
 // could not be resolved. Reason is a Kubernetes condition reason and Message is
 // safe to surface in status: neither ever contains credential material. Callers

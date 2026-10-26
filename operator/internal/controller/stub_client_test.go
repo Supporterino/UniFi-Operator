@@ -391,6 +391,14 @@ func (s *stubUnifiClient) ListDeviceTags(context.Context, string) ([]unifi.Devic
 	return s.deviceTags, s.deviceTagsErr
 }
 
+// setRadiusProfiles replaces the profiles the stub reports, so a test can model
+// the console converging on an adopted profile between reconciles.
+func (s *stubUnifiClient) setRadiusProfiles(profiles []unifi.RadiusProfile) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.radiusProfiles = profiles
+}
+
 func (s *stubUnifiClient) ListRadiusProfiles(context.Context, string) ([]unifi.RadiusProfile, error) {
 	s.record("ListRadiusProfiles")
 	s.mu.Lock()

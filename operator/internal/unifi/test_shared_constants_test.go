@@ -25,4 +25,8 @@ const (
 	testEndpointPorts     = "PORTS"
 	testDnsTypeARecord    = "A_RECORD"
 	testTypeIPv4          = "IPV4"
+
+	// Operation labels asserted in more than one test file.
+	testOperationInfo             = "info"
+	testOperationFirewallPolicies = "firewall.policies"
 )

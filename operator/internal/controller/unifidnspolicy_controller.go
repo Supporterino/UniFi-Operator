@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	unifiv1alpha1 "github.com/Supporterino/UniFi-Operator/operator/api/v1alpha1"
+	"github.com/Supporterino/UniFi-Operator/operator/internal/metrics"
 	"github.com/Supporterino/UniFi-Operator/operator/internal/unifi"
 )
 
@@ -68,6 +70,11 @@ type UnifiDnsPolicyReconciler struct {
 	// NewClient constructs the UniFi client for the resolved controller;
 	// defaults to unifi.NewClient and is injectable for tests.
 	NewClient ConnectionFactory
+
+	// Recorder records Ready-condition transitions as Kubernetes Events. It is
+	// constructed in cmd/main.go with the same name as the controller so the
+	// Event source matches kubectl describe.
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=unifi.supporterino.de,resources=unifidnspolicies,verbs=get;list;watch;update;patch
@@ -379,16 +386,18 @@ func (r *UnifiDnsPolicyReconciler) updateStatus(
 		policy.Status.Origin = *origin
 		changed = true
 	}
-	if setReadyCondition(&policy.Status.Conditions, policy.Generation, ready, reason, message) {
+	readyChanged := setReadyCondition(&policy.Status.Conditions, policy.Generation, ready, reason, message)
+	if readyChanged {
 		changed = true
 	}
 
-	if !changed {
-		return ctrl.Result{}, nil
+	if changed {
+		if err := r.Status().Update(ctx, policy); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update status: %w", err)
+		}
 	}
-	if err := r.Status().Update(ctx, policy); err != nil {
-		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
-	}
+	metrics.RecordReconcile(reconcileKindDnsPolicy, ready, reason)
+	recordConditionTransition(r.Recorder, policy, readyChanged, ready, reason, message)
 	return ctrl.Result{}, nil
 }
 

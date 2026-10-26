@@ -37,6 +37,7 @@ import (
 
 	unifiv1alpha1 "github.com/Supporterino/UniFi-Operator/operator/api/v1alpha1"
 	"github.com/Supporterino/UniFi-Operator/operator/internal/controller"
+	"github.com/Supporterino/UniFi-Operator/operator/internal/metrics"
 	"github.com/Supporterino/UniFi-Operator/operator/internal/version"
 	// +kubebuilder:scaffold:imports
 )
@@ -88,6 +89,12 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	setupLog.Info("starting", "version", version.Version)
+
+	// Registering the operator's collectors is explicit rather than an import
+	// side effect, so the registry the metrics server serves is populated by
+	// this binary before the manager starts (docs/go.md, "Packages and
+	// layering"). Register is idempotent.
+	metrics.Register()
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -180,10 +187,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Every reconciler gets the same client factory, so every request to a
+	// console is observed by the upstream metrics.
+	newClient := controller.NewConnectionFactory(metrics.UpstreamRecorder{})
+
 	if err := (&controller.UnifiControllerReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unificontroller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiController")
 		os.Exit(1)
@@ -192,6 +205,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifisite"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiSite")
 		os.Exit(1)
@@ -200,6 +215,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifinetwork"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiNetwork")
 		os.Exit(1)
@@ -208,6 +225,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unififirewallzone"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiFirewallZone")
 		os.Exit(1)
@@ -216,6 +235,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifiwifibroadcast"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiWifiBroadcast")
 		os.Exit(1)
@@ -224,6 +245,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifiradiusprofile"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiRadiusProfile")
 		os.Exit(1)
@@ -232,6 +255,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifitrafficmatchinglist"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiTrafficMatchingList")
 		os.Exit(1)
@@ -240,6 +265,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unififirewallpolicy"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiFirewallPolicy")
 		os.Exit(1)
@@ -248,6 +275,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unififirewallpolicyordering"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiFirewallPolicyOrdering")
 		os.Exit(1)
@@ -256,6 +285,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifiaclrule"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiAclRule")
 		os.Exit(1)
@@ -264,6 +295,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifiaclruleordering"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiAclRuleOrdering")
 		os.Exit(1)
@@ -272,6 +305,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifidnspolicy"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiDnsPolicy")
 		os.Exit(1)
@@ -280,6 +315,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifiswitchinglag"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiSwitchingLag")
 		os.Exit(1)
@@ -288,6 +325,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifiswitchingmclagdomain"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiSwitchingMcLagDomain")
 		os.Exit(1)
@@ -296,6 +335,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifiswitchingswitchstack"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiSwitchingSwitchStack")
 		os.Exit(1)
@@ -304,6 +345,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifivpnserver"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiVpnServer")
 		os.Exit(1)
@@ -312,6 +355,8 @@ func main() {
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
+		NewClient: newClient,
+		Recorder:  mgr.GetEventRecorderFor("unifisitetositetunnel"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "UnifiSiteToSiteTunnel")
 		os.Exit(1)

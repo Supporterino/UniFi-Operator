@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -45,6 +46,7 @@ type snapshotVerifyOptions struct {
 	controllerRef string
 	apiKey        string
 	output        string
+	summaryJSON   string
 }
 
 func newSnapshotVerifyCommand() *cobra.Command {
@@ -84,6 +86,8 @@ func newSnapshotVerifyCommand() *cobra.Command {
 		"metadata.name of the UnifiController the snapshot references")
 	flags.StringVar(&opts.apiKey, "api-key", "", "UniFi API key (or UNIFI_API_KEY); never logged")
 	flags.StringVarP(&opts.output, "output", "o", defaultVerifyOutput, "snapshot directory to verify")
+	flags.StringVar(&opts.summaryJSON, "summary-json", "",
+		"write a JSON run summary to <path>, or - for stderr; never written to stdout; off unless set")
 	return cmd
 }
 
@@ -94,6 +98,7 @@ func newSnapshotVerifyCommand() *cobra.Command {
 // the comparison: a note explains a subsystem-level gap and is printed without being counted
 // as a skipped object.
 func (o *snapshotVerifyOptions) run(ctx context.Context, out, warn io.Writer) error {
+	start := time.Now()
 	if o.controller == "" {
 		return fmt.Errorf("--controller is required (or set UNIFI_URL)")
 	}
@@ -118,7 +123,8 @@ func (o *snapshotVerifyOptions) run(ctx context.Context, out, warn io.Writer) er
 	// state through the same steps the snapshot used is what makes the comparison
 	// meaningful. projectAll ignores --site and spans every site, mirroring `all`.
 	projector := &snapshotOptions{controller: o.controller, controllerRef: o.controllerRef}
-	fresh, err := projector.projectAll(ctx, client)
+	builder := newSummaryBuilder()
+	fresh, err := projector.projectAll(ctx, client, builder)
 	if err != nil {
 		return err
 	}
@@ -137,10 +143,34 @@ func (o *snapshotVerifyOptions) run(ctx context.Context, out, warn io.Writer) er
 	if _, err := io.WriteString(out, report.String()); err != nil {
 		return fmt.Errorf("write report: %w", err)
 	}
+	// The summary carries the same run shape `snapshot` reports plus verify's coverage and
+	// fidelity tallies. It is written before the unexplained-gap error so a failing verify
+	// still leaves CI the numbers behind the non-zero exit.
+	summary := summarize(allKind, fresh, builder, time.Since(start))
+	summary.Verify = &summaryVerify{
+		Projected:  report.projected,
+		Missing:    len(report.missing),
+		Unexpected: len(report.stale),
+		Drifted:    len(report.drifts),
+		Expected:   len(report.expected),
+		Skipped:    report.skipped,
+	}
+	if err := o.writeSummary(warn, summary); err != nil {
+		return err
+	}
 	if gaps := report.unexplained(); gaps > 0 {
 		return fmt.Errorf("snapshot verify: %d unexplained gap(s) found in %s", gaps, o.output)
 	}
 	return nil
+}
+
+// writeSummary writes the run summary when --summary-json asked for one, and writes nothing at
+// all otherwise, so a default invocation keeps its exact bytes (design D9).
+func (o *snapshotVerifyOptions) writeSummary(warn io.Writer, summary runSummary) error {
+	if o.summaryJSON == "" {
+		return nil
+	}
+	return writeSummaryJSON(warn, o.summaryJSON, summary)
 }
 
 // readSnapshotDirectory parses every YAML Custom Resource a prior snapshot wrote into dir.

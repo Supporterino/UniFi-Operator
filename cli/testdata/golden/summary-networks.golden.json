@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "networks",
+  "resources": 3,
+  "kinds": [
+    {
+      "kind": "UnifiNetwork",
+      "count": 3
+    }
+  ],
+  "sites": [
+    {
+      "site": "default",
+      "resources": 3,
+      "kinds": [
+        {
+          "kind": "UnifiNetwork",
+          "count": 3
+        }
+      ]
+    }
+  ],
+  "warnings": 1,
+  "notes": 0,
+  "elapsedMillis": 0
+}

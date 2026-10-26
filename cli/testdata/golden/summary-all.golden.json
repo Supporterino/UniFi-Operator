@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "kind": "all",
+  "resources": 40,
+  "kinds": [
+    {
+      "kind": "UnifiAclRule",
+      "count": 3
+    },
+    {
+      "kind": "UnifiAclRuleOrdering",
+      "count": 2
+    },
+    {
+      "kind": "UnifiController",
+      "count": 1
+    },
+    {
+      "kind": "UnifiDnsPolicy",
+      "count": 7
+    },
+    {
+      "kind": "UnifiFirewallPolicy",
+      "count": 2
+    },
+    {
+      "kind": "UnifiFirewallPolicyOrdering",
+      "count": 2
+    },
+    {
+      "kind": "UnifiFirewallZone",
+      "count": 2
+    },
+    {
+      "kind": "UnifiNetwork",
+      "count": 3
+    },
+    {
+      "kind": "UnifiRadiusProfile",
+      "count": 2
+    },
+    {
+      "kind": "UnifiSite",
+      "count": 2
+    },
+    {
+      "kind": "UnifiSiteToSiteTunnel",
+      "count": 1
+    },
+    {
+      "kind": "UnifiSwitchingLag",
+      "count": 2
+    },
+    {
+      "kind": "UnifiSwitchingMcLagDomain",
+      "count": 1
+    },
+    {
+      "kind": "UnifiSwitchingSwitchStack",
+      "count": 1
+    },
+    {
+      "kind": "UnifiTrafficMatchingList",
+      "count": 3
+    },
+    {
+      "kind": "UnifiVpnServer",
+      "count": 2
+    },
+    {
+      "kind": "UnifiWifiBroadcast",
+      "count": 4
+    }
+  ],
+  "sites": [
+    {
+      "site": "default",
+      "resources": 36,
+      "kinds": [
+        {
+          "kind": "UnifiAclRule",
+          "count": 3
+        },
+        {
+          "kind": "UnifiAclRuleOrdering",
+          "count": 1
+        },
+        {
+          "kind": "UnifiDnsPolicy",
+          "count": 7
+        },
+        {
+          "kind": "UnifiFirewallPolicy",
+          "count": 2
+        },
+        {
+          "kind": "UnifiFirewallPolicyOrdering",
+          "count": 2
+        },
+        {
+          "kind": "UnifiFirewallZone",
+          "count": 2
+        },
+        {
+          "kind": "UnifiNetwork",
+          "count": 3
+        },
+        {
+          "kind": "UnifiRadiusProfile",
+          "count": 2
+        },
+        {
+          "kind": "UnifiSiteToSiteTunnel",
+          "count": 1
+        },
+        {
+          "kind": "UnifiSwitchingLag",
+          "count": 2
+        },
+        {
+          "kind": "UnifiSwitchingMcLagDomain",
+          "count": 1
+        },
+        {
+          "kind": "UnifiSwitchingSwitchStack",
+          "count": 1
+        },
+        {
+          "kind": "UnifiTrafficMatchingList",
+          "count": 3
+        },
+        {
+          "kind": "UnifiVpnServer",
+          "count": 2
+        },
+        {
+          "kind": "UnifiWifiBroadcast",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "site": "branch",
+      "resources": 1,
+      "kinds": [
+        {
+          "kind": "UnifiAclRuleOrdering",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "warnings": 20,
+  "notes": 0,
+  "elapsedMillis": 0
+}

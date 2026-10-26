@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -24,6 +27,7 @@ type snapshotOptions struct {
 	site          string
 	apiKey        string
 	output        string
+	summaryJSON   string
 }
 
 func newSnapshotCommand() *cobra.Command {
@@ -77,11 +81,14 @@ func newSnapshotCommand() *cobra.Command {
 		"upstream site internalReference the per-kind commands snapshot (ignored by `all`)")
 	flags.StringVar(&opts.apiKey, "api-key", "", "UniFi API key (or UNIFI_API_KEY); never logged")
 	flags.StringVarP(&opts.output, "output", "o", "-", "output directory for CR files, or - for stdout")
+	flags.StringVar(&opts.summaryJSON, "summary-json", "",
+		"write a JSON run summary to <path>, or - for stderr; never written to stdout; off unless set")
 	cmd.AddCommand(newSnapshotVerifyCommand())
 	return cmd
 }
 
 func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Writer) error {
+	start := time.Now()
 	if !acceptedKind(kind) {
 		return fmt.Errorf(
 			"unknown snapshot kind %q: supported kinds are %s",
@@ -100,14 +107,18 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 	}
 
 	var result projectionResult
+	builder := newSummaryBuilder()
 
 	switch {
 	case kind == allKind:
-		result, err = o.projectAll(ctx, client)
+		result, err = o.projectAll(ctx, client, builder)
 	case slices.Contains(nonProjectableKinds, kind):
-		return o.runNonProjectable(ctx, client, kind, out)
+		if err := o.runNonProjectable(ctx, client, kind, out); err != nil {
+			return err
+		}
+		return o.writeSummary(warn, summarize(kind, projectionResult{}, builder, time.Since(start)))
 	default:
-		result, err = o.projectKind(ctx, client, kind)
+		result, err = o.projectKind(ctx, client, kind, builder)
 	}
 	if err != nil {
 		return err
@@ -116,7 +127,21 @@ func (o *snapshotOptions) run(ctx context.Context, kind string, out, warn io.Wri
 	if err := writeDiagnostics(warn, result); err != nil {
 		return err
 	}
-	return emitResources(out, o.output, result.Resources)
+	if err := emitResources(out, o.output, result.Resources); err != nil {
+		return err
+	}
+	// The summary is written last, so its counts describe what was actually emitted and its
+	// elapsed time covers emission too. It goes to its own destination and never to out.
+	return o.writeSummary(warn, summarize(kind, result, builder, time.Since(start)))
+}
+
+// writeSummary writes the run summary when --summary-json asked for one, and writes nothing at
+// all otherwise, so a default invocation keeps its exact bytes (design D9).
+func (o *snapshotOptions) writeSummary(warn io.Writer, summary runSummary) error {
+	if o.summaryJSON == "" {
+		return nil
+	}
+	return writeSummaryJSON(warn, o.summaryJSON, summary)
 }
 
 // writeDiagnostics prints the projection warnings and then its notes, one line each, with the
@@ -212,6 +237,160 @@ type projectionResult struct {
 	Notes []string
 }
 
+// summarySchemaVersion is the version of the run-summary JSON contract (design D9). The
+// summary is a contract for CI consumers: a field may be added and a new optional object
+// appended, but renaming or removing one requires a new version.
+const summarySchemaVersion = 1
+
+// summaryToStderr is the --summary-json destination meaning "the diagnostics stream". Stdout
+// is deliberately not a destination: it carries the `---`-separated YAML resource stream a
+// caller pipes into `kubectl apply -f -`.
+const summaryToStderr = "-"
+
+// runSummary is the machine-readable account of one `snapshot` or `snapshot verify` run,
+// written only when --summary-json is requested. Every field is a Kubernetes identity or a
+// count, so the summary can be attached to a ticket or a CI log without leaking an upstream
+// UUID or `_id` (design D9).
+type runSummary struct {
+	// SchemaVersion versions this object's shape.
+	SchemaVersion int `json:"schemaVersion"`
+	// Kind is the snapshot kind the run projected; "all" for the aggregate and for verify.
+	Kind string `json:"kind"`
+	// Resources is the number of Custom Resources emitted; 0 for a read-only listing.
+	Resources int `json:"resources"`
+	// Kinds counts the emitted resources per Custom Resource kind, sorted by kind.
+	Kinds []summaryKind `json:"kinds"`
+	// Sites attributes the site-scoped resources to the site they were projected for, in
+	// projection order. The site-agnostic `controller` and `sites` kinds are counted in Kinds
+	// only, because they are not read per site. Always an array, empty when there is no site
+	// scope.
+	Sites []summarySite `json:"sites"`
+	// Warnings and Notes are the distinct diagnostics the run printed.
+	Warnings int `json:"warnings"`
+	Notes    int `json:"notes"`
+	// ElapsedMillis is the wall-clock duration of the run, including emission.
+	ElapsedMillis int64 `json:"elapsedMillis"`
+	// Verify is present only on a `snapshot verify` summary.
+	Verify *summaryVerify `json:"verify,omitempty"`
+}
+
+// summaryKind is one Custom Resource kind's emitted count.
+type summaryKind struct {
+	Kind  string `json:"kind"`
+	Count int    `json:"count"`
+}
+
+// summarySite is one site's emitted-resource tally.
+type summarySite struct {
+	Site      string        `json:"site"`
+	Resources int           `json:"resources"`
+	Kinds     []summaryKind `json:"kinds"`
+}
+
+// summaryVerify is verify's coverage and fidelity tally. Projected, Missing, Unexpected and
+// Skipped mirror the counts the human report prints; Drifted counts field-level findings, as
+// the report's drift count does, and Expected counts known-gap resources. Skipped is the
+// projection warnings only, so a subsystem note never inflates it.
+type summaryVerify struct {
+	Projected  int `json:"projected"`
+	Missing    int `json:"missing"`
+	Unexpected int `json:"unexpected"`
+	Drifted    int `json:"drifted"`
+	Expected   int `json:"expected"`
+	Skipped    int `json:"skipped"`
+}
+
+// summaryBuilder accumulates the per-site attribution a projection cannot carry: a projection
+// returns resources without knowing which site they were read for, so the orchestrator records
+// the site as it iterates. Per-kind totals are always derived from the emitted resources, so
+// they cannot disagree with what was written.
+type summaryBuilder struct {
+	order []string
+	sites map[string]map[string]int
+}
+
+func newSummaryBuilder() *summaryBuilder {
+	return &summaryBuilder{sites: make(map[string]map[string]int)}
+}
+
+// addSite records that site was projected and counts the resources emitted for it. A site
+// with nothing to emit still gets an entry, so a consumer can tell a visited-but-empty site
+// from one the run never reached.
+func (b *summaryBuilder) addSite(site string, resources []emit.Resource) {
+	counts, ok := b.sites[site]
+	if !ok {
+		counts = make(map[string]int)
+		b.sites[site] = counts
+		b.order = append(b.order, site)
+	}
+	for _, resource := range resources {
+		counts[resource.Kind]++
+	}
+}
+
+// entries renders the per-site tallies in projection order.
+func (b *summaryBuilder) entries() []summarySite {
+	entries := make([]summarySite, 0, len(b.order))
+	for _, site := range b.order {
+		counts := kindCounts(b.sites[site])
+		total := 0
+		for _, count := range counts {
+			total += count.Count
+		}
+		entries = append(entries, summarySite{Site: site, Resources: total, Kinds: counts})
+	}
+	return entries
+}
+
+// kindCounts renders a kind-to-count map as a slice sorted by kind, so the document is stable.
+func kindCounts(counts map[string]int) []summaryKind {
+	kinds := make([]summaryKind, 0, len(counts))
+	for kind, count := range counts {
+		kinds = append(kinds, summaryKind{Kind: kind, Count: count})
+	}
+	sort.Slice(kinds, func(i, j int) bool { return kinds[i].Kind < kinds[j].Kind })
+	return kinds
+}
+
+// summarize assembles the run summary from what the run emitted, the attribution the
+// orchestrator collected, and the elapsed time.
+func summarize(kind string, result projectionResult, builder *summaryBuilder, elapsed time.Duration) runSummary {
+	byKind := make(map[string]int, len(result.Resources))
+	for _, resource := range result.Resources {
+		byKind[resource.Kind]++
+	}
+	return runSummary{
+		SchemaVersion: summarySchemaVersion,
+		Kind:          kind,
+		Resources:     len(result.Resources),
+		Kinds:         kindCounts(byKind),
+		Sites:         builder.entries(),
+		Warnings:      len(result.Warnings),
+		Notes:         len(result.Notes),
+		ElapsedMillis: elapsed.Milliseconds(),
+	}
+}
+
+// writeSummaryJSON writes summary as one JSON object to destination: the diagnostics stream
+// for "-", otherwise the named file, created or truncated.
+func writeSummaryJSON(warn io.Writer, destination string, summary runSummary) error {
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode run summary: %w", err)
+	}
+	data = append(data, '\n')
+	if destination == summaryToStderr {
+		if _, err := warn.Write(data); err != nil {
+			return fmt.Errorf("write run summary: %w", err)
+		}
+		return nil
+	}
+	if err := os.WriteFile(destination, data, 0o644); err != nil {
+		return fmt.Errorf("write run summary to %q: %w", destination, err)
+	}
+	return nil
+}
+
 // kindProjection is a pure read-and-project step for one snapshot kind. It reads whatever
 // upstream objects the kind needs and returns the emitted resources plus human-readable
 // warnings and notes. It performs no I/O other than reading the controller and never mutates
@@ -278,7 +457,8 @@ func projectableKindFor(kind string) (projectableKind, bool) {
 // the site list once, then iterates projectableKinds: the site-agnostic kinds are projected
 // once and each site-scoped kind once per site, against that site's emitted name and
 // upstream id. It deliberately ignores --site, which only restricts the per-kind commands.
-func (o *snapshotOptions) projectAll(ctx context.Context, client *unifi.Client) (projectionResult, error) {
+// Every site-scoped projection is attributed to its site in builder for the run summary.
+func (o *snapshotOptions) projectAll(ctx context.Context, client *unifi.Client, builder *summaryBuilder) (projectionResult, error) {
 	sites, err := client.ListSites(ctx)
 	if err != nil {
 		return projectionResult{}, fmt.Errorf("snapshot sites: %w", err)
@@ -329,6 +509,7 @@ func (o *snapshotOptions) projectAll(ctx context.Context, client *unifi.Client) 
 			if err != nil {
 				return projectionResult{}, err
 			}
+			builder.addSite(siteName, res.Resources)
 			appendResult(res)
 		}
 	}
@@ -337,8 +518,9 @@ func (o *snapshotOptions) projectAll(ctx context.Context, client *unifi.Client) 
 
 // projectKind projects a single kind for a per-kind `snapshot <kind>` invocation. A
 // site-scoped kind is resolved to the site named by --site (the default site when the flag
-// is unset); the site-agnostic `sites` kind runs against the full site list.
-func (o *snapshotOptions) projectKind(ctx context.Context, client *unifi.Client, kind string) (projectionResult, error) {
+// is unset); the site-agnostic `sites` kind runs against the full site list. A site-scoped
+// projection is attributed to its site in builder for the run summary.
+func (o *snapshotOptions) projectKind(ctx context.Context, client *unifi.Client, kind string, builder *summaryBuilder) (projectionResult, error) {
 	entry, ok := projectableKindFor(kind)
 	if !ok {
 		return projectionResult{}, fmt.Errorf("unknown snapshot kind %q", kind)
@@ -371,7 +553,12 @@ func (o *snapshotOptions) projectKind(ctx context.Context, client *unifi.Client,
 		return projectionResult{}, err
 	}
 	input.site = siteRef{name: siteName, id: siteID}
-	return entry.project(ctx, input)
+	result, err := entry.project(ctx, input)
+	if err != nil {
+		return projectionResult{}, err
+	}
+	builder.addSite(siteName, result.Resources)
+	return result, nil
 }
 
 // appendDistinct appends each value not already in seen, recording it, so a value repeated by

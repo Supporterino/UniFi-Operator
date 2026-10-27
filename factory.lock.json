@@ -100,57 +100,57 @@
       "template": "agents/architect",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "6513dd54aee7d5db8633129a25494e40957b6598f49564552bc54d6479e3a083",
-      "blob": "d2085360675fd33a05c434ccbae887b587efa7e8"
+      "sha256": "3c812ad5ec11e1e3b2c903358e3a3beedfc73fe5212ea8ae10748e322b1f5064",
+      "blob": "916363564d1913a2925b525927b49376382ba09a"
     },
     ".opencode/agents/contract-reviewer.md": {
       "template": "agents/contract-reviewer",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "9c399b48d963d811ae0daaf653cb61e92acdf7fc390c8bacc0bbd36439287b8c",
-      "blob": "7366fbe1ebfb81e6c97b487c62f1792286a3b024"
+      "sha256": "de27a970366f19aa2e57cd0dede867927c9098369865a35c3c2713d473e67b09",
+      "blob": "db27a883a664ba167cfb4057d7fc4a00fce4006d"
     },
     ".opencode/agents/explorer.md": {
       "template": "agents/explorer",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "fa0edd9c6376f55ce075ea7c82f0d9c96f7b1c68037e1464914baccca87d1304",
-      "blob": "f05b1050dae92027b5e031ab247deb9418166f21"
+      "sha256": "63da3b9c508f64a1b86d0428d9ea8bdeab0b60b84cf69149f6c7d4192abada87",
+      "blob": "35a216087196f9bb6f319ede3f7693b0533588a6"
     },
     ".opencode/agents/implementer-unifi-operator.md": {
       "template": "agents/implementer",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "7126a001315f0b8110adf88dab16c0c45ff25f6106edb889cc3a9a6bdaa9cc2d",
-      "blob": "5aca07e9e4ad0b484bb12e643208abc83f88a4d6"
+      "sha256": "335b56c742c88ee5e719b78f8709384805475be1cbaa67a0b71b42f2ac4cca7b",
+      "blob": "63f2b1fd878a1f26a5c40a1c658f25a5b714e9aa"
     },
     ".opencode/agents/orchestrator.md": {
       "template": "agents/orchestrator",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "963de3b07838e167ad4e7aa04200aa4c1f3a8e8ca9de7538a60a69f79ac00c94",
-      "blob": "ec189e3af1105f5fc312eac0019bf27cf19d3b7b"
+      "sha256": "3e8172e50f92975cbb1a0286907c0a9527fd530a8689b5ec3ac3f93485548f2a",
+      "blob": "d18d1aed06ac960bbc843a228bfdb5daf690d646"
     },
     ".opencode/agents/reviewer.md": {
       "template": "agents/reviewer",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "3673462648b4758ef0cd3f31d23c3362c0cf74d70dce4a851452e4c83b4954f9",
-      "blob": "9121b74fa61563860f10e6c5f69792af2c21762d"
+      "sha256": "33764043233863b85da1218c09e31cca20d0d5f261879872dc6bf52686631357",
+      "blob": "8fb2315824324e59edf0b3395fe95b5816ba0795"
     },
     ".opencode/agents/tester.md": {
       "template": "agents/tester",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "0ec39b731033cced7f2d80a254b7580509d705e633b79e633a4a7b10abcf694e",
-      "blob": "8d24b4a5ff5012c7847a0a4133f98fe64ac5856d"
+      "sha256": "8ad252fbc04b7aa0e4c21fb60b423c1dcea332aa4d6025c26cc907a05028a41b",
+      "blob": "fc4dd922722bae5e75ab00161ae46563d6c2fa85"
     },
     ".opencode/opencode.jsonc": {
       "template": "opencode-config",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "1e9e9b6f5b6f04ab134c0cb07988207b486d7456947fa1aa0cc7fdfdb8eaf060",
-      "blob": "a713c7f06240487fdb28afee92633b820f884476"
+      "sha256": "67002dc868a00617f038e92c8079f9e5029121b1d443ba5ef3550b1c3f23c1dd",
+      "blob": "4e3edc37c434074ad94890451db0b601664912f1"
     },
     ".opencode/plugins/factory.js": {
       "template": "plugin",

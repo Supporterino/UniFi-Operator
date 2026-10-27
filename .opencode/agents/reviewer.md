@@ -1,7 +1,7 @@
 ---
 description: "ai-factory reviewer: per-repo review against scenarios and standards."
 mode: primary
-model: anthropic/claude-opus-5-5
+model: deepseek/deepseek-v4-pro
 permissions:
   - { action: read, resource: "*", effect: deny }
   - { action: glob, resource: "*", effect: deny }
@@ -170,6 +170,9 @@ Every problem becomes one entry in `findings` with `severity` (`must` = breaks a
 
 Read these files before you change anything; they are the project's own bar and take precedence over your general knowledge. Paths are workspace-relative; from a worktree or repo checkout, open `$AI_FACTORY_WORKSPACE/<path>`:
 - `docs/security.md`
+- `docs/go.md`
+- `docs/crd-conventions.md`
+- `docs/testing.md`
 
 # Add-on: Ponytail v5.3.2 (MIT, © DietrichGebert; vendored in .opencode/addons/ponytail)
 

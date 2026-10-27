@@ -1,7 +1,7 @@
 ---
 description: "ai-factory explorer: read-only, graph-first map of one repo."
 mode: primary
-model: anthropic/claude-haiku-5-5
+model: deepseek/deepseek-flash
 permissions:
   - { action: read, resource: "*", effect: deny }
   - { action: glob, resource: "*", effect: deny }
@@ -154,6 +154,9 @@ Use `task: "explore:<repo>"`. Do not propose a design. Put uncertainty under `ri
 
 Read these files before you change anything; they are the project's own bar and take precedence over your general knowledge. Paths are workspace-relative; from a worktree or repo checkout, open `$AI_FACTORY_WORKSPACE/<path>`:
 - `docs/security.md`
+- `docs/go.md`
+- `docs/crd-conventions.md`
+- `docs/testing.md`
 
 ## Untrusted content
 

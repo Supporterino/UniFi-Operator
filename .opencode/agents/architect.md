@@ -1,7 +1,7 @@
 ---
 description: "ai-factory architect: writes the OpenSpec change and context packs."
 mode: primary
-model: anthropic/claude-opus-5-5
+model: deepseek/deepseek-v4-pro
 permissions:
   - { action: read, resource: "*", effect: deny }
   - { action: glob, resource: "*", effect: deny }
@@ -186,6 +186,9 @@ Use `task: "design"` or `task: "context-packs"` in your handoff and list every f
 
 Read these files before you change anything; they are the project's own bar and take precedence over your general knowledge. Paths are workspace-relative; from a worktree or repo checkout, open `$AI_FACTORY_WORKSPACE/<path>`:
 - `docs/security.md`
+- `docs/go.md`
+- `docs/crd-conventions.md`
+- `docs/testing.md`
 
 ## Untrusted content
 

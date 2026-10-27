@@ -100,15 +100,15 @@
       "template": "agents/architect",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "3c812ad5ec11e1e3b2c903358e3a3beedfc73fe5212ea8ae10748e322b1f5064",
-      "blob": "916363564d1913a2925b525927b49376382ba09a"
+      "sha256": "6080584a202ec90f563276db57cc6a1ef85f341bb1f9b0dbfa62ab13b4257267",
+      "blob": "0ecd54dd0365a3561e078c2c2d608c14a9a6c7c0"
     },
     ".opencode/agents/contract-reviewer.md": {
       "template": "agents/contract-reviewer",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "de27a970366f19aa2e57cd0dede867927c9098369865a35c3c2713d473e67b09",
-      "blob": "db27a883a664ba167cfb4057d7fc4a00fce4006d"
+      "sha256": "a6782aeed44638d95ca46bb431fabee3eee70a0daf80defd85de05a5505c042c",
+      "blob": "7e9a817f714858146fb6cdaa14b144587ffbe395"
     },
     ".opencode/agents/explorer.md": {
       "template": "agents/explorer",
@@ -135,8 +135,8 @@
       "template": "agents/reviewer",
       "templateVersion": "0.3.0",
       "mode": "file",
-      "sha256": "33764043233863b85da1218c09e31cca20d0d5f261879872dc6bf52686631357",
-      "blob": "8fb2315824324e59edf0b3395fe95b5816ba0795"
+      "sha256": "489bd1acece8bf28011daffea4721454e478386c1c6aa926a720655a056a60f8",
+      "blob": "8cfc5141134bfb00f4196f5953912104e66ee8ad"
     },
     ".opencode/agents/tester.md": {
       "template": "agents/tester",

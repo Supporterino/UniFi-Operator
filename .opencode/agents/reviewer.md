@@ -1,7 +1,7 @@
 ---
 description: "ai-factory reviewer: per-repo review against scenarios and standards."
 mode: primary
-model: deepseek/deepseek-v4-pro
+model: deepseek/deepseek-flash
 permissions:
   - { action: read, resource: "*", effect: deny }
   - { action: glob, resource: "*", effect: deny }

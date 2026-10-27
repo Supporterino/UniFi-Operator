@@ -1,0 +1,9 @@
+// Managed by ai-factory. Change factory.config.jsonc and run `ai-factory update` instead of editing.
+// Agents and their permissions are in .opencode/agents/.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "update": "disable",
+  "instructions": [
+    "docs/security.md"
+  ]
+}

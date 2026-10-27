@@ -1,0 +1,240 @@
+{
+  "lockVersion": 1,
+  "factoryVersion": "0.3.0",
+  "configSchemaVersion": 3,
+  "tools": {
+    "git": {
+      "min": "2.31.0",
+      "tested": "2.54.0"
+    },
+    "opencode": {
+      "min": "2.1.2",
+      "maxExclusive": "2.2.0",
+      "tested": "2.1.2"
+    },
+    "openspec": {
+      "min": "1.10.0",
+      "maxExclusive": "2.0.0",
+      "tested": "1.14.3"
+    },
+    "graphify": {
+      "min": "0.9.93",
+      "maxExclusive": "0.10.0",
+      "tested": "0.9.93"
+    }
+  },
+  "graph": {
+    "schemaVersion": 1
+  },
+  "addons": {
+    "ponytail": {
+      "ref": "v5.3.2@16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "contentSha256": "e7a219f6eea3af5bc5338b05838ca63b9cf4797beeb589abc120b98fdd57efb9",
+      "files": [
+        ".opencode/command/ponytail-review.md",
+        "AGENTS.md",
+        "LICENSE",
+        "skills/ponytail-review/SKILL.md",
+        "skills/ponytail/SKILL.md"
+      ]
+    }
+  },
+  "managed": {
+    ".gitignore": {
+      "template": "gitignore",
+      "templateVersion": "0.3.0",
+      "mode": "block",
+      "sha256": "ca05a350af4cdb919ccac81dc7f594a3b4875656d9ec6df7f3d25a79b7f4a204",
+      "blob": "0714a319347371d2226506fe8b93483eec507db6"
+    },
+    ".graphifyignore": {
+      "template": "graphifyignore",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "bd0c6c2f96738ba37747013638e3273c678c2472269bcad4a0e761ff8871da64",
+      "blob": "49f58875bf28877877ea018a4bf6ba85aed55372"
+    },
+    ".opencode/addons/ponytail/.opencode/command/ponytail-review.md": {
+      "template": "addons/ponytail/.opencode/command/ponytail-review.md",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "444d0b0a94e7a7d312a2c7ef906adbc3009ef0d00927d25d4e7ad4e944555e3d",
+      "blob": "3d4dae8bcb8fa1714b75acf2edc6c2607e926f4a"
+    },
+    ".opencode/addons/ponytail/AGENTS.md": {
+      "template": "addons/ponytail/AGENTS.md",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "b98b15e1d683ee205e124b52b8d330128593f4a87b545cf8185e2712cd1bb25f",
+      "blob": "ee5d6f1d6c1e4ff197a41d3ff43fa6597dbc81d4"
+    },
+    ".opencode/addons/ponytail/LICENSE": {
+      "template": "addons/ponytail/LICENSE",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
+      "blob": "715d483338cea4365f0d91a27799cf61226d6bcf"
+    },
+    ".opencode/addons/ponytail/PRECEDENCE.md": {
+      "template": "addons/ponytail/PRECEDENCE.md",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "cde5b07697ff7af16e72630ec23afcda23bf9291f68ab07c94b4750edc8ba55f",
+      "blob": "09deb761da2ae0b7a62421e94e8b87f1dcdb2914"
+    },
+    ".opencode/addons/ponytail/skills/ponytail-review/SKILL.md": {
+      "template": "addons/ponytail/skills/ponytail-review/SKILL.md",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "33fe4ebe22a460924e5d4a261e223df22e409cc94ab76182bee9fb91a3ef022e",
+      "blob": "a50e3ac6ded6fccc9edae34ce37877bbce11e3fa"
+    },
+    ".opencode/addons/ponytail/skills/ponytail/SKILL.md": {
+      "template": "addons/ponytail/skills/ponytail/SKILL.md",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "9badd22a32e19cb884e46dfa8d3aae82bb81dfa5484105b8b4f0262df823a509",
+      "blob": "d64edd32265ba21cbf5270158f04e97d96925f27"
+    },
+    ".opencode/agents/architect.md": {
+      "template": "agents/architect",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "6513dd54aee7d5db8633129a25494e40957b6598f49564552bc54d6479e3a083",
+      "blob": "d2085360675fd33a05c434ccbae887b587efa7e8"
+    },
+    ".opencode/agents/contract-reviewer.md": {
+      "template": "agents/contract-reviewer",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "9c399b48d963d811ae0daaf653cb61e92acdf7fc390c8bacc0bbd36439287b8c",
+      "blob": "7366fbe1ebfb81e6c97b487c62f1792286a3b024"
+    },
+    ".opencode/agents/explorer.md": {
+      "template": "agents/explorer",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "fa0edd9c6376f55ce075ea7c82f0d9c96f7b1c68037e1464914baccca87d1304",
+      "blob": "f05b1050dae92027b5e031ab247deb9418166f21"
+    },
+    ".opencode/agents/implementer-unifi-operator.md": {
+      "template": "agents/implementer",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "7126a001315f0b8110adf88dab16c0c45ff25f6106edb889cc3a9a6bdaa9cc2d",
+      "blob": "5aca07e9e4ad0b484bb12e643208abc83f88a4d6"
+    },
+    ".opencode/agents/orchestrator.md": {
+      "template": "agents/orchestrator",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "963de3b07838e167ad4e7aa04200aa4c1f3a8e8ca9de7538a60a69f79ac00c94",
+      "blob": "ec189e3af1105f5fc312eac0019bf27cf19d3b7b"
+    },
+    ".opencode/agents/reviewer.md": {
+      "template": "agents/reviewer",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "3673462648b4758ef0cd3f31d23c3362c0cf74d70dce4a851452e4c83b4954f9",
+      "blob": "9121b74fa61563860f10e6c5f69792af2c21762d"
+    },
+    ".opencode/agents/tester.md": {
+      "template": "agents/tester",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "0ec39b731033cced7f2d80a254b7580509d705e633b79e633a4a7b10abcf694e",
+      "blob": "8d24b4a5ff5012c7847a0a4133f98fe64ac5856d"
+    },
+    ".opencode/opencode.jsonc": {
+      "template": "opencode-config",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "1e9e9b6f5b6f04ab134c0cb07988207b486d7456947fa1aa0cc7fdfdb8eaf060",
+      "blob": "a713c7f06240487fdb28afee92633b820f884476"
+    },
+    ".opencode/plugins/factory.js": {
+      "template": "plugin",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "e4a1ad0cf7f2acb63f5ce2a70ee0250b49c939d6c9eb240e1f5fa793532875bd",
+      "blob": "29a76f660e6250c2bf2d5b6781ec94d4a3f07d0d"
+    },
+    ".opencode/schemas/factory.config.schema.json": {
+      "template": "config-schema",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "1d82f9a23febc9ec57799c1a70169cfb460e20fb829aa7b87126bfac3320f918",
+      "blob": "8685aa69d7ac49a76dcf3c00bb4ee406cdd8c4d6"
+    },
+    ".opencode/schemas/handoff.schema.json": {
+      "template": "handoff-schema",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "4987ad4aafcbc5ede7fe31ca1f6f23372fa870924c82ddf0709b0924b4af2237",
+      "blob": "5176e62d41a2bbab1c9f85ba8885db70d4f6a877"
+    },
+    ".opencode/standards/go.md": {
+      "template": "standards/go",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "24122ca31c9454e5552cf8dfa7d69139ff8f2dd0298ca6f91fdff42e0bf05de0",
+      "blob": "9e9a6be1c1a2a8ccfdd6b95a5547ae55fc675466"
+    },
+    ".opencode/standards/helm.md": {
+      "template": "standards/helm",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "1ee68e6a1f74968ac045b96c1fca595854188e0e197b04df3fb159fac8a2b609",
+      "blob": "a05d629f29e3e90382ef5913c3d722aac9ef97a4"
+    },
+    ".opencode/standards/python.md": {
+      "template": "standards/python",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "a37b6e45c989b7b8a4d3c0cec4fbde4fa9dd2424fc04a3fb31d7fc841d780391",
+      "blob": "6b69dadf2eef2fea72d4be01891fd14d505bc9ea"
+    },
+    ".opencode/standards/react.md": {
+      "template": "standards/react",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "34810be7d4d38cc1654ddd63fa8ca3689e2a0946116582e48dd9065368dc0c88",
+      "blob": "22c5adb95b4b284f4c6e90560bac6934afb6fd98"
+    },
+    ".opencode/standards/rust.md": {
+      "template": "standards/rust",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "7dcb58075f56cf9ed67ed65b42706b8ca6753210790111ea5a7d56b383db9ff0",
+      "blob": "c1ef5e6babb5b5204d8ca0bf72796dd6ffbe59c3"
+    },
+    ".opencode/standards/swift.md": {
+      "template": "standards/swift",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "c4ddfc905a981cbeca5064e8f3f90dc812b4ae312e89a10183c7cf8e8e1e41b6",
+      "blob": "25cca23ac2f0d4a0ab9aa5fa5298e65152e49e1a"
+    },
+    ".opencode/standards/tauri.md": {
+      "template": "standards/tauri",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "0e4f2b6e1e261d7c01659dd16b2c67ffadf5940a79fd2152fb5f28ffaeb825e7",
+      "blob": "509c3ef5941c4a56402a890926c596d4ae760452"
+    },
+    ".opencode/standards/typescript.md": {
+      "template": "standards/typescript",
+      "templateVersion": "0.3.0",
+      "mode": "file",
+      "sha256": "5d9538558650e0fc080fa32ee83f6b49a43f651a7298c902280ada1bcc8a5bca",
+      "blob": "0cbb99d31edc93a5706adbe5ba97b2ecc296e508"
+    },
+    "AGENTS.md": {
+      "template": "agents-md",
+      "templateVersion": "0.3.0",
+      "mode": "block",
+      "sha256": "5993b55f21ac8e7f2c4dd87d037688336849b8fda6cb364f42f4109a9910bfc3",
+      "blob": "e1d9fdfa0cd63a53cb2cd6a26293ac38a5fd7af4"
+    }
+  }
+}

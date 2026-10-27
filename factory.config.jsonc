@@ -1,0 +1,95 @@
+// ai-factory workspace config. Validated on every command; see README "Config reference".
+// Detection only proposes values: edit freely, and use `ai-factory detect` to see drift.
+{
+  "$schema": "./.opencode/schemas/factory.config.schema.json",
+  "schemaVersion": 3,
+  "layout": "single",
+
+  // Repos are matched by path. "languages" selects the stacked standards per implementer.
+  "repos": [
+    {"name":"unifi-operator","path":".","role":"code","languages":["go","helm"],"subPaths":[{"path":"charts/unifi-operator","languages":["helm"]},{"path":"cli","languages":["go","helm"]},{"path":"operator","languages":["go","helm"]}],"defaultBranch":"main"}
+  ],
+
+  // opencode model ids ("provider/model") per role. contractReviewer defaults to reviewer.
+  // "roles", "repos" and "agents" can override these; the flat entries stay the fallback.
+  "models": {
+    "orchestrator": "deepseek/deepseek-flash",
+    "architect": "deepseek/deepseek-v4-pro",
+    "reviewer": "deepseek/deepseek-v4-pro",
+    "implementer": "deepseek/deepseek-flash",
+    "tester": "deepseek/deepseek-flash",
+    "explorer": "deepseek/deepseek-flash"
+  },
+
+  // Project bars injected into every session. Add docs/security.md, docs/go.md, etc.
+  "instructions": {
+    "workspace": [
+      "docs/security.md",
+      "docs/go.md",
+      "docs/crd-conventions.md",
+      "docs/testing.md"
+    ],
+    "repos": {}
+  },
+  // Skills the agents should load first, from .opencode/skills or a custom source.
+  "skills": { "sources": [".opencode/skills"], "roles": {}, "repos": {} },
+  // MCP tool action patterns per role (e.g. "reviewer": ["mantine_*"]).
+  "mcp": { "roles": {} },
+  // Optional specialist agents and task routing by touched paths.
+  "agents": [],
+  "routing": [],
+
+  "gates": {
+    "maxRetries": 3,
+    // Gate type -> script/target name looked up in package.json, Makefile, justfile, Taskfile.
+    "scripts": { "format": "format:check", "lint": "lint", "types": "typecheck", "test": "test", "testAffected": "test:affected" },
+    // Repo name -> gate type -> literal command; wins over scripts and profile defaults.
+    "overrides": {
+      "unifi-operator": {
+        // The repo has no yamllint/kubeconform; keep the Go checks and let task chart cover the chart.
+        "format": "(cd operator && out=$(gofmt -l .) && [ -z \"$out\" ] || { echo \"$out\"; exit 1; }) && (cd cli && out=$(gofmt -l .) && [ -z \"$out\" ] || { echo \"$out\"; exit 1; })",
+        "types": "task vet"
+      }
+    },
+    // Detected stack gates: generated-artifact drift and the repo's own Taskfile checks.
+    "extra": [
+      {"name":"chart","type":"test","phases":["full"],"command":"task chart"},
+      {"name":"docs","type":"test","phases":["full"],"command":"task docs"},
+      {"name":"generated-crd","type":"test","phases":["full"],"command":"task manifests generate","outputs":["operator/config/crd/bases","operator/config/rbac","operator/api/v1alpha1/zz_generated.deepcopy.go"]},
+      {"name":"crd-sync","type":"test","phases":["full"],"command":"task crd-sync"},
+      {"name":"rbac-sync","type":"test","phases":["full"],"command":"task rbac-sync"}
+    ]
+  },
+
+  // Proposed by detection: confirm providers and consumers.
+  "contracts": [
+    {"kind":"crd","provider":"unifi-operator","path":"operator/config/crd/bases","consumers":[],"command":"task manifests generate","outputs":["operator/config/crd/bases","operator/config/rbac","operator/api/v1alpha1/zz_generated.deepcopy.go"]}
+  ],
+
+  "parallel": { "maxAgents": 2, "maxGateProcesses": 2, "withinRepo": "worktrees" },
+  "tokens": { "mode": "report", "contextPackMaxTokens": 8000, "gateOutputMaxLines": 80 },
+  "addons": {
+    "ponytail": {
+      "enabled": true,
+      "ref": "v5.3.2@16352ac229eb08a9598dcae48fe9f2b342567d86",
+      "roles": ["implementer", "reviewer"],
+      "level": "full",
+      "shortcutComments": "report"
+    }
+  },
+  "logs": { "retentionDays": 14, "redact": true },
+  "graph": { "exclude": ["**/node_modules/**","**/vendor/**","**/target/**","**/dist/**","**/build/**","**/coverage/**","**/.next/**","**/__pycache__/**","**/.venv/**",".factory/**","graphify-out/**"] },
+  // Agent shells and gates run in an OS sandbox where available ("auto"; macOS sandbox-exec).
+  "security": { "sandbox": "auto" },
+  // Task commits: "conventional" or "gitmoji"; scopes prefixes the repo name.
+  "commits": { "style": "gitmoji", "scopes": false },
+  // Clarification before design and the no-spec quick task.
+  "workflow": { "refine": true, "quick": { "enabled": true, "branchPrefix": "task/" } },
+  // Detect release-please, goreleaser, changesets and forge CI (read-only).
+  "release": { "detect": true },
+
+  // Managed files the factory must never overwrite (workspace-relative paths).
+  "unmanaged": [
+    "openspec/config.yaml"
+  ]
+}

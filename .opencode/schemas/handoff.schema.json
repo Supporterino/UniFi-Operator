@@ -1,0 +1,101 @@
+{
+  "$id": "ai-factory/handoff.schema.json",
+  "title": "Agent handoff",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "done",
+        "blocked",
+        "failed"
+      ]
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1
+    },
+    "filesChanged": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "must",
+              "should",
+              "nice"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "what": {
+            "type": "string",
+            "minLength": 1
+          },
+          "problem": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fix": {
+            "type": "string",
+            "minLength": 1
+          },
+          "impact": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "severity",
+          "what",
+          "problem",
+          "fix",
+          "impact"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "status",
+    "task",
+    "filesChanged",
+    "decisions",
+    "risks",
+    "openQuestions"
+  ],
+  "additionalProperties": false
+}

@@ -14,8 +14,8 @@
   // "roles", "repos" and "agents" can override these; the flat entries stay the fallback.
   "models": {
     "orchestrator": "deepseek/deepseek-flash",
-    "architect": "deepseek/deepseek-v4-pro",
-    "reviewer": "deepseek/deepseek-v4-pro",
+    "architect": "deepseek/deepseek-flash",
+    "reviewer": "deepseek/deepseek-flash",
     "implementer": "deepseek/deepseek-flash",
     "tester": "deepseek/deepseek-flash",
     "explorer": "deepseek/deepseek-flash"

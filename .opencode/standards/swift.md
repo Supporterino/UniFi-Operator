@@ -82,6 +82,6 @@
 ## Gates (defaults; the repo's own scripts and config overrides win)
 - format: `swiftformat --lint .`
 - lint: `swiftlint lint`
-- types: `swift build`
-- test: `swift test`
-- testAffected: `swift test`
+- types: `swift build` (with Package.swift); or `if [ -f project.yml ]; then xcodegen generate; fi && project="$(ls -d *.xcodeproj 2>/dev/null | head -n 1)" && [ -n "$project" ] || { echo "no .xcodeproj in the target directory" >&2; exit 1; } && xcodebuild -project "$project" -scheme "$(basename "$project" .xcodeproj)" build CODE_SIGNING_ALLOWED=NO`
+- test: `swift test` (with Package.swift); or `if [ -f project.yml ]; then xcodegen generate; fi && project="$(ls -d *.xcodeproj 2>/dev/null | head -n 1)" && [ -n "$project" ] || { echo "no .xcodeproj in the target directory" >&2; exit 1; } && xcodebuild -project "$project" -scheme "$(basename "$project" .xcodeproj)" test CODE_SIGNING_ALLOWED=NO`
+- testAffected: `swift test` (with Package.swift); or `if [ -f project.yml ]; then xcodegen generate; fi && project="$(ls -d *.xcodeproj 2>/dev/null | head -n 1)" && [ -n "$project" ] || { echo "no .xcodeproj in the target directory" >&2; exit 1; } && xcodebuild -project "$project" -scheme "$(basename "$project" .xcodeproj)" test CODE_SIGNING_ALLOWED=NO`

@@ -1,7 +1,7 @@
 {
   "lockVersion": 1,
-  "factoryVersion": "0.3.0",
-  "configSchemaVersion": 3,
+  "factoryVersion": "0.10.0",
+  "configSchemaVersion": 4,
   "tools": {
     "git": {
       "min": "2.31.0",
@@ -9,8 +9,8 @@
     },
     "opencode": {
       "min": "2.1.2",
-      "maxExclusive": "2.2.0",
-      "tested": "2.1.2"
+      "maxExclusive": "2.3.0",
+      "tested": "2.2.0"
     },
     "openspec": {
       "min": "1.10.0",
@@ -42,199 +42,199 @@
   "managed": {
     ".gitignore": {
       "template": "gitignore",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "block",
       "sha256": "ca05a350af4cdb919ccac81dc7f594a3b4875656d9ec6df7f3d25a79b7f4a204",
       "blob": "0714a319347371d2226506fe8b93483eec507db6"
     },
     ".graphifyignore": {
       "template": "graphifyignore",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "bd0c6c2f96738ba37747013638e3273c678c2472269bcad4a0e761ff8871da64",
-      "blob": "49f58875bf28877877ea018a4bf6ba85aed55372"
+      "sha256": "19f76709bcaa868cf152ac5db543dbf117adfa89750055848902244172d95b4c",
+      "blob": "9f8cd915f4c82114c26c3732c68e69989e6b377d"
     },
     ".opencode/addons/ponytail/.opencode/command/ponytail-review.md": {
       "template": "addons/ponytail/.opencode/command/ponytail-review.md",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "444d0b0a94e7a7d312a2c7ef906adbc3009ef0d00927d25d4e7ad4e944555e3d",
       "blob": "3d4dae8bcb8fa1714b75acf2edc6c2607e926f4a"
     },
     ".opencode/addons/ponytail/AGENTS.md": {
       "template": "addons/ponytail/AGENTS.md",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "b98b15e1d683ee205e124b52b8d330128593f4a87b545cf8185e2712cd1bb25f",
       "blob": "ee5d6f1d6c1e4ff197a41d3ff43fa6597dbc81d4"
     },
     ".opencode/addons/ponytail/LICENSE": {
       "template": "addons/ponytail/LICENSE",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
       "blob": "715d483338cea4365f0d91a27799cf61226d6bcf"
     },
     ".opencode/addons/ponytail/PRECEDENCE.md": {
       "template": "addons/ponytail/PRECEDENCE.md",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "cde5b07697ff7af16e72630ec23afcda23bf9291f68ab07c94b4750edc8ba55f",
       "blob": "09deb761da2ae0b7a62421e94e8b87f1dcdb2914"
     },
     ".opencode/addons/ponytail/skills/ponytail-review/SKILL.md": {
       "template": "addons/ponytail/skills/ponytail-review/SKILL.md",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "33fe4ebe22a460924e5d4a261e223df22e409cc94ab76182bee9fb91a3ef022e",
       "blob": "a50e3ac6ded6fccc9edae34ce37877bbce11e3fa"
     },
     ".opencode/addons/ponytail/skills/ponytail/SKILL.md": {
       "template": "addons/ponytail/skills/ponytail/SKILL.md",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "9badd22a32e19cb884e46dfa8d3aae82bb81dfa5484105b8b4f0262df823a509",
       "blob": "d64edd32265ba21cbf5270158f04e97d96925f27"
     },
     ".opencode/agents/architect.md": {
       "template": "agents/architect",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "6080584a202ec90f563276db57cc6a1ef85f341bb1f9b0dbfa62ab13b4257267",
-      "blob": "0ecd54dd0365a3561e078c2c2d608c14a9a6c7c0"
+      "sha256": "877d2ec1f15cc9442ef1922987829edf8e1852eb063b7683f48f0bf82a64e756",
+      "blob": "9268f876b629b5c71ec9dcaadafbb0b9de69b332"
     },
     ".opencode/agents/contract-reviewer.md": {
       "template": "agents/contract-reviewer",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "a6782aeed44638d95ca46bb431fabee3eee70a0daf80defd85de05a5505c042c",
-      "blob": "7e9a817f714858146fb6cdaa14b144587ffbe395"
+      "sha256": "92d005cdbf5ce5aff0c4605891f77ef6d6ee982585fde4ceab51b6d57dd24621",
+      "blob": "3465a050ae32e03f2d6c4e1e16b66e5eaae8ec43"
     },
     ".opencode/agents/explorer.md": {
       "template": "agents/explorer",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "63da3b9c508f64a1b86d0428d9ea8bdeab0b60b84cf69149f6c7d4192abada87",
-      "blob": "35a216087196f9bb6f319ede3f7693b0533588a6"
+      "sha256": "0d8f5cbed021df7bca5e766b2df6a87091ac043b59af0de8245d04219b159efe",
+      "blob": "dd5a51b4f096c3c67724aebbbefda6e1fa57c7d7"
     },
     ".opencode/agents/implementer-unifi-operator.md": {
       "template": "agents/implementer",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "335b56c742c88ee5e719b78f8709384805475be1cbaa67a0b71b42f2ac4cca7b",
-      "blob": "63f2b1fd878a1f26a5c40a1c658f25a5b714e9aa"
+      "sha256": "315fb041df509750c433200290e5665b13eddf434e07b50d0c05af5779b45487",
+      "blob": "4f344fa65f29958394b41783e227b4a428b3b3fe"
     },
     ".opencode/agents/orchestrator.md": {
       "template": "agents/orchestrator",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "3e8172e50f92975cbb1a0286907c0a9527fd530a8689b5ec3ac3f93485548f2a",
-      "blob": "d18d1aed06ac960bbc843a228bfdb5daf690d646"
+      "sha256": "2e7fde00a0c49428f0be999e9c12106f742b3d46e09a346d060514313cc0382b",
+      "blob": "7eef7d52114eb47d1e8c2f9cfdb5f688cda12597"
     },
     ".opencode/agents/reviewer.md": {
       "template": "agents/reviewer",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "489bd1acece8bf28011daffea4721454e478386c1c6aa926a720655a056a60f8",
-      "blob": "8cfc5141134bfb00f4196f5953912104e66ee8ad"
+      "sha256": "5e2f1d52e6f4491ce1ff9b151848aa1a4ae386abf6794de4e14f6be069cfae18",
+      "blob": "43f8baea93a702bbad59c7afadfe46da66147ecb"
     },
     ".opencode/agents/tester.md": {
       "template": "agents/tester",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "8ad252fbc04b7aa0e4c21fb60b423c1dcea332aa4d6025c26cc907a05028a41b",
-      "blob": "fc4dd922722bae5e75ab00161ae46563d6c2fa85"
+      "sha256": "63de914818736aa68eeb94fc6fe1ac971291bc93eabab1179d42bee8000b7fda",
+      "blob": "2911373457cf7a4e79f7ab31cb5e15006059fa50"
     },
     ".opencode/opencode.jsonc": {
       "template": "opencode-config",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "67002dc868a00617f038e92c8079f9e5029121b1d443ba5ef3550b1c3f23c1dd",
-      "blob": "4e3edc37c434074ad94890451db0b601664912f1"
+      "sha256": "86862c0639fc28c74692be3c982cfb4632bbbf4c63ef67babe7341c761a41173",
+      "blob": "2d9be7039efba61f809c3f44b8b7b9922e5eda59"
     },
     ".opencode/plugins/factory.js": {
       "template": "plugin",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "e4a1ad0cf7f2acb63f5ce2a70ee0250b49c939d6c9eb240e1f5fa793532875bd",
-      "blob": "29a76f660e6250c2bf2d5b6781ec94d4a3f07d0d"
+      "sha256": "167bd85ffb669a9bc9627ec9f23900bb4db8b17218347deb056d89e3f44782da",
+      "blob": "9d484e87e64eea7b974fa457a104ba32147b409f"
     },
     ".opencode/schemas/factory.config.schema.json": {
       "template": "config-schema",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "1d82f9a23febc9ec57799c1a70169cfb460e20fb829aa7b87126bfac3320f918",
-      "blob": "8685aa69d7ac49a76dcf3c00bb4ee406cdd8c4d6"
+      "sha256": "22f2a5a49d2b7204da2ea5bac9ead462905561d9b13e09ce902b0daffb0efc01",
+      "blob": "34ccd20df180325e54019e686cd83bb91b5154bf"
     },
     ".opencode/schemas/handoff.schema.json": {
       "template": "handoff-schema",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "4987ad4aafcbc5ede7fe31ca1f6f23372fa870924c82ddf0709b0924b4af2237",
       "blob": "5176e62d41a2bbab1c9f85ba8885db70d4f6a877"
     },
     ".opencode/standards/go.md": {
       "template": "standards/go",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "24122ca31c9454e5552cf8dfa7d69139ff8f2dd0298ca6f91fdff42e0bf05de0",
       "blob": "9e9a6be1c1a2a8ccfdd6b95a5547ae55fc675466"
     },
     ".opencode/standards/helm.md": {
       "template": "standards/helm",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "1ee68e6a1f74968ac045b96c1fca595854188e0e197b04df3fb159fac8a2b609",
       "blob": "a05d629f29e3e90382ef5913c3d722aac9ef97a4"
     },
     ".opencode/standards/python.md": {
       "template": "standards/python",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "a37b6e45c989b7b8a4d3c0cec4fbde4fa9dd2424fc04a3fb31d7fc841d780391",
       "blob": "6b69dadf2eef2fea72d4be01891fd14d505bc9ea"
     },
     ".opencode/standards/react.md": {
       "template": "standards/react",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "34810be7d4d38cc1654ddd63fa8ca3689e2a0946116582e48dd9065368dc0c88",
       "blob": "22c5adb95b4b284f4c6e90560bac6934afb6fd98"
     },
     ".opencode/standards/rust.md": {
       "template": "standards/rust",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "7dcb58075f56cf9ed67ed65b42706b8ca6753210790111ea5a7d56b383db9ff0",
       "blob": "c1ef5e6babb5b5204d8ca0bf72796dd6ffbe59c3"
     },
     ".opencode/standards/swift.md": {
       "template": "standards/swift",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
-      "sha256": "c4ddfc905a981cbeca5064e8f3f90dc812b4ae312e89a10183c7cf8e8e1e41b6",
-      "blob": "25cca23ac2f0d4a0ab9aa5fa5298e65152e49e1a"
+      "sha256": "0b60f8d25af564a61d387a55dbf32faa4c4f9a9d94b22ac3b39a0da9a72603f6",
+      "blob": "508ab4d16507303e0a99856461588567eb84c0ee"
     },
     ".opencode/standards/tauri.md": {
       "template": "standards/tauri",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "0e4f2b6e1e261d7c01659dd16b2c67ffadf5940a79fd2152fb5f28ffaeb825e7",
       "blob": "509c3ef5941c4a56402a890926c596d4ae760452"
     },
     ".opencode/standards/typescript.md": {
       "template": "standards/typescript",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "file",
       "sha256": "5d9538558650e0fc080fa32ee83f6b49a43f651a7298c902280ada1bcc8a5bca",
       "blob": "0cbb99d31edc93a5706adbe5ba97b2ecc296e508"
     },
     "AGENTS.md": {
       "template": "agents-md",
-      "templateVersion": "0.3.0",
+      "templateVersion": "0.10.0",
       "mode": "block",
-      "sha256": "5993b55f21ac8e7f2c4dd87d037688336849b8fda6cb364f42f4109a9910bfc3",
-      "blob": "e1d9fdfa0cd63a53cb2cd6a26293ac38a5fd7af4"
+      "sha256": "ceae4e22a45f1fcc7c2b06d661ab06c3dce5e5e401fd96744b1af361c57f92bc",
+      "blob": "da8b2498b9aeb1a2713009dc50be21409ef8d319"
     }
   }
 }

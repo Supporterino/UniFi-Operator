@@ -2,7 +2,7 @@
 // Detection only proposes values: edit freely, and use `ai-factory detect` to see drift.
 {
   "$schema": "./.opencode/schemas/factory.config.schema.json",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "layout": "single",
 
   // Repos are matched by path. "languages" selects the stacked standards per implementer.
@@ -78,7 +78,22 @@
     }
   },
   "logs": { "retentionDays": 14, "redact": true },
-  "graph": { "exclude": ["**/node_modules/**","**/vendor/**","**/target/**","**/dist/**","**/build/**","**/coverage/**","**/.next/**","**/__pycache__/**","**/.venv/**",".factory/**","graphify-out/**"] },
+  "graph": {
+    "exclude": [
+      "**/node_modules/**",
+      "**/vendor/**",
+      "**/target/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/.next/**",
+      "**/__pycache__/**",
+      "**/.venv/**",
+      ".factory/**",
+      "graphify-out/**",
+      "factory-records/**"
+    ]
+  },
   // Agent shells and gates run in an OS sandbox where available ("auto"; macOS sandbox-exec).
   "security": { "sandbox": "auto" },
   // Task commits: "conventional" or "gitmoji"; scopes prefixes the repo name.
@@ -91,5 +106,11 @@
   // Managed files the factory must never overwrite (workspace-relative paths).
   "unmanaged": [
     "openspec/config.yaml"
-  ]
+  ],
+  "artifacts": {
+    "mode": "local",
+    "reports": true,
+    "approvals": true,
+    "usage": true
+  }
 }

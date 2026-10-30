@@ -7,16 +7,9 @@
       "type": "string"
     },
     "schemaVersion": {
-      "anyOf": [
-        {
-          "type": "number",
-          "const": 2
-        },
-        {
-          "type": "number",
-          "const": 3
-        }
-      ]
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 4
     },
     "layout": {
       "type": "string",
@@ -704,6 +697,19 @@
       },
       "additionalProperties": false
     },
+    "runtime": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "turnTimeoutMinutes": {
+          "default": 60,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        }
+      },
+      "additionalProperties": false
+    },
     "tokens": {
       "default": {},
       "type": "object",
@@ -799,6 +805,33 @@
       },
       "additionalProperties": false
     },
+    "artifacts": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "mode": {
+          "default": "local",
+          "type": "string",
+          "enum": [
+            "local",
+            "git"
+          ]
+        },
+        "reports": {
+          "default": true,
+          "type": "boolean"
+        },
+        "approvals": {
+          "default": true,
+          "type": "boolean"
+        },
+        "usage": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "graph": {
       "default": {},
       "type": "object",
@@ -815,6 +848,7 @@
             "**/__pycache__/**",
             "**/.venv/**",
             ".factory/**",
+            "factory-records/**",
             "graphify-out/**"
           ],
           "type": "array",
@@ -840,6 +874,28 @@
         }
       },
       "additionalProperties": false
+    },
+    "websearch": {
+      "default": {
+        "provider": "random"
+      },
+      "anyOf": [
+        {
+          "type": "boolean",
+          "const": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "default": "random",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "commits": {
       "default": {},
@@ -867,6 +923,12 @@
         "refine": {
           "default": true,
           "type": "boolean"
+        },
+        "clarifyRounds": {
+          "default": 2,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
         },
         "quick": {
           "default": {},

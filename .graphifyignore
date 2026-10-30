@@ -11,3 +11,4 @@
 **/.venv/**
 .factory/**
 graphify-out/**
+factory-records/**

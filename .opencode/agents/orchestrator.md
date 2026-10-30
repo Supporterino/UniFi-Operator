@@ -18,6 +18,8 @@ permissions:
   - { action: edit, resource: openspec/specs/*, effect: deny }
   - { action: edit, resource: .opencode/*, effect: deny }
   - { action: edit, resource: .factory/*, effect: deny }
+  - { action: edit, resource: factory-records, effect: deny }
+  - { action: edit, resource: factory-records/*, effect: deny }
   - { action: edit, resource: factory.config.jsonc, effect: deny }
   - { action: edit, resource: factory.lock.json, effect: deny }
   - { action: edit, resource: AGENTS.md, effect: deny }
@@ -64,6 +66,8 @@ permissions:
   - { action: edit, resource: "*/.git-credentials", effect: deny }
   - { action: edit, resource: "*.tfstate", effect: deny }
   - { action: edit, resource: "*.tfstate.backup", effect: deny }
+  - { action: edit, resource: .factory/opencode/*, effect: deny }
+  - { action: edit, resource: "*/.factory/opencode/*", effect: deny }
   - { action: read, resource: .env*, effect: deny }
   - { action: read, resource: "*/.env*", effect: deny }
   - { action: read, resource: "*.pem", effect: deny }
@@ -103,6 +107,8 @@ permissions:
   - { action: read, resource: "*/.git-credentials", effect: deny }
   - { action: read, resource: "*.tfstate", effect: deny }
   - { action: read, resource: "*.tfstate.backup", effect: deny }
+  - { action: read, resource: .factory/opencode/*, effect: deny }
+  - { action: read, resource: "*/.factory/opencode/*", effect: deny }
   - { action: shell, resource: git push*, effect: deny }
   - { action: shell, resource: git remote *, effect: deny }
   - { action: shell, resource: git config *, effect: deny }
@@ -142,7 +148,7 @@ Put them into the handoff `decisions`, one per line, in this exact form:
 - `summary: <one paragraph>`
 - `repos: <name>, <name>`
 
-Use `task: "intake"`. If the request is ambiguous in a way that changes the scope, still choose the narrowest reasonable reading and list the question under `openQuestions`.
+Use `task: "intake"`. If the request is ambiguous in a way that changes the scope, still choose the narrowest reasonable reading and list the question under `openQuestions`. The factory asks the user when a terminal is attached, then sends the answers back in the same session; otherwise it records the question and you proceed with the assumption.
 
 ## Project instructions
 
@@ -176,6 +182,6 @@ End your final message with exactly one fenced `json` block and nothing after it
 - `filesChanged`: repo-relative paths you created, changed or deleted.
 - `decisions`: short statements of choices you made that a reviewer should know.
 - `risks`: what you skipped or did not check, and anything a human must know.
-- `openQuestions`: questions only a human can answer. Do not guess answers to them.
+- `openQuestions`: questions only a human can answer. Do not guess answers to them. The factory may ask them during intake/design and send the answers back in the same session.
 - `findings` (reviewers only): `{severity: must|should|nice, file, line, what, problem, fix, impact}`.
   Keep it short (about 300 tokens). It must validate against `.opencode/schemas/handoff.schema.json`.

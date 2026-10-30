@@ -1,0 +1,979 @@
+{
+  "title": "ai-factory config",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 4
+    },
+    "layout": {
+      "type": "string",
+      "enum": [
+        "single",
+        "submodules"
+      ]
+    },
+    "repos": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "default": "code",
+            "type": "string",
+            "enum": [
+              "orchestration",
+              "code"
+            ]
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "typescript",
+                "react",
+                "python",
+                "go",
+                "rust",
+                "helm",
+                "tauri",
+                "swift"
+              ]
+            }
+          },
+          "defaultBranch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "subPaths": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "languages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "typescript",
+                      "react",
+                      "python",
+                      "go",
+                      "rust",
+                      "helm",
+                      "tauri",
+                      "swift"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "path",
+                "languages"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "languages"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models": {
+      "type": "object",
+      "properties": {
+        "orchestrator": {
+          "type": "string",
+          "pattern": "^[^/\\s]+\\/\\S+$"
+        },
+        "architect": {
+          "type": "string",
+          "pattern": "^[^/\\s]+\\/\\S+$"
+        },
+        "reviewer": {
+          "type": "string",
+          "pattern": "^[^/\\s]+\\/\\S+$"
+        },
+        "contractReviewer": {
+          "type": "string",
+          "pattern": "^[^/\\s]+\\/\\S+$"
+        },
+        "implementer": {
+          "type": "string",
+          "pattern": "^[^/\\s]+\\/\\S+$"
+        },
+        "tester": {
+          "type": "string",
+          "pattern": "^[^/\\s]+\\/\\S+$"
+        },
+        "explorer": {
+          "type": "string",
+          "pattern": "^[^/\\s]+\\/\\S+$"
+        },
+        "roles": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "orchestrator",
+              "architect",
+              "reviewer",
+              "contractReviewer",
+              "implementer",
+              "tester",
+              "explorer"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\s]+\\/\\S+$"
+          }
+        },
+        "repos": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "orchestrator",
+                "architect",
+                "reviewer",
+                "contractReviewer",
+                "implementer",
+                "tester",
+                "explorer"
+              ]
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[^/\\s]+\\/\\S+$"
+            }
+          }
+        },
+        "agents": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\s]+\\/\\S+$"
+          }
+        },
+        "fallback": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^/\\s]+\\/\\S+$"
+          }
+        }
+      },
+      "required": [
+        "orchestrator",
+        "architect",
+        "reviewer",
+        "implementer",
+        "tester",
+        "explorer"
+      ],
+      "additionalProperties": false
+    },
+    "instructions": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "repos": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "skills": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "sources": {
+          "default": [
+            ".opencode/skills"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "roles": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "orchestrator",
+              "architect",
+              "reviewer",
+              "contractReviewer",
+              "implementer",
+              "tester",
+              "explorer"
+            ]
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "repos": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "mcp": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "roles": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "orchestrator",
+              "architect",
+              "reviewer",
+              "contractReviewer",
+              "implementer",
+              "tester",
+              "explorer"
+            ]
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "agents": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "orchestrator",
+              "architect",
+              "explorer",
+              "reviewer",
+              "contract-reviewer",
+              "tester",
+              "implementer"
+            ]
+          },
+          "description": {
+            "default": "custom ai-factory agent",
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "pattern": "^[^/\\s]+\\/\\S+$"
+          },
+          "mode": {
+            "default": "subagent",
+            "type": "string",
+            "enum": [
+              "primary",
+              "subagent",
+              "all"
+            ]
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "promptFile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "skills": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "edits": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "shell": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "web": {
+            "default": false,
+            "type": "boolean"
+          },
+          "mcp": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "id",
+          "phase"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "routing": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "agent": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "paths",
+          "agent"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "gates": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "maxRetries": {
+          "default": 3,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "scripts": {
+          "default": {
+            "format": "format:check",
+            "lint": "lint",
+            "types": "typecheck",
+            "test": "test",
+            "testAffected": "test:affected"
+          },
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "format",
+              "lint",
+              "types",
+              "test",
+              "testAffected"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "overrides": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "format",
+                "lint",
+                "types",
+                "test",
+                "testAffected"
+              ]
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "extra": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              "type": {
+                "default": "test",
+                "type": "string",
+                "enum": [
+                  "format",
+                  "lint",
+                  "types",
+                  "test",
+                  "testAffected"
+                ]
+              },
+              "phases": {
+                "default": [
+                  "task",
+                  "full"
+                ],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "task",
+                    "full"
+                  ]
+                }
+              },
+              "when": {
+                "default": {
+                  "changed": []
+                },
+                "type": "object",
+                "properties": {
+                  "changed": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "cwd": {
+                "default": ".",
+                "type": "string",
+                "minLength": 1
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "env": {
+                "default": {},
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "setup": {
+                "type": "string",
+                "minLength": 1
+              },
+              "outputs": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "checkOnly": {
+                "default": true,
+                "type": "boolean"
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "name",
+              "command"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "contracts": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "openapi",
+              "proto",
+              "json-schema",
+              "helm-values",
+              "generated",
+              "crd",
+              "ipc",
+              "custom"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "consumers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            }
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "allowBreaking": {
+            "type": "boolean"
+          },
+          "validate": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "provider",
+          "path",
+          "consumers"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parallel": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "maxAgents": {
+          "default": 4,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "maxGateProcesses": {
+          "default": 2,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "withinRepo": {
+          "default": "worktrees",
+          "type": "string",
+          "enum": [
+            "worktrees",
+            "serial"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "turnTimeoutMinutes": {
+          "default": 60,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        }
+      },
+      "additionalProperties": false
+    },
+    "tokens": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "mode": {
+          "default": "report",
+          "type": "string",
+          "const": "report"
+        },
+        "contextPackMaxTokens": {
+          "default": 8000,
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 9007199254740991
+        },
+        "gateOutputMaxLines": {
+          "default": 80,
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "addons": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "ponytail": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "ref": {
+              "default": "v5.3.2@16352ac229eb08a9598dcae48fe9f2b342567d86",
+              "type": "string",
+              "pattern": "^v\\d+\\.\\d+\\.\\d+@[0-9a-f]{40}$"
+            },
+            "roles": {
+              "default": [
+                "implementer",
+                "reviewer"
+              ],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "implementer",
+                  "reviewer"
+                ]
+              }
+            },
+            "level": {
+              "default": "full",
+              "type": "string",
+              "enum": [
+                "lite",
+                "full",
+                "ultra"
+              ]
+            },
+            "shortcutComments": {
+              "default": "report",
+              "type": "string",
+              "enum": [
+                "report",
+                "forbid"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "logs": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "retentionDays": {
+          "default": 14,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "redact": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "mode": {
+          "default": "local",
+          "type": "string",
+          "enum": [
+            "local",
+            "git"
+          ]
+        },
+        "reports": {
+          "default": true,
+          "type": "boolean"
+        },
+        "approvals": {
+          "default": true,
+          "type": "boolean"
+        },
+        "usage": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "graph": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "exclude": {
+          "default": [
+            "**/node_modules/**",
+            "**/vendor/**",
+            "**/target/**",
+            "**/dist/**",
+            "**/build/**",
+            "**/coverage/**",
+            "**/.next/**",
+            "**/__pycache__/**",
+            "**/.venv/**",
+            ".factory/**",
+            "factory-records/**",
+            "graphify-out/**"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "security": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "sandbox": {
+          "default": "auto",
+          "type": "string",
+          "enum": [
+            "auto",
+            "off"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "websearch": {
+      "default": {
+        "provider": "random"
+      },
+      "anyOf": [
+        {
+          "type": "boolean",
+          "const": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "default": "random",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "commits": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "style": {
+          "default": "conventional",
+          "type": "string",
+          "enum": [
+            "conventional",
+            "gitmoji"
+          ]
+        },
+        "scopes": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "refine": {
+          "default": true,
+          "type": "boolean"
+        },
+        "clarifyRounds": {
+          "default": 2,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "quick": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "branchPrefix": {
+              "default": "task/",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "release": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "detect": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "unmanaged": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "layout",
+    "repos",
+    "models"
+  ],
+  "additionalProperties": false
+}

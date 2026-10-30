@@ -1,0 +1,14 @@
+# Managed by ai-factory. Change factory.config.jsonc and run `ai-factory update` instead of editing.
+# Source: graph.exclude in factory.config.jsonc. Graphify also honours every .gitignore.
+**/node_modules/**
+**/vendor/**
+**/target/**
+**/dist/**
+**/build/**
+**/coverage/**
+**/.next/**
+**/__pycache__/**
+**/.venv/**
+.factory/**
+graphify-out/**
+factory-records/**

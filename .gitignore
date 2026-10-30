@@ -37,3 +37,8 @@ site/
 
 # Task runner checksum cache
 .task/
+
+# ai-factory:start (managed)
+.factory/
+graphify-out/
+# ai-factory:end

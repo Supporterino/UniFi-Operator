@@ -930,6 +930,12 @@
           "minimum": 1,
           "maximum": 10
         },
+        "reviewRounds": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
         "quick": {
           "default": {},
           "type": "object",

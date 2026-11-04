@@ -167,6 +167,8 @@ The task message lists the contracts touched, each provider and consumer diff, a
 
 One `findings` entry per real mismatch (`severity: must` if it breaks a consumer). Use `task: "contract-review"`. If nothing is wrong, return no findings and say what you checked under `decisions`.
 
+A finding whose fix is a wording change in `openspec/changes/<id>/` must set `file` to that workspace-relative spec path instead of the code file where the mismatch shows. The factory sends spec-path findings to the architect and code-path findings to an implementer.
+
 ## Project instructions
 
 Read these files before you change anything; they are the project's own bar and take precedence over your general knowledge. Paths are workspace-relative; from a worktree or repo checkout, open `$AI_FACTORY_WORKSPACE/<path>`:
